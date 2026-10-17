@@ -40,7 +40,7 @@ run with it.
 |---|---|
 | SMK-37 Pro | tested on hardware: start-up (about 1 s), both keys, every menu action, the calibration guard, an official M-VAVE update, Snoop37 and Baud Girl, all loader operations |
 | SMK-37 Elite | same build as the Pro; not yet tested |
-| FM-1 | builds and passes the simulated tests; not yet tested on hardware |
+| FM-1 | tested on hardware: start-up, both keys, the menu with its keys and LEDs, download mode, all loader operations; the wipe, BOOT ANYWAY and an official update not yet |
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back.** Reinstall m-bootloader with M-Flasher afterwards.
@@ -80,7 +80,7 @@ make
 
 Builds are reproducible: the same commit gives the same bytes. The version
 shown by the menu and by M-Flasher is `VERSION` plus the git commit, for
-example `1.0-73370d4`. The build fails if an image outgrows its slot.
+example `1.1-e9a25e1`. The build fails if an image outgrows its slot.
 
 `make test` runs the tests: the formats, the loader protocol, and the start-up
 and menu of both boards on a simulated chip and flash. `make sanitize` runs them
