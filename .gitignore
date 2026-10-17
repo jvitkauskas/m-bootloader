@@ -1,0 +1,11 @@
+# M-VAVE firmware and one unit's data: never commit (docs/SPEC.md §0.3)
+/testdata/
+# Downloaded JieLi toolchain (see README for verification)
+/toolchain/
+# build output
+/build/
+
+# Host Python bytecode
+__pycache__/
+*.pyc
+/toolchain.tar.xz

@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: MIT
+name: Build and test
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Check runner architecture
+        run: test "$(uname -m)" = x86_64
+      - name: Cache verified toolchain
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchain
+          key: jieli-linux-x86_64-f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958
+      - name: Download and verify toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/jieli-linux-toolchains-20250324.1.tar.xz"
+          curl --fail --location --retry 3 \
+            https://jl-update.oss-cn-shenzhen.aliyuncs.com/jieli-linux-toolchains-20250324.1.tar.xz \
+            --output "$archive"
+          test "$(stat --format=%s "$archive")" = 26009040
+          echo "f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958  $archive" | sha256sum --check
+          mkdir -p toolchain
+          tar --extract --xz --file="$archive" --directory=toolchain --strip-components=1 \
+            jieli-linux-toolchains-20250324.1/
+      - name: Build with entry, flash and RAM checks
+        run: make -j2
+      - name: Public tests (private fixtures are absent)
+        run: make test
+      - name: Address and undefined-behavior sanitizers
+        shell: bash
+        run: |
+          if make sanitize 2>&1 | tee "$RUNNER_TEMP/sanitize.log"; then
+            exit 0
+          fi
+          if grep -Eq 'LeakSanitizer.*(fatal error|does not work|not supported)' "$RUNNER_TEMP/sanitize.log"; then
+            echo 'LeakSanitizer cannot run here; retrying with leak detection only disabled.'
+            ASAN_OPTIONS=detect_leaks=0 make sanitize
+          else
+            exit 1
+          fi
+      - name: Reproducibility
+        run: make reproducible
+      - name: Upload release artifacts and manifest only
+        uses: actions/upload-artifact@v4
+        with:
+          name: m-bootloader-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            build/fm1/uboot.boot
+            build/smk37/uboot.boot
+            build/loader/mflr-loader-a.bin
+            build/loader/mflr-loader-b.bin
+            build/manifest.json
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: m-bootloader-${{ github.sha }}
+          path: artifacts
+      - name: Prepare distinct board filenames and checksums
+        shell: bash
+        run: |
+          mkdir release
+          cp artifacts/fm1/uboot.boot release/fm1-uboot.boot
+          cp artifacts/smk37/uboot.boot release/smk37-uboot.boot
+          cp artifacts/loader/mflr-loader-a.bin release/mflr-loader-a.bin
+          cp artifacts/loader/mflr-loader-b.bin release/mflr-loader-b.bin
+          cd release
+          sha256sum fm1-uboot.boot smk37-uboot.boot mflr-loader-a.bin mflr-loader-b.bin > SHA256SUMS
+      - name: Publish tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --clobber \
+              release/fm1-uboot.boot release/smk37-uboot.boot \
+              release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
+              --title "m-bootloader $RELEASE_TAG" \
+              release/fm1-uboot.boot release/smk37-uboot.boot \
+              release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
+          fi
