@@ -40,7 +40,7 @@ run with it.
 |---|---|
 | SMK-37 Pro | tested on hardware: start-up (about 1 s), both keys, every menu action, the calibration guard, an official M-VAVE update, Snoop37 and Baud Girl, all loader operations |
 | SMK-37 Elite | same build as the Pro; not yet tested |
-| FM-1 | tested on hardware: start-up, both keys, the menu with its keys and LEDs, download mode, all loader operations; the wipe, BOOT ANYWAY and an official update not yet |
+| FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations |
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back.** Reinstall m-bootloader with M-Flasher afterwards.
