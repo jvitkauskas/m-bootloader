@@ -79,7 +79,9 @@ void gpio_input(unsigned p, unsigned n, bool u, bool d) {
 bool gpio_read(unsigned p, unsigned n) {
     assert(p == (smk ? 7u:0u));
     assert(n == (smk ? 8u:(reads%4 < 2 ? 8u:6u)));
-    return !(pressed&(1u << (reads++%4)));
+    unsigned key = reads++%4;
+    bool enabled = smk || !((registers[gpio(0, 0)/4] | registers[gpio(0, 8)/4])&BIT(2));
+    return !enabled || !(pressed&(1u << key));
 }
 
 bool hal_delay_us(uint32_t us) {
@@ -119,11 +121,21 @@ static void keys(bool s) {
         original[p][r] = registers[gpio(p ? 7:0, offsets[r])/4] = (p ? 0x1234u:0x56aau) ^ (r*17);
     /* Initial levels must permit detecting the first deliberate latch edge. */
     original[0][0] &= ~(BIT(1) | BIT(3));
+    if (!s) {
+        /* ROM leaves PA2 undriven; a high output latch must be cleared too. */
+        original[0][0] |= BIT(2);
+        original[0][1] |= BIT(2);
+        registers[gpio(0, 8)/4] = original[0][1];
+    }
     registers[gpio(0, 0)/4] = original[0][0];
     registers[0x16a0c/4] = phy;
     board_init(s);
     assert(word_count == 1);
     assert(registers[0x16a0c/4] == phy);
+    if (!s) {
+        assert(!(registers[gpio(0, 0)/4]&BIT(2)));
+        assert(!(registers[gpio(0, 8)/4]&BIT(2)));
+    }
     pressed = KEY_PREV | KEY_SELECT | KEY_RECOVERY;
     assert(board_keys() == pressed);
     assert(reads == 4);

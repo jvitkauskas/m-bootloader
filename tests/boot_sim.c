@@ -620,6 +620,9 @@ static int key_closed(u32 key)
     if (!key_down(key))
         return 0;
     if (sim.board == 1) {
+        /* FM-1 PA2 enables the matrix only when actively driven low (8.2). */
+        if ((*slot(SIM_GPIO(PA) + GP_DIR) | *slot(SIM_GPIO(PA) + GP_OUT)) & (1u << 2))
+            return 0;
         switch (key) {
         case SK_REC:
             return !(w & 0x0080);

@@ -1025,6 +1025,42 @@ static void t_pin_restoration(void)
     }
 }
 
+static void t_fm1_matrix_enable(void)
+{
+    if (SMK)
+        return;
+    for (unsigned state = 0; state < 4; ++state) {
+        t_prep(4);
+        hal_early();
+        CHECK(apply_config());
+        uint32_t original_out = BIT(5) | (state&1 ? BIT(2):0);
+        uint32_t original_dir = 0xffff & ~(state&2 ? BIT(2):0);
+        sim_wr(0x50000, original_out);
+        sim_wr(0x50008, original_dir);
+        unsigned all_keys = KEY_PREV | KEY_NEXT | KEY_SELECT | KEY_RECOVERY;
+        t_key(all_keys, 0, 1000);
+        board_init(false);
+        CHECK(!(sim_rd(0x50000)&BIT(2)));
+        CHECK(!(sim_rd(0x50008)&BIT(2)));
+        CHECK(board_keys() == all_keys);
+        board_wait(3, true);
+        CHECK(board_keys() == all_keys);
+        /* Every key is open with PA2 high, an input, or both. */
+        for (unsigned disabled = 1; disabled < 4; ++disabled) {
+            sim_wr(0x50000, (sim_reg_get(0x50000)&~BIT(2)) | (disabled&1 ? BIT(2):0));
+            sim_wr(0x50008, (sim_reg_get(0x50008)&~BIT(2)) | (disabled&2 ? BIT(2):0));
+            CHECK(!board_keys());
+        }
+        gpio_output(0, 2, false);
+        CHECK(board_keys() == all_keys);
+        board_restore();
+        sim_flush();
+        CHECK(sim_reg_get(0x50000) == original_out);
+        CHECK(sim_reg_get(0x50008) == original_dir);
+        CHECK(!sim.err && !sim.ncmd && !nor_nlog);
+    }
+}
+
 static void t_public_recovery(void)
 {
     t_prep(4);
@@ -1070,6 +1106,7 @@ int main(void)
         t_fixture_present[f] = true;
     }
     puts(SMK ? "boot simulation: SMK-37":"boot simulation: FM-1");
+    t_fm1_matrix_enable();
     t_public_recovery();
     t_normal();
     if (t_fixture_present[t_own_fixture()]) {

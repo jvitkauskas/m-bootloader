@@ -53,6 +53,8 @@ void board_init(bool s) {
         gpio_input(7, 8, true, false);
     }
     else {
+        /* PA2 also enables the FM-1 key matrix; saved[] preserves its state. */
+        gpio_output(0, 2, false);
         gpio_input(0, 6, true, false);
         gpio_input(0, 8, true, false);
         gpio_output(0, 9, false);
