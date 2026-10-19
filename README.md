@@ -65,8 +65,9 @@ whichever bootloader it has, so a stock unit can be backed up first: the
 SysEx `F0 22 24 35 7D F7` on its first MIDI port
 ([specification §4.2](docs/SPEC.md#42-entering-rom-usb-download-mode)). On
 Linux, find the port with `amidi -l`, then
-`amidi -p hw:N,0,0 -S 'F0 22 24 35 7D F7'`. M-Flasher is getting a button
-for it ([m-flasher#4](https://github.com/jvitkauskas/m-flasher/pull/4)).
+`amidi -p hw:N,0,0 -S 'F0 22 24 35 7D F7'`. M-Flasher sends it with its
+**DOWNLOAD MODE** button, from
+[0.5.0](https://github.com/jvitkauskas/m-flasher/releases/tag/v0.5.0).
 
 ### With M-VAVE's updater
 
