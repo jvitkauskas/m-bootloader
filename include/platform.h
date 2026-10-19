@@ -42,6 +42,7 @@ bool gpio_read(unsigned port, unsigned pin);
 void hal_early(void);
 bool hal_clock_a(void);
 unsigned hal_clock_b(void);
+void hal_timer_clock(unsigned mhz);
 bool hal_delay_us(uint32_t usec);
 uint8_t p33_read(unsigned address);
 void p33_write(unsigned address, uint8_t value);

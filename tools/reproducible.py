@@ -15,4 +15,4 @@ subprocess.run(['make', '-B', '-j2', 'all'], check=True)
 after = hashes()
 if before != after:
     raise SystemExit('FAIL: repeated build changed release artifact bytes')
-print('PASS: all four release artifacts are byte-identical after a forced rebuild')
+print(f'PASS: all {len(PRODUCTS)} release artifacts are byte-identical after a forced rebuild')

@@ -25,7 +25,9 @@ SECTIONS {
     __ram_end = .;
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) *(.llvm_addrsig) }
     ASSERT(__ram_end <= ORIGIN(ram) + LENGTH(ram), "private RAM overflow")
-#ifndef LOADER_BUILD
+#if defined(INSTALLER_BUILD)
+    ASSERT(__payload_end - ORIGIN(ram) <= 0x5b1c, "installer exceeds the stock updater's size")
+#elif !defined(LOADER_BUILD)
     ASSERT(__payload_end - ORIGIN(ram) <= 0x3820, "boot payload exceeds stock flash slot")
 #endif
 }

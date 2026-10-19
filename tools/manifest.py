@@ -9,6 +9,9 @@ PRODUCTS = {
     'build/smk37/uboot.boot': 'build/smk37/size.json',
     'build/loader/mflr-loader-a.bin': 'build/loader-a/size.json',
     'build/loader/mflr-loader-b.bin': 'build/loader-b/size.json',
+    'build/fm1/uboot.fwsc': 'build/fm1/installer-size.json',
+    'build/smk37/uboot-pro.fwsc': 'build/smk37/installer-size.json',
+    'build/smk37/uboot-elite.fwsc': 'build/smk37/installer-size.json',
 }
 
 

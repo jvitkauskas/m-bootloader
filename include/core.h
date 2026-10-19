@@ -99,4 +99,11 @@ enum core_guard_result {
 };
 enum core_guard_result core_guard(const struct core_nor *nor, bool smk, uint8_t workspace[CORE_WORK_SIZE]);
 bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan, bool smk, uint8_t workspace[CORE_WORK_SIZE]);
+/* Invalidates, by programming their CRC to zero, the flash requests (scanned
+ * as core_request_scan) whose staged stream ends at stream_end. */
+unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end);
+#define CORE_BOOT_AREA 0x4000u
+/* Rewrites a stored boot area to hold container as its bootloader, keeping
+ * the flash header and every other record (§11.2); false leaves it as found. */
+bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity);
 #endif

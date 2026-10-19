@@ -162,6 +162,11 @@ unsigned hal_clock_b(void) {
     return mhz;
 }
 
+/* For code started after the clock switch (a staged updater): LSB MHz. */
+void hal_timer_clock(unsigned mhz) {
+    timer_mhz = mhz;
+}
+
 uint32_t hal_efuse(unsigned bank, unsigned row) {
     unsigned count = (REG(0x10200)&255) ? 4:3;
     uint32_t v = 0;

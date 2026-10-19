@@ -68,6 +68,9 @@ jobs:
           path: |
             build/fm1/uboot.boot
             build/smk37/uboot.boot
+            build/fm1/uboot.fwsc
+            build/smk37/uboot-pro.fwsc
+            build/smk37/uboot-elite.fwsc
             build/loader/mflr-loader-a.bin
             build/loader/mflr-loader-b.bin
             build/manifest.json
@@ -89,10 +92,14 @@ jobs:
           mkdir release
           cp artifacts/fm1/uboot.boot release/fm1-uboot.boot
           cp artifacts/smk37/uboot.boot release/smk37-uboot.boot
+          cp artifacts/fm1/uboot.fwsc release/fm1-uboot.fwsc
+          cp artifacts/smk37/uboot-pro.fwsc release/smk37-pro-uboot.fwsc
+          cp artifacts/smk37/uboot-elite.fwsc release/smk37-elite-uboot.fwsc
           cp artifacts/loader/mflr-loader-a.bin release/mflr-loader-a.bin
           cp artifacts/loader/mflr-loader-b.bin release/mflr-loader-b.bin
           cd release
-          sha256sum fm1-uboot.boot smk37-uboot.boot mflr-loader-a.bin mflr-loader-b.bin > SHA256SUMS
+          sha256sum fm1-uboot.boot smk37-uboot.boot fm1-uboot.fwsc smk37-pro-uboot.fwsc smk37-elite-uboot.fwsc \
+            mflr-loader-a.bin mflr-loader-b.bin > SHA256SUMS
       - name: Publish tag release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,10 +110,12 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" --clobber \
               release/fm1-uboot.boot release/smk37-uboot.boot \
+              release/fm1-uboot.fwsc release/smk37-pro-uboot.fwsc release/smk37-elite-uboot.fwsc \
               release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
           else
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
               --title "m-bootloader $RELEASE_TAG" \
               release/fm1-uboot.boot release/smk37-uboot.boot \
+              release/fm1-uboot.fwsc release/smk37-pro-uboot.fwsc release/smk37-elite-uboot.fwsc \
               release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
           fi

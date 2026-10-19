@@ -456,6 +456,17 @@ Reference values of the two official packages:
 | `fm1-015.fwsc` | `FM-1_015` | `13B0` | 8 | 602112 / `9B24` | 19969 / `A1C9` |
 | `smk37-016.fwsc` | `SMK-37 Pro_016` | `60E8` | 8 | 643072 / `0FA7` | 19969 / `A1C9` |
 
+M-VAVE's `SMK-37 Elite_016` package has 20 prefix blocks. Its boot area, `isd_config.ini` and `USR` equal the Pro package's, and its application is a separate build with the same region table (§5.5), which reports `SMK-37 Elite_016`.
+
+**Installing through M-UPGRADE.** M-UPGRADE reads the unit's identity from its firmware over USB MIDI and refuses a package of another model or of the same version. The firmware then fetches the package's `ota.bin` (type `0x64`), stores it, and restarts into the bootloader with an update request (§6.2), which runs it as the staged updater (§6.3). The stored copy keeps the package's stream, but its first record is rewritten as the outer record: absolute address, whole length, attribute `0x41`, name `LOADER.BIN`. The flash request has type `5A0D`, result `5A01`, name `ota-` plus the firmware's identity (for example `ota-FM-1_015`), and +72 pointing at the stored copy.
+
+| Unit | Stored updater | Flash request |
+|---|---|---|
+| FM-1 (015) | `0xE3000` | `0xE7F00` |
+| SMK-37 Pro and Elite (016) | `0xBA000` | `0xBEF00` |
+
+Both lie inside the firmware's VM. M-UPGRADE then waits for M-VAVE's updater to answer over USB HID; nothing else in the package has to be used. A package that holds only `ota.bin` is accepted: header +10 = 4, +12 = `0x200`, chip name `AC791N` at +16 as in M-VAVE's packages, the file list's one entry with its 32-byte-rounded size at +16, the file at `0x400`, and the identity woven in with M-VAVE's prefix block count for the model. m-bootloader's packages are such packages, with its installer as `ota.bin`. The installer runs as a staged updater from `0x01C0A800`: it rewrites the bootloader and its boot-area record as M-Flasher does (§11.2), verifies them, makes the RAM request ineligible (§6.2), programs the CRC of every flash request whose stored stream ends where its own does to zero, and resets. Without the last step the request would be acted on at every start at which the application does not mount.
+
 ## 6. Retained RAM and executable handoffs
 
 All structures in this section are byte layouts with little-endian integers and 32-bit pointers. They do not require any particular C type names. Use explicit layout assertions; do not rely on host-compiler bitfield packing.
@@ -1052,6 +1063,7 @@ Test reports SHOULD state device variant/revision, firmware versions, unit key/J
 | Recalibration after guard backup | The guard leaves a valid newer source intact but retains the old backup. If the new source is later erased, the old calibration returns. Updating the backup safely requires a separately designed maintenance protocol. |
 | Guard interruption and backup corruption | Header-last writing helps identify validity, but no redundant slot or atomic recovery is guaranteed. A nonblank partial copy is intentionally left alone. |
 | Whole-unit factory restoration | USRTRIM is not all wheel calibration; USRFLASH and resources matter. Broader factory formats are not specified and cannot be regenerated from a marker. |
+| Installation through M-UPGRADE | Tested from the stock bootloader: on an FM-1 with firmware 015, and on an SMK-37 with the Pro and the Elite firmware 016. Only the bootloader, its record and the firmware's own VM writes changed; the flash request was left with CRC `0000`. A package holding only `ota.bin` was accepted on both. M-UPGRADE reports a time-out at the end, waiting for M-VAVE's HID updater. Not tested: power lost during the boot-area write (USB_KEY then recovers), installing over this bootloader's older versions, and firmware other than M-VAVE's, whose update path may differ or be absent. |
 | All `.fwsc` non-flash member conventions | Package/list/flash checks are known; some other members' stored CRCs differ from the raw-byte CRC. The bootloader and the flash loader need not decode them. |
 | Felucca, FM-1 SLOOP and Elite images | Not decoded; their compatibility requires their images and hardware tests. |
 

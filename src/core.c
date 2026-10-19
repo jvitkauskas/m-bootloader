@@ -849,3 +849,76 @@ bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan,
     }
     return true;
 }
+
+unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end)
+{
+    static const uint8_t zero[2];
+    uint8_t raw[80], outer[32];
+    struct core_record r;
+    uint32_t step = alignment && alignment <= 16 ? (uint32_t)alignment * 256 : 4096;
+    uint32_t boundary, retired = 0;
+    if (nor->flash.capacity < step)
+        return 0;
+    for (boundary = nor->flash.capacity - step; boundary > 4096; boundary -= step) {
+        if (!core_read(&nor->flash, boundary - 256, raw, 80))
+            break;
+        if (core_le16(raw + 6) == 0x5441 && core_request_valid(raw) && core_read(&nor->flash, core_le32(raw + 72), outer, 32) && core_record_parse(&r, outer) && r.address + r.length == stream_end && nor->program(nor->flash.ctx, boundary - 256, zero, 2))
+            ++retired;
+        if (boundary < step)
+            break;
+    }
+    return retired;
+}
+
+static bool boot_allocation_safe(uint32_t address, uint32_t length, uint32_t capacity)
+{
+    return address < capacity && length <= capacity - address && !(address < 0x38d0 && address + length > 0xa0);
+}
+
+bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity)
+{
+    uint8_t head[32], record[32], other[32];
+    struct core_record r;
+    uint32_t offset, config = 0;
+    if (size < 0x80 || size > 0x3830 || core_le16(container) != 1 || core_le16(container + 2) != size - 16 || core_le32(container + 4) != 0x01c02000 || core_le32(container + 8) != 16 || core_crc16(0, container, 14) != core_le16(container + 14) || core_crc16(0, container + 16, size - 16) != core_le16(container + 12))
+        return false;
+    bytes_copy(head, area, 32);
+    bytes_copy(record, area + 32, 32);
+    core_enc(0xffff, head, 32);
+    core_enc(0xffff, record, 32);
+    if (core_crc16(0, head + 2, 30) != core_le16(head) || !core_record_parse(&r, record) || !text_equal(r.name, "uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > 0x3830)
+        return false;
+    /* A0 is the first data allocation, so only three more records fit. */
+    for (offset = 64; offset < 0xa0; offset += 32) {
+        bytes_copy(other, area + offset, 32);
+        core_enc(0xffff, other, 32);
+        if (!core_record_parse(&r, other))
+            return false;
+        bool sentinel = r.length == 0 || r.length == 0xffffffffu;
+        if (text_equal(r.name, "app_dir_head") || text_equal(r.name, "app_dir_head2")) {
+            /* Directory lengths are sentinels or bank-info addresses. */
+            if (!boot_allocation_safe(r.address, 32, capacity) || (!sentinel && !boot_allocation_safe(r.length, 32, capacity)))
+                return false;
+        } else if (!boot_allocation_safe(r.address, sentinel ? 32 : r.length, capacity))
+            return false;
+        if (text_equal(r.name, "isd_config.ini")) {
+            if (config || sentinel)
+                return false;
+            config = r.address;
+        }
+    }
+    if (!config || 0xa0 + size > config)
+        return false;
+    core_put_le16(record + 2, core_crc16(0, container, size));
+    core_put_le32(record + 4, 0xa0);
+    core_put_le32(record + 8, size);
+    core_put_le16(record, core_crc16(0, record + 2, 30));
+    core_enc(0xffff, record, 32);
+    bytes_copy(area + 32, record, 32);
+    for (offset = 0xa0; offset < 0x38d0; ++offset)
+        area[offset] = 0xff;
+    bytes_copy(area + 0xa0, container, size);
+    core_enc(0xffff, area + 0xa0, 16);
+    core_enc(0xffff, area + 0xb0, size - 16);
+    return true;
+}

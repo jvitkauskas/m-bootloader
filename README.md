@@ -38,12 +38,12 @@ run with it.
 
 | | |
 |---|---|
-| SMK-37 Pro | tested on hardware: start-up (about 1 s), both keys, every menu action, the calibration guard, an official M-VAVE update, Snoop37 and Baud Girl, all loader operations |
-| SMK-37 Elite | same build as the Pro; not yet tested |
-| FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations |
+| SMK-37 Pro | tested on hardware: start-up (about 1 s), both keys, every menu action, the calibration guard, an official M-VAVE update, Snoop37 and Baud Girl, all loader operations, installation with M-UPGRADE |
+| SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
+| FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
-back.** Reinstall m-bootloader with M-Flasher afterwards.
+back.** Reinstall m-bootloader afterwards, with M-Flasher or M-UPGRADE.
 
 ## Install
 
@@ -59,6 +59,24 @@ M-Flasher writes only the bootloader and keeps the rest of the boot area. If
 the bootloader is ever broken, the USB_KEY dongle still forces the chip into
 download mode
 ([specification §4.3](docs/SPEC.md#43-recovery-independent-of-a-valid-boot-image)).
+
+### With M-VAVE's updater
+
+`fm1-uboot.fwsc`, `smk37-pro-uboot.fwsc` and `smk37-elite-uboot.fwsc` install
+it with M-VAVE's M-UPGRADE, over USB MIDI, without download mode. The unit has
+to run firmware that M-UPGRADE can update, such as M-VAVE's, and keeps it.
+
+A package holds no firmware, only our installer (`src/installer.c`): the
+unit's firmware stores it and the bootloader starts it. It writes only the
+bootloader and its boot-area record, shows its progress on the screen, and
+restarts the unit. M-UPGRADE then waits for an updater that never comes, and
+times out with an error; the installation is done by then. Tested from
+M-VAVE's bootloader on an FM-1 (firmware 015) and on an SMK-37 with the Pro and
+the Elite firmware (016).
+
+The packages are labelled version 099, as M-UPGRADE refuses the version a unit
+already has. If it refuses a unit running other firmware, its force upgrade
+skips the model and version checks.
 
 ## Build
 
@@ -76,6 +94,7 @@ make
 |---|---|
 | `build/fm1/uboot.boot` | bootloader for the FM-1 |
 | `build/smk37/uboot.boot` | bootloader for the SMK-37 Pro / Elite |
+| `build/fm1/uboot.fwsc`, `build/smk37/uboot-pro.fwsc`, `uboot-elite.fwsc` | the same bootloaders as M-UPGRADE packages; the Elite's differs from the Pro's only in the model name M-UPGRADE checks |
 | `build/loader/mflr-loader-a.bin`, `-b.bin` | flash loader, at RAM `0x01C20000` and `0x01C28000` |
 
 Builds are reproducible: the same commit gives the same bytes. The version
@@ -85,9 +104,9 @@ example `1.1-e9a25e1`. The build fails if an image outgrows its slot.
 `make test` runs the tests: the formats, the loader protocol, and the start-up
 and menu of both boards on a simulated chip and flash. `make sanitize` runs them
 under ASan and UBSan, and `make reproducible` checks that two builds match.
-Some tests also use flash images of real units in `testdata/`. Those contain
-M-VAVE's firmware, so they are not in the repository, and the tests skip
-them when absent.
+Some tests also use flash images of real units and M-VAVE's packages in
+`testdata/`. Those contain M-VAVE's firmware, so they are not in the
+repository, and the tests skip them when absent.
 
 ## Source
 
@@ -98,7 +117,8 @@ them when absent.
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
 | `src/loader.c`, `src/loader_target.c` | the flash loader |
-| `tools/` | container packing and build checks |
+| `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
+| `tools/` | container and M-UPGRADE package packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
 
 ## Clean room
