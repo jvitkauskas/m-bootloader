@@ -60,6 +60,14 @@ the bootloader is ever broken, the USB_KEY dongle still forces the chip into
 download mode
 ([specification §4.3](docs/SPEC.md#43-recovery-independent-of-a-valid-boot-image)).
 
+A unit running M-VAVE's firmware enters download mode on a MIDI message,
+whichever bootloader it has, so a stock unit can be backed up first: the
+SysEx `F0 22 24 35 7D F7` on its first MIDI port
+([specification §4.2](docs/SPEC.md#42-entering-rom-usb-download-mode)). On
+Linux, find the port with `amidi -l`, then
+`amidi -p hw:N,0,0 -S 'F0 22 24 35 7D F7'`. M-Flasher is getting a button
+for it ([m-flasher#4](https://github.com/jvitkauskas/m-flasher/pull/4)).
+
 ### With M-VAVE's updater
 
 `fm1-uboot.fwsc`, `smk37-pro-uboot.fwsc` and `smk37-elite-uboot.fwsc` install
