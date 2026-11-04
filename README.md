@@ -45,6 +45,14 @@ run with it.
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back.** Reinstall m-bootloader afterwards, with M-Flasher or M-UPGRADE.
 
+**Not tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
+UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
+(`0x856014`). One such unit did not start after m-bootloader was installed, and
+the cause is not known yet
+([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)). Check
+**FLASH CHIP** in M-Flasher before installing. With `0xB36014`, whether through
+M-Flasher or M-UPGRADE, install it at your own risk.
+
 ## Install
 
 Back up your unit with M-Flasher first. Then install the build for your
