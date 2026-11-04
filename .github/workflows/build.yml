@@ -32,7 +32,7 @@ jobs:
       - name: Install the Upkr packer, at a fixed commit
         shell: bash
         run: |
-          cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 --root "$RUNNER_TEMP/upkr"
+          cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 --root "$RUNNER_TEMP/upkr" upkr
           echo "UPKR=$RUNNER_TEMP/upkr/bin/upkr" >> "$GITHUB_ENV"
       - name: Build with entry, flash and RAM checks
         run: make -j2
