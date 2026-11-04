@@ -185,6 +185,37 @@ static uint32_t minimal_config(uint8_t *blob)
     return add_number(blob, p, "LSB_DIV", 2);
 }
 
+/* FM-1 016's configuration: 320 MHz, the voltage keys, no UTBD or VLVD. */
+static void test_config_016(void)
+{
+    static uint8_t blob[256];
+    struct core_config c;
+    uint32_t p = 34;
+    p = add_config(blob, p, "SPI", "4_1_0_0", 7);
+    p = add_config(blob, p, "OSC", "OSC0", 4);
+    p = add_number(blob, p, "OSC_FREQ", 24000000);
+    p = add_number(blob, p, "OSC_HC_EN", 0);
+    p = add_number(blob, p, "OSC_1PIN_EN", 0);
+    p = add_number(blob, p, "SYS_CLK", 320000000);
+    p = add_number(blob, p, "HSB_DIV", 1);
+    p = add_number(blob, p, "LSB_DIV", 2);
+    p = add_config(blob, p, "RESET", "PB01_08_0", 9);
+    p = add_number(blob, p, "UPDATE_JUMP", 0);
+    p = add_number(blob, p, "VDDIO", 4);
+    p = add_number(blob, p, "DVDD", 11);
+    p = add_number(blob, p, "DCDC14", 3);
+    p = add_number(blob, p, "ENABLE_SDRAM", 0);
+    CHECK(core_config_parse(&c, blob, p));
+    CHECK(c.system_hz == 360000000); /* what we run at, not what it says */
+    CHECK(c.width == 4 && c.spi_divider == 1);
+    /* only the two known clocks */
+    uint32_t at = 34;
+    while (memcmp(blob + at + 1, "SYS_CLK", 8))
+        at += 1 + (uint32_t)strlen((char *)blob + at + 1) + 1 + blob[at];
+    core_put_le32(blob + at + 1 + 8, 240000000);
+    CHECK(!core_config_parse(&c, blob, p));
+}
+
 static void test_config(void)
 {
     uint8_t blob[512];
@@ -746,6 +777,7 @@ int main(void)
 {
     test_primitives();
     test_config();
+    test_config_016();
     test_banks();
     test_lz4();
     test_fixture("fm1-stock.bin", 0xf98496a0, 581564, 0x5d48, 0x8e0dc, 0x93000, 0xe9000, 0xe9000, false);
