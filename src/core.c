@@ -201,137 +201,6 @@ void core_config_defaults(struct core_config *c)
     c->reset_hold = 8;
 }
 
-static int decimal(uint8_t c) {
-    return c >= '0' && c <= '9' ? c - '0' : -1;
-}
-
-static bool pin_parse(const uint8_t *v, uint32_t n, uint8_t *pin)
-{
-    int a, b;
-    if (n < 4 || v[0] != 'P' || v[1] < 'A' || v[1] > 'H')
-        return false;
-    a = decimal(v[2]);
-    b = decimal(v[3]);
-    if (a < 0 || b < 0 || a * 10 + b > 15)
-        return false;
-    *pin = (uint8_t)((v[1] - 'A') * 16 + a * 10 + b);
-    return true;
-}
-
-bool core_config_parse(struct core_config *c, const uint8_t *blob, uint32_t size)
-{
-    enum {
-        K_SPI, K_OSC, K_RESET, K_OSC_FREQ, K_SYS, K_HSB, K_LSB,
-        K_HC, K_ONE, K_SDRAM, K_COUNT
-    };
-    static const char names[] = "SPI\0OSC\0RESET\0OSC_FREQ\0SYS_CLK\0HSB_DIV\0LSB_DIV\0"
-        "OSC_HC_EN\0OSC_1PIN_EN\0ENABLE_SDRAM";
-    struct core_config parsed;
-    uint32_t pos = 34, found = 0;
-    core_config_defaults(c);
-    core_config_defaults(&parsed);
-    if (size < 34 || size > 4096)
-        return false;
-    while (pos < size) {
-        uint32_t n = blob[pos++], begin = pos, value;
-        unsigned id;
-        const uint8_t *v;
-        const char *name = names;
-        if (!n || n == 255)
-            break;
-        while (pos < size && blob[pos])
-            ++pos;
-        if (pos == size)
-            return false;
-        if (pos - begin >= 32)
-            return false;
-        for (id = 0; id < K_COUNT; ++id) {
-            if (text_equal((const char *)blob + begin, name))
-                break;
-            while (*name++) {
-            }
-        }
-        ++pos;
-        if (n > size - pos)
-            return false;
-        v = blob + pos;
-        pos += n;
-        if (id == K_SPI) {
-            if (n == 8 && !v[7])
-                --n;
-            if (n != 7 || v[1] != '_' || v[3] != '_' || v[5] != '_' || (v[0] != '4' && v[0] != '1') || decimal(v[2]) < 0 || v[4] != '0' || decimal(v[6]) < 0)
-                return false;
-            parsed.width = (uint8_t)(v[0] - '0');
-            parsed.spi_divider = (uint8_t)(v[2] - '0');
-        } else if (id == K_OSC) {
-            if ((n != 4 && !(n == 5 && !v[4])) || !bytes_equal(v, "OSC0", 4))
-                return false;
-            found |= 1;
-        } else if (id == K_RESET) {
-            int a, b;
-            if (n == 10 && !v[9])
-                --n;
-            if (n != 9 || !pin_parse(v, n, &parsed.reset_pin) || v[4] != '_' || v[7] != '_')
-                return false;
-            a = decimal(v[5]);
-            b = decimal(v[6]);
-            if (a < 0 || b < 0 || (v[8] != '0' && v[8] != '1'))
-                return false;
-            parsed.reset_hold = (uint8_t)(a * 10 + b);
-            parsed.reset_level = (uint8_t)(v[8] - '0');
-        } else {
-            if (id == K_COUNT)
-                continue;
-            if (n != 4)
-                return false;
-            value = core_le32(v);
-            if (id >= K_HC && id <= K_ONE) {
-                static const uint8_t offsets[] = {
-                    offsetof(struct core_config, high_current), offsetof(struct core_config, one_pin)
-                }, limits[] = {
-                    1, 1
-                };
-                id -= K_HC;
-                if (value > limits[id])
-                    return false;
-                *((uint8_t *)&parsed + offsets[id]) = (uint8_t)value;
-                continue;
-            }
-            switch (id) {
-            case K_OSC_FREQ:
-                parsed.oscillator_hz = value;
-                found |= 2;
-                break;
-            case K_SYS:
-                /* FM-1 016's configuration says 320 MHz. We always run 360 MHz (§3.2)
-                 * and tell the application so: system_hz stays at its default. */
-                if (value != 360000000 && value != 320000000)
-                    return false;
-                found |= 4;
-                break;
-            case K_HSB:
-                if (value != 1)
-                    return false;
-                found |= 8;
-                break;
-            case K_LSB:
-                if (value != 2)
-                    return false;
-                found |= 16;
-                break;
-            default:
-                if (value)
-                    return false;
-                break;
-            }
-        }
-    }
-    if (found != 31 || parsed.oscillator_hz != 24000000)
-        return false;
-    *c = parsed;
-    return true;
-}
-
 bool core_chipkey(const uint8_t prefix[34], uint16_t *key)
 {
     unsigned i;
@@ -875,21 +744,22 @@ unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint
 
 static bool boot_allocation_safe(uint32_t address, uint32_t length, uint32_t capacity)
 {
-    return address < capacity && length <= capacity - address && !(address < 0x38d0 && address + length > 0xa0);
+    return address < capacity && length <= capacity - address && !(address < CORE_BOOT_AREA && address + length > 0xa0);
 }
 
 bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity)
 {
-    uint8_t head[32], record[32], other[32];
+    uint8_t head[32], record[32], other[32], config[32], blob[CORE_CONFIG_SIZE];
     struct core_record r;
-    uint32_t offset, config = 0;
-    if (size < 0x80 || size > 0x3830 || core_le16(container) != 1 || core_le16(container + 2) != size - 16 || core_le32(container + 4) != 0x01c02000 || core_le32(container + 8) != 16 || core_crc16(0, container, 14) != core_le16(container + 14) || core_crc16(0, container + 16, size - 16) != core_le16(container + 12))
+    uint32_t offset;
+    bool have_config = false;
+    if (size < 0x80 || size > CORE_BOOT_MAX || core_le16(container) != 1 || core_le16(container + 2) != size - 16 || core_le32(container + 4) != 0x01c02000 || core_le32(container + 8) != 16 || core_crc16(0, container, 14) != core_le16(container + 14) || core_crc16(0, container + 16, size - 16) != core_le16(container + 12))
         return false;
     bytes_copy(head, area, 32);
     bytes_copy(record, area + 32, 32);
     core_enc(0xffff, head, 32);
     core_enc(0xffff, record, 32);
-    if (core_crc16(0, head + 2, 30) != core_le16(head) || !core_record_parse(&r, record) || !text_equal(r.name, "uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > 0x3830)
+    if (core_crc16(0, head + 2, 30) != core_le16(head) || !core_record_parse(&r, record) || !text_equal(r.name, "uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > CORE_BOOT_MAX)
         return false;
     /* A0 is the first data allocation, so only three more records fit. */
     for (offset = 64; offset < 0xa0; offset += 32) {
@@ -897,6 +767,18 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
         core_enc(0xffff, other, 32);
         if (!core_record_parse(&r, other))
             return false;
+        if (text_equal(r.name, "isd_config.ini")) {
+            /* Only its chip-key record is kept, so that has to be good. */
+            if (have_config || r.address < 0x38d0 || r.length < CORE_CONFIG_SIZE ||
+                r.length > CORE_BOOT_AREA || r.address > CORE_BOOT_AREA - r.length)
+                return false;
+            bytes_copy(blob, area + r.address, CORE_CONFIG_SIZE);
+            if (core_crc16(0, blob, 32) != core_le16(blob + 32))
+                return false;
+            bytes_copy(config, other, 32);
+            have_config = true;
+            continue;
+        }
         bool sentinel = r.length == 0 || r.length == 0xffffffffu;
         if (text_equal(r.name, "app_dir_head") || text_equal(r.name, "app_dir_head2")) {
             /* Directory lengths are sentinels or bank-info addresses. */
@@ -904,13 +786,8 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
                 return false;
         } else if (!boot_allocation_safe(r.address, sentinel ? 32 : r.length, capacity))
             return false;
-        if (text_equal(r.name, "isd_config.ini")) {
-            if (config || sentinel)
-                return false;
-            config = r.address;
-        }
     }
-    if (!config || 0xa0 + size > config)
+    if (!have_config)
         return false;
     core_put_le16(record + 2, core_crc16(0, container, size));
     core_put_le32(record + 4, 0xa0);
@@ -918,8 +795,20 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
     core_put_le16(record, core_crc16(0, record + 2, 30));
     core_enc(0xffff, record, 32);
     bytes_copy(area + 32, record, 32);
-    for (offset = 0xa0; offset < 0x38d0; ++offset)
+    core_put_le16(config + 2, core_crc16(0, blob, CORE_CONFIG_SIZE));
+    core_put_le32(config + 4, CORE_CONFIG_AT);
+    core_put_le32(config + 8, CORE_CONFIG_SIZE);
+    core_put_le16(config, core_crc16(0, config + 2, 30));
+    core_enc(0xffff, config, 32);
+    for (offset = 64; offset < 0xa0; offset += 32) {
+        bytes_copy(other, area + offset, 32);
+        core_enc(0xffff, other, 32);
+        if (core_record_parse(&r, other) && text_equal(r.name, "isd_config.ini"))
+            bytes_copy(area + offset, config, 32);
+    }
+    for (offset = 0xa0; offset < CORE_BOOT_AREA; ++offset)
         area[offset] = 0xff;
+    bytes_copy(area + CORE_CONFIG_AT, blob, CORE_CONFIG_SIZE);
     bytes_copy(area + 0xa0, container, size);
     core_enc(0xffff, area + 0xa0, 16);
     core_enc(0xffff, area + 0xb0, size - 16);

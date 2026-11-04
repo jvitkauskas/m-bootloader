@@ -41,7 +41,9 @@ def synthetic_flash():
     struct.pack_into('<H', head, 0, crc16(head[2:]))
     flash[:32] = enc(head)
     flash[32:64] = file_record(b'uboot.boot', 0xa0, 0x3830)
-    flash[64:96] = file_record(b'isd_config.ini', 0x38d0, 16, 2)
+    flash[64:96] = file_record(b'isd_config.ini', 0x38d0, 699, 2)
+    blob = bytes(range(16, 48))
+    flash[0x38d0:0x38f2] = blob + struct.pack('<H', crc16(blob))
     flash[96:128] = file_record(b'app_dir_head', 0x4000, 0xffffffff, 0x81)
     flash[128:160] = file_record(b'key_mac', 0xff000, 0x1000, 0x12)
     return bytes(flash)
@@ -73,7 +75,7 @@ def boot_area_variants():
             (96, b'app_dir_head', 0x90, 0xffffffff, 0x81), (96, b'app_dir_head', 0x4000, 0x2000, 0x81),
             (96, b'app_dir_head', 0x4000, 0xff000, 0x81), (128, b'key_mac', 0x3000, 0x1000, 0x12),
             (128, b'other_record', 0xffff0, 0x20, 0x12), (128, b'isd_config.ini', 0x38d0, 16, 2),
-            (32, b'uboot.boot', 0x2000, 0x1000, 0), (32, b'uboot.boot', 0xa0, 0x3831, 0),
+            (32, b'uboot.boot', 0x2000, 0x1000, 0), (32, b'uboot.boot', 0xa0, 0x3f3d, 0),
             (32, b'uboot.bin', 0xa0, 0x3830, 0)):
         bad = bytearray(image)
         bad[slot:slot + 32] = file_record(name, address, length, attribute)
@@ -82,6 +84,15 @@ def boot_area_variants():
         bad = bytearray(image)
         bad[at] ^= 1
         yield bytes(bad)
+    # Only the chip-key record is kept: without a good one, nothing is written.
+    bad = bytearray(image)
+    bad[0x38d0] ^= 1
+    yield bytes(bad)
+    # FM-1 016's layout: accepted.
+    moved = bytearray(image)
+    moved[64:96] = file_record(b'isd_config.ini', 0x3938, 755, 2)
+    moved[0x3938:0x395a] = image[0x38d0:0x38f2]
+    yield bytes(moved)
 
 
 def staged_request(image, record_at, stream_at, stream):
@@ -133,7 +144,8 @@ for board, container in containers.items():
         assert host('install', image, container) == expected
         if expected is not None:
             accepted.append(i)
-    assert accepted == [0, 7]  # the unit image, and one with a bank-info record at FF000
+    # the unit image, one with a bank-info record at FF000, and FM-1 016's layout
+    assert accepted == [0, 7, len(list(boot_area_variants())) - 1]
     # The installer retires the flash copy of its own request, and only that.
     image = next(boot_area_variants())
     staged = staged_request(image, 0xe7f00, 0xe3000, stream)

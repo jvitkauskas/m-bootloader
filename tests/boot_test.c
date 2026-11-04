@@ -940,10 +940,9 @@ static void t_config_and_flash(void)
     CHECK(sim_p33_get(9) == 0xab && sim_p33_get(6) == 0xfb && sim_p33_get(5) == 4);
     CHECK(sim.now < 700000);
     t_prep(t_own_fixture());
+    /* The configuration is not read: a damaged one changes nothing. */
     sim_nor[0x38d0+100] ^= 1;
-    sim.limit = 2500000;
-    CHECK(t_go() == END_TIMEOUT && !t_app_calls);
-    CHECK(t_row_is(2, "BAD CONFIG"));
+    CHECK(t_go() == END_APP && t_app_calls);
     t_prep(t_own_fixture());
     uint8_t record[32];
     memcpy(record, sim_nor+0x40, 32);
@@ -952,8 +951,7 @@ static void t_config_and_flash(void)
     core_put_le16(record, core_crc16(0, record+2, 30));
     core_enc(0xffff, record, 32);
     memcpy(sim_nor+0x40, record, 32);
-    sim.limit = 2500000;
-    CHECK(t_go() == END_TIMEOUT && t_row_is(2, "BAD CONFIG"));
+    CHECK(t_go() == END_APP && t_app_calls);
     t_prep(t_own_fixture());
     sim.bad_quad = 1;
     CHECK(t_go() == END_APP);
@@ -1073,12 +1071,14 @@ static void t_public_recovery(void)
     CHECK(t_go() == END_RESET && t_usb_reset());
     CHECK(!sim.ncmd && !t_app_calls && !t_update_calls);
     t_prep(4);
+    /* The FM-1 sets I/O code 4, keeping the other bits; the SMK-37 leaves it alone. */
+    sim_p33_set(5, 0xc1);
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
+    CHECK(sim_p33_get(5) == (SMK ? 0xc1:0xc4));
     CHECK(!t_app_calls && !t_update_calls && !t_resets && !nor_nlog);
     CHECK(t_row_is(0, SMK ? "SMK-37 M-BOOTLOADER":"FM-1 M-BOOTLOADER"));
     CHECK(t_row_is(1, "1.0-ABCDEF0-DIRTY"));
-    CHECK(t_row_is(2, "BAD CONFIG"));
     CHECK(t_row_is(3, "APP NOT FOUND"));
     CHECK(t_row_is(8, "> DOWNLOAD MODE"));
 }

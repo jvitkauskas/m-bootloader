@@ -36,9 +36,8 @@ struct core_config {
     uint8_t width, spi_divider, read_mode, hsb_divider, lsb_divider;
     uint8_t oscillator_tag, high_current, one_pin, reset_pin, reset_level, reset_hold;
 };
-/* Explicit board recovery profile; parse replaces it only on complete success. */
+/* The values every known configuration has. */
 void core_config_defaults(struct core_config *c);
-bool core_config_parse(struct core_config *c, const uint8_t *blob, uint32_t size);
 bool core_chipkey(const uint8_t prefix[34], uint16_t *key);
 struct core_record {
     uint32_t address, length;
@@ -103,6 +102,10 @@ bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan,
  * as core_request_scan) whose staged stream ends at stream_end. */
 unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end);
 #define CORE_BOOT_AREA 0x4000u
+/* The chip-key record of the configuration: firmware installers read it (§5.3). */
+#define CORE_CONFIG_SIZE 34u
+#define CORE_CONFIG_AT 0x3fdcu
+#define CORE_BOOT_MAX (CORE_CONFIG_AT - 0xa0u)
 /* Rewrites a stored boot area to hold container as its bootloader, keeping
  * the flash header and every other record (§11.2); false leaves it as found. */
 bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity);
