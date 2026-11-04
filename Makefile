@@ -7,11 +7,13 @@ export TOOLCHAIN ?= toolchain
 CLANG := $(TOOLCHAIN)/bin/clang
 LINK := $(TOOLCHAIN)/bin/ld.lld
 OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
+# Upkr 0.2.3 (see README), at UPKR=<path> or on the PATH.
+export UPKR ?= upkr
 HOSTCC ?= cc
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
 COMMON := core platform display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
-STAGE0 := stage0 board platform runtime
+STAGE0 := stage0 upkr board platform runtime
 STAGE1 := core platform display runtime contract boot sdboot
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
@@ -59,8 +61,11 @@ build/$(1)/stage1.elf: $$(addprefix build/$(1)/s1/,$$(addsuffix .o,$$(STAGE1))) 
 	$(LINK) --plugin-opt=O3 --relax --gc-sections --just-symbols=build/$(1)/stage0.elf -T build/$(1)/stage1.ld -Map build/$(1)/stage1.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage1.bin: build/$(1)/stage1.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
-build/$(1)/payload.bin: build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin tools/check_build.py tools/join_stages.py
-	python3 tools/join_stages.py build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin $$@ > build/$(1)/size.json
+build/$(1)/stage1.pack: build/$(1)/stage1.bin build/upkr-test tools/pack_stage1.py
+	python3 tools/pack_stage1.py $$< $$@
+	./build/upkr-test $$@ $$<
+build/$(1)/payload.bin: build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin build/$(1)/stage1.pack tools/check_build.py tools/join_stages.py
+	python3 tools/join_stages.py build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin build/$(1)/stage1.pack $$@ > build/$(1)/size.json
 build/$(1)/uboot.boot: build/$(1)/payload.bin tools/bankcb.py
 	python3 tools/bankcb.py wrap $(1) $$< $$@
 # The installer: a staged updater carrying this uboot.boot (src/installer.c).
@@ -100,6 +105,9 @@ $(eval $(call LOADER_template,b,0x1c28000,0x1c30000))
 
 build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) tools/manifest.py
 	python3 tools/manifest.py > $@
+build/upkr-test: src/upkr.c tests/upkr_test.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tests/upkr_test.c -o $@
 build/core-test: src/core.c tests/core_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c99 -O2 -g -Wall -Wextra -Werror -Iinclude src/core.c tests/core_test.c -o $@
@@ -132,7 +140,7 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
+test: all build/upkr-test build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
@@ -160,6 +168,9 @@ sanitize:
 	./build/platform-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/core.c tests/sdboot_test.c -o build/sdboot-test-sanitize
 	./build/sdboot-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/upkr.c tests/upkr_test.c -o build/upkr-test-sanitize
+	./build/upkr-test-sanitize build/fm1/stage1.pack build/fm1/stage1.bin
+	./build/upkr-test-sanitize build/smk37/stage1.pack build/smk37/stage1.bin
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_test.c -o build/boot-test-fm1-sanitize
 	./build/boot-test-fm1-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_test.c -o build/boot-test-smk37-sanitize

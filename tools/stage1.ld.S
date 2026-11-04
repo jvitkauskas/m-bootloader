@@ -18,5 +18,4 @@ SECTIONS {
     __ram_end = .;
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) *(.llvm_addrsig) }
     ASSERT(__ram_end <= __stage0_limit, "stage 1 runs into stage 0's data")
-    ASSERT(__payload_end - 0x1c02000 <= 0x3f2c, "boot payload would reach the configuration")
 }

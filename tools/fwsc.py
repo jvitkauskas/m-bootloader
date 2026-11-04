@@ -170,16 +170,19 @@ def file_record(name, address, data):
 
 def updater_stream(code):
     """A staged updater as ota.bin carries it (§6.3): file record, compression
-    header, then LZ4 blocks of 4 KiB output, each at most 4 KiB compressed."""
+    header, then LZ4 blocks of 4 KiB output, or less where the data won't compress
+    (the bootloader it carries is packed already), each at most 4 KiB compressed."""
     if not code or len(code) > UPDATER_MAX:
         raise ValueError('installer exceeds the stock updater size')
-    blocks = b''
-    for at in range(0, len(code), 0x1000):
-        part = code[at:at + 0x1000]
-        packed = lz4_block(part)
-        if len(packed) > 0x1000:
-            raise ValueError('installer block does not compress to 4 KiB')
-        blocks += struct.pack('<II', len(packed), len(part)) + packed
+    blocks, at = b'', 0
+    while at < len(code):
+        size = 0x1000
+        packed = lz4_block(code[at:at + size])
+        while len(packed) > 0x1000:
+            size -= 0x100
+            packed = lz4_block(code[at:at + size])
+        blocks += struct.pack('<II', len(packed), len(code[at:at + size])) + packed
+        at += size
     head = bytearray(32)
     struct.pack_into('<HIII', head, 2, crc16(code), len(code), UPDATER_LOAD, 0)
     head[16:32] = UPDATER_NAME.ljust(16, b'\0')

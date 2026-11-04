@@ -287,6 +287,18 @@ The bootloader is two separately linked images, joined into one payload. **Stage
 * Stage 0's data sits in up to 256 bytes below the stacks, and the 5,120 bytes of stacks at the top of the bootloader's RAM, so neither moves with stage 1. Stage 1 clears only its own `.bss`.
 * `size.json` gives `stage0_code_sha256`, which skips the version at payload `+0x50`, to show when stage 0's code has changed.
 
+**Stage 1 is stored packed.** After the recovery key, stage 0 copies the pack to `0x01C0A800`, which is free until a staged updater is loaded, and unpacks it to `stage1_entry`, using `STAGE1_PROBS` bytes of RAM above the copy. Stage 1 still links and runs at `stage1_entry`. Any failure, including a wrong CRC, goes to download mode (§4.2). The container's CRC already covers the pack, so this catches a bad build rather than bad flash.
+
+| Offset | Size | Field |
+|---|---:|---|
+| 0 | 2 | Bytes of Upkr stream, little endian |
+| 2 | 2 | Bytes of stage 1 |
+| 4 | 2 | `core_crc16` of stage 1 |
+| 6 | 2 | Zero |
+| 8 | | Upkr stream, with `-9 -p 2` |
+
+Before packing, the call filter makes relative calls absolute, so that repeated calls to one function look alike. It scans at even offsets for `BF EA`, adds half the offset to the next 16-bit value, and continues 4 bytes on, or 2 if there was no match. The build unpacks every pack with the same C on the host and fails unless stage 1 comes back identical.
+
 ## 5. Flash formats, encryption and layout
 
 ### 5.1 Checksum and cipher algorithms
@@ -544,7 +556,7 @@ At the request's absolute updater address, read an ordinary 32-byte outer file r
 | 12 | 4 | Argument field in file, **replaced** at execution with absolute stream end. |
 | 16 | 16 | Descriptive name. |
 
-Blocks begin at stream +64. Each is `[compressed length u32 LE][output length u32 LE][raw LZ4 bytes]`. Each compressed block must fit a 4096-byte input staging limit; output length must be nonzero. The decoder carries prior contiguous output as LZ4 history, so treating every block as an independent LZ4 stream is wrong. There is no standard LZ4 frame header or per-block frame checksum. The final produced byte count and CRC MUST match the compression header before execution.
+Blocks begin at stream +64. Each is `[compressed length u32 LE][output length u32 LE][raw LZ4 bytes]`. Each compressed block must fit a 4096-byte input staging limit; output length must be nonzero. M-VAVE's blocks have 4 KiB of output except the last. Ours have less where the data doesn't compress, as the packed stage 1 in the installer doesn't. The decoder carries prior contiguous output as LZ4 history, so treating every block as an independent LZ4 stream is wrong. There is no standard LZ4 frame header or per-block frame checksum. The final produced byte count and CRC MUST match the compression header before execution.
 
 Decoder contract: each token's upper nibble is literal length, with extended bytes adding until one is <255 when the nibble is 15. Copy those literal bytes. If input remains, read a nonzero little-endian 16-bit backward distance, then match length is low nibble +4, extending similarly when the nibble is 15. Copy the match with overlap semantics from already produced output, including preceding blocks. Retain up to 64 KiB history, or use the still-contiguous complete output. Bound all reads, writes, length additions and backreferences. Last input is a literal tail; reject malformed/truncated blocks. No vendor-specific decoder over-copy behavior is required.
 

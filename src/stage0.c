@@ -4,6 +4,7 @@
 #include "stage0.h"
 #include "board.h"
 #include "platform.h"
+#include "upkr.h"
 #include <string.h>
 #ifdef BOARD_SMK
 #define SMK true
@@ -13,8 +14,11 @@
 #ifdef BOOT_SIM
 #define stage1_entry boot_main
 #else
-extern uint8_t __stage0_bss_start[], __stage0_bss_end[];
+extern uint8_t __stage0_bss_start[], __stage0_bss_end[], __stage0_limit[];
 void stage1_entry(const uint32_t *device);
+/* Free RAM above the bootloader's, until a staged updater is loaded there. */
+#define SCRATCH ((uint8_t *)(uintptr_t)0x01c0a800)
+#define SCRATCH_PACK 0x3f2cu
 #endif
 
 void rom_download(void) {
@@ -41,6 +45,18 @@ __attribute__((noinline)) bool apply_config(void) {
     return hal_clock_a();
 }
 
+#ifndef BOOT_SIM
+/* The pack lies where stage 1 runs, so it moves out of the way first. */
+static bool unpack_stage1(void) {
+    uint8_t *to = (uint8_t *)(uintptr_t)stage1_entry;
+    uint32_t size = STAGE1_HEADER+(to[0] | (uint32_t)to[1] << 8);
+    if (size > SCRATCH_PACK)
+        return false;
+    memcpy(SCRATCH, to, size);
+    return stage1_unpack(to, (uint32_t)(__stage0_limit-to), SCRATCH, size, SCRATCH+SCRATCH_PACK);
+}
+
+#endif
 void stage0_main(const uint32_t *device) {
 #ifndef BOOT_SIM
     memset(__stage0_bss_start, 0, (size_t)(__stage0_bss_end-__stage0_bss_start));
@@ -53,5 +69,9 @@ void stage0_main(const uint32_t *device) {
     board_init(SMK);
     if (board_hold(KEY_RECOVERY, 1000))
         rom_download();
+#ifndef BOOT_SIM
+    if (!unpack_stage1())
+        rom_download();
+#endif
     stage1_entry(device);
 }
