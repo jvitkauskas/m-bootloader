@@ -139,6 +139,6 @@ for slot, base, limit in (('a', 0x1c20000, 0x1c28000), ('b', 0x1c28000, 0x1c3000
     inspect(Path(f'build/loader-{slot}/loader.elf'), binary, base, limit, 'loader_entry')
     raw = binary.read_bytes()
     marker = raw.find(b'MFLR')
-    assert marker >= 0 and raw[marker:marker+7] == b'MFLR1.2'
+    assert marker >= 0 and raw[marker:marker+7] == b'MFLR1.3'
 print('PASS: containers, ELF/RAM limits, loader version markers, synthetic install safety '
       f'and {2 * len(fixture_images)} private-fixture install round trips')

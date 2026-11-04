@@ -256,7 +256,7 @@ static void test_identity(void)
         0xfc, 0x14, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     };
     static const uint8_t identity[16] = {
-        0xfc, 0x40, 'M', 'F', 'L', 'R', '1', '.', '2', 0, 1, 0xc2, 0, 0, 15, 96
+        0xfc, 0x40, 'M', 'F', 'L', 'R', '1', '.', '3', 0, 1, 0xc2, 0, 0, 15, 96
     };
     reply(0xfc09);
     expected_reply(key);

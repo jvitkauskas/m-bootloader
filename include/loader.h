@@ -2,7 +2,7 @@
 #ifndef MB_LOADER_H
 #define MB_LOADER_H
 #include "core.h"
-#define LOADER_VERSION "1.2"
+#define LOADER_VERSION "1.3"
 struct loader_services {
     struct core_nor nor;
     int (*send)(const void *, uint32_t);

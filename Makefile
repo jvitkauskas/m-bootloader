@@ -25,7 +25,7 @@ C_PRODUCTS := build/fm1/uboot.fwsc build/smk37/uboot-pro.fwsc build/smk37/uboot-
 all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) build/manifest.json
 
 # Refresh on every invocation; unchanged versions keep the header's mtime.
-# Only A's entry includes this header. B remains the hardware-tested MFLR1.2.
+# Only A's entry includes this header. B remains the hardware-tested MFLR1.3.
 build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
