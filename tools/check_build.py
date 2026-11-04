@@ -32,7 +32,7 @@ def check_startup(instructions, symbols, base):
     if (len(after) < 5 or not load(after[0], symbols['__exception_stack_top'])
             or plain(after[1]) != 'ssp = r1' or not load(after[2], symbols['__main_stack_top'])
             or plain(after[3]) != 'sp = r1' or not plain(after[4]).startswith('goto ')
-            or not re.search(r'<boot_main(?:\s|[>:])', after[4])):
+            or not re.search(r'<stage0_main(?:\s|[>:])', after[4])):
         raise ValueError('§4.1: wrong stack setup or C continuation after rti')
 
 

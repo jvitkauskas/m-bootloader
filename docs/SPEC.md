@@ -278,6 +278,15 @@ The USB_KEY dongle can force the mask ROM into download mode even when the bootl
 
 Known working wiring: Pico GP2 → D+, GP3 → D−, common ground, 2.2 kΩ pull-ups from 3.3 V to each signal, no breakout VBUS connection; the SMK runs on its battery. This recovery procedure works on SMK-37 Pro. The electrical timing tolerance is not established. A broken bootloader cannot provide its own key; the dongle remains the way back during testing.
 
+### 4.4 The bootloader's two stages
+
+The bootloader is two separately linked images, joined into one payload. **Stage 0** is the ROM entry and everything needed to reach download mode from the keys: the identity, power and clock setup (§3.2), the key scan, the held recovery key (§8.2) and the §4.2 reset. **Stage 1** is everything else, and starts at the first byte after stage 0.
+
+* Stage 0 is linked alone, so a reference to stage 1 is a link error. It MUST NOT depend on stage 1, the flash, the screen or the firmware. Its one way into stage 1 is the jump to `stage1_entry`, after the recovery key has been checked.
+* Stage 1 calls stage 0's functions through the linker's `--just-symbols`. Neither stage inlines into the other, which costs 400–600 bytes.
+* Stage 0's data sits in up to 256 bytes below the stacks, and the 5,120 bytes of stacks at the top of the bootloader's RAM, so neither moves with stage 1. Stage 1 clears only its own `.bss`.
+* `size.json` gives `stage0_code_sha256`, which skips the version at payload `+0x50`, to show when stage 0's code has changed.
+
 ## 5. Flash formats, encryption and layout
 
 ### 5.1 Checksum and cipher algorithms

@@ -71,6 +71,10 @@ M-Flasher instead.
 any bootloader: 016 overwrites the presets once it runs, and official updates do
 not restore them. Only a backup with the original area does.
 
+**Baud Girl overwrites the SMK-37's stock presets.** Stock firmware installed
+afterwards has none, with any bootloader, until a backup with the original area
+is restored. Back up before installing it.
+
 **Not tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
 (`0x856014`). One such unit did not start after m-bootloader was installed, and
@@ -160,7 +164,8 @@ repository, and the tests skip them when absent.
 
 | Path | What |
 |---|---|
-| `src/startup.S`, `src/boot.c` | entry, start-up decisions, menu |
+| `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
+| `src/boot.c` | stage 1: start-up decisions, menu |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |

@@ -217,8 +217,8 @@ static int t_go(void)
 {
     int end = setjmp(t_escape);
     if (!end) {
-        boot_main(t_device);
-        assert(!"boot_main returned");
+        stage0_main(t_device);
+        assert(!"stage0_main returned");
     }
     CHECK(!sim.err);
     if (sim.err)
