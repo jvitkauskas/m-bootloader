@@ -1,6 +1,6 @@
 # M-VAVE firmware and one unit's data: never commit (docs/SPEC.md §0.3)
 /testdata/
-# Downloaded JieLi toolchain (see README for verification)
+# Downloaded toolchain (see README for verification)
 /toolchain/
 # build output
 /build/

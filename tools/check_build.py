@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import struct
@@ -37,7 +38,8 @@ def check_startup(instructions, symbols, base):
 
 def inspect_startup(path, symbols, base):
     # Only disassemble this independently built ELF, never a reference binary.
-    listing = subprocess.check_output(['toolchain/common/bin/objdump', '-d', str(path)], text=True)
+    objdump = Path(os.environ.get('TOOLCHAIN', 'toolchain'), 'bin', 'llvm-objdump')
+    listing = subprocess.check_output([objdump, '-d', str(path)], text=True)
     instructions = []
     for line in listing.splitlines():
         match = re.match(r'^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2}\s+)+(.+?)\s*$', line)
