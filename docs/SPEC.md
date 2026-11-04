@@ -365,7 +365,7 @@ At blob offsets 0…31 is an encoded chip-key record; +32 is its little-endian C
 
 Starting at +34, each record consists of one **value length byte**, a NUL-terminated ASCII key name, then exactly that many raw value bytes. The length excludes key and NUL. A length byte 0 or FF ends records; exact exhaustion of the descriptor length after a complete record is also valid. The stock 699-byte blobs contain 39 records ending exactly at byte 699, with no terminator byte. Numeric values are little-endian four-byte integers. Strings need not contain a trailing NUL within their value. The bootloader MUST parse within the descriptor length, reject missing NUL/truncated values/oversized destinations, and terminate its own string copies (parser bounds are policy). A blob larger than 4096 bytes is unsupported; recover safely. Unknown keys MAY be ignored. The configuration file entry's data CRC, where checked, covers these plain blob bytes.
 
-The keys `PORT_INPUT`, `PORT_OUTPUT`, `ERR_PORT_OUTPUT`, `BOOT_DELAY`, `UTRX`, `UTTX`, `DVDD`, `VDDIO` and `DCDC14` are **not supported** by the bootloader: the devices' configuration never contains them. The bootloader SHOULD NOT contain code for them. If one appears in a configuration, it is ignored (no pins driven, no latching before reset, no delay); it MUST NOT make the configuration invalid. Their stock meaning is listed below for reference.
+The keys `PORT_INPUT`, `PORT_OUTPUT`, `ERR_PORT_OUTPUT`, `BOOT_DELAY`, `UTRX`, `UTTX`, `DVDD`, `VDDIO` and `DCDC14` are **not supported** by the bootloader: the devices' configuration contains none of them except the three voltage keys in FM-1 016's. The bootloader SHOULD NOT contain code for them. If one appears in a configuration, it is ignored (no pins driven, no latching before reset, no delay); it MUST NOT make the configuration invalid. Their stock meaning is listed below for reference.
 
 Runtime keys and stock values:
 
@@ -376,7 +376,7 @@ Runtime keys and stock values:
 | `OSC_FREQ` | 24,000,000 | MUST establish correct timing. |
 | `OSC_HC_EN` | 0 | Optional oscillator drive setting; unused in 24 MHz path. |
 | `OSC_1PIN_EN` | 0 | Stored in handoff metadata; no identified hardware effect. |
-| `SYS_CLK` | 360,000,000 | MUST support this system frequency. |
+| `SYS_CLK` | 360,000,000; FM-1 016's stock configuration has 320,000,000 | MUST accept both and run at 360 MHz, reporting that to the application (§3.2): the bootloader's clock does not follow this key. Any other value is a bad configuration. |
 | `HSB_DIV`, `LSB_DIV` | 1, 2 | Encoded divisor minus one. |
 | `RESET` | Nine bytes `PB01_08_0` | Pin PB1, configured hold time 8 seconds, active level 0. Parsed and reported in updater metadata (§6.4). No long-press reset controller programming from this key is established. |
 | `BOOT_DELAY` | Absent | Not supported; ignored. Stock: optional startup delay, nominally milliseconds, uncalibrated before clock setup. |
@@ -384,10 +384,10 @@ Runtime keys and stock values:
 | `PORT_OUTPUT` | Absent | Not supported; ignored. Stock: optional `PXnn_v`, or H/L followed by two-hex-digit `(port×16 + pin)` codes, with subsequent H/L groups allowed. Also used for reset latching (§3.1). |
 | `ERR_PORT_OUTPUT` | Absent | Not supported; ignored. Stock: optional `PXnn_LTd`: output level L, toggle flag T, hex half-period d in 50 ms units (zero means 50 ms); the stock parser drives the pin low when parsing. Belongs to the excluded fatal-memory-error feature. |
 | `UTRX` | Absent | Not supported; ignored. Stock: optional updater metadata RX pin string. |
-| `DVDD`, `DCDC14`, `VDDIO` | Absent | Not supported; ignored. Stock: optional voltage selectors of §3.1; zero treated as unset. |
+| `DVDD`, `DCDC14`, `VDDIO` | Absent; FM-1 016: 11, 3, 4 | Not supported; ignored. Stock: optional voltage selectors of §3.1; zero treated as unset. |
 | `ENABLE_SDRAM` | 0 | MUST remain no external RAM. Nonzero unsupported on these boards. |
 | `SDRAM_*` | Present but unused | Ignore because external RAM is excluded; do not initialize nonexistent RAM. |
-| `UTBD`, `VLVD`, `UPDATE_JUMP` | 1,000,000; 4; 0 | Present but not queried by the stock non-debug boot flow. They impose no UART/brownout/jump behavior. |
+| `UTBD`, `VLVD`, `UPDATE_JUMP` | 1,000,000; 4; 0 (FM-1 016 has only `UPDATE_JUMP`) | Present but not queried by the stock non-debug boot flow. They impose no UART/brownout/jump behavior. |
 | `UTTX` | Absent | Not supported; ignored. Not read by the stock non-debug flow; TX metadata stays empty. |
 
 For an otherwise readable configuration with a missing SPI record, the stock flow chooses dual width, divider 3 and output-read mode. This fallback does not prove that arbitrary missing clock records are safe; the whole chosen recovery profile must be validated.

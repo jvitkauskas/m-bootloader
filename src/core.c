@@ -303,7 +303,10 @@ bool core_config_parse(struct core_config *c, const uint8_t *blob, uint32_t size
                 found |= 2;
                 break;
             case K_SYS:
-                parsed.system_hz = value;
+                /* FM-1 016's configuration says 320 MHz. We always run 360 MHz (§3.2)
+                 * and tell the application so: system_hz stays at its default. */
+                if (value != 360000000 && value != 320000000)
+                    return false;
                 found |= 4;
                 break;
             case K_HSB:
@@ -323,7 +326,7 @@ bool core_config_parse(struct core_config *c, const uint8_t *blob, uint32_t size
             }
         }
     }
-    if (found != 31 || parsed.oscillator_hz != 24000000 || parsed.system_hz != 360000000)
+    if (found != 31 || parsed.oscillator_hz != 24000000)
         return false;
     *c = parsed;
     return true;
