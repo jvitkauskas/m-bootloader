@@ -30,7 +30,7 @@ def stage0_code_hash(stage0):
     return hashlib.sha256(stage0[:0x50]+bytes(32)+stage0[0x70:]).hexdigest()
 
 
-def join(stage0_elf, stage0_raw, stage1_elf, stage1_raw, out):
+def join(stage0_elf, stage0_raw, stage1_elf, stage1_raw, stage1_pack, out):
     first = inspect(Path(stage0_elf), Path(stage0_raw), BASE, LIMIT, 'boot_entry', True)
     origin = symbol(stage0_elf, 'stage1_entry')
     if origin != BASE+first['payload_bytes']:
@@ -38,14 +38,14 @@ def join(stage0_elf, stage0_raw, stage1_elf, stage1_raw, out):
     second = inspect(Path(stage1_elf), Path(stage1_raw), origin, LIMIT, 'boot_main')
     if symbol(stage1_elf, '__ram_end') > symbol(stage0_elf, '__stage0_limit'):
         raise ValueError('stage 1 runs into stage 0\'s data')
-    payload = Path(stage0_raw).read_bytes()+Path(stage1_raw).read_bytes()
+    payload = Path(stage0_raw).read_bytes()+Path(stage1_pack).read_bytes()
     if len(payload) > 0x3f2c or payload[0x40:0x48] != b'AC79BLID':
         raise ValueError('boot slot/identity violation')
     Path(out).write_bytes(payload)
     return {'payload_bytes': len(payload), 'private_ram_bytes': second['private_ram_bytes']+origin-BASE,
             'entry': first['entry'], 'sha256': hashlib.sha256(payload).hexdigest(),
             'stage0_bytes': first['payload_bytes'], 'stage0_code_sha256': stage0_code_hash(payload[:first['payload_bytes']]),
-            'stage1_bytes': second['payload_bytes']}
+            'stage1_bytes': second['payload_bytes'], 'stage1_packed_bytes': len(payload)-first['payload_bytes']}
 
 
 def main():
@@ -54,9 +54,10 @@ def main():
     parser.add_argument('stage0_raw')
     parser.add_argument('stage1_elf')
     parser.add_argument('stage1_raw')
+    parser.add_argument('stage1_pack')
     parser.add_argument('out')
     args = parser.parse_args()
-    print(json.dumps(join(args.stage0_elf, args.stage0_raw, args.stage1_elf, args.stage1_raw, args.out), sort_keys=True))
+    print(json.dumps(join(args.stage0_elf, args.stage0_raw, args.stage1_elf, args.stage1_raw, args.stage1_pack, args.out), sort_keys=True))
 
 
 if __name__ == '__main__':

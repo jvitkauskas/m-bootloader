@@ -128,7 +128,7 @@ skips the model and version checks.
 
 ## Build
 
-You need Python 3, GNU Make and a C compiler, and the
+You need Python 3, GNU Make, Rust and a C compiler, and the
 [pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release
 `pi32v2-23.1.5-2`. Nothing from JieLi is needed. On Linux x86-64:
 
@@ -136,10 +136,11 @@ You need Python 3, GNU Make and a C compiler, and the
 curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.5-2/pi32v2-llvm-23.1.5-2-linux-x64.tar.xz
 echo 'cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990  toolchain.tar.xz' | sha256sum -c
 mkdir toolchain && tar -xJf toolchain.tar.xz -C toolchain --strip-components=1
+cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 upkr
 make
 ```
 
-The release also has packages for Linux arm64 and macOS, with their checksums in
+Upkr is the packer that stores stage 1. `make UPKR=<path>` uses one installed elsewhere. The release also has packages for Linux arm64 and macOS, with their checksums in
 `SHA256SUMS`. `make TOOLCHAIN=<directory>` uses a toolchain unpacked elsewhere.
 
 | Output | What |
