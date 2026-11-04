@@ -24,6 +24,11 @@ run with it.
   - **Wipe user data**: erase the settings areas the firmware declares, and
     nothing else. The menu lists the exact ranges, and you hold the key for
     3 s to confirm.
+- **SD card (FM-1).** With an [m-card](https://github.com/jvitkauskas/m-card)
+  board and a FAT32 card fitted, the menu gets an **SD card** item at the top.
+  It loads and runs `/MBOOT/MENU.BIN` from the card, which can be any program
+  built for it ([docs/SPEC.md](docs/SPEC.md) §11.5). The card is only touched
+  when the menu is open. This is new and not yet tested on real hardware.
 - **Checked start.** Every firmware file's checksum is verified before the
   firmware starts.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
@@ -160,6 +165,7 @@ repository, and the tests skip them when absent.
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
 | `src/loader.c`, `src/loader_target.c` | the flash loader |
+| `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
 | `tools/` | container and M-UPGRADE package packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |

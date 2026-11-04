@@ -970,6 +970,25 @@ The stock expected chip key is 980F; the host logs unexpected keys and refuses a
 
 Factory-data policy is host-owned: the FM-1 factory range is the last sector; SMK adds C1000…C1FFF. For a backup known by UID to be another unit's, the host preserves current factory ranges; a matching UID can restore all flash. If UID metadata is missing, it uses a weaker heuristic based on factory-data equality or currently blank data. This is not proof of provenance. SMK presets/wheel storage is not in the host's fixed factory-range list even though it holds unit values; this specification does not imply otherwise. The bootloader's guard and menu do not replace the host's full backup.
 
+### 11.5 SD card stage 2 (FM-1)
+
+The FM-1 has no card slot. The m-card board (github.com/jvitkauskas/m-card) puts a microSD card on the panel's SPI1, in SPI mode: CLK PC9, card DI PC10, card DO PC8 (the panel's D/C, through 220 ohms), and card CS = NOT PC7 (an inverter on the panel's CS), so the card is selected while PC7 is high and the panel while it is low. There is no card-detect line. The SMK-37 has none of this, so its menu has no such item.
+
+The bootloader touches the card only while the menu is open, never on a normal start. Opening the menu tries to start the card, and if it answers the menu shows `SD CARD` as its first item, selected. A session first sends the panel a NOP, so that what is clocked afterwards with the card deselected is ignored, then makes PC8 SPI1's DI, at about 400 kHz until the card has started and LSB/4 afterwards. Choosing the item starts the card again and loads the image; a failure is shown in the menu, which stays usable.
+
+The image is `/MBOOT/MENU.BIN` on a FAT32 volume with 512-byte sectors, either in the MBR's first partition or with no partition table. Both names are matched as 8.3 names, so the folder and file are found whichever case the host wrote them in. The bootloader doesn't write to the card.
+
+The image is a flat binary:
+
+* linked for `0x01C28000`, with its entry at its first byte; it and its RAM stay below `0x01C30000`;
+* at most `0x8000` bytes, and at least 16;
+* ending in an 8-byte trailer: `STG2`, the CRC16 of `core_crc16` over everything before the trailer (little endian), and two zero bytes.
+
+The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, PC8 an output again, and SPI1 as the panel uses it. There is no other contract, and the image starts the card itself. It may then:
+
+* **return,** which means "carry on": the bootloader sets up the flash interface again and returns to the menu. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
+* **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
+
 ## 12. Testing
 
 Real flash images of units can be used as test fixtures, but they are not published because they contain M-VAVE's firmware and the unit's own calibration. Use only their structural/checksum results in distributable tests; never ship one unit's factory data to other units. Tests of parsers, the image wrapper and state logic SHOULD use such real images and synthetic malformed inputs, through a simulated flash adapter or a host build.
