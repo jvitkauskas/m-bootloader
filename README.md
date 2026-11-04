@@ -17,7 +17,7 @@ run with it.
   ready for M-Flasher.
 - **MIDI mode (FM-1).** Reinstall firmware from a browser installer over USB
   MIDI, including from a phone, with no computer and no firmware running. It's
-  in the menu, and starts by itself when there's no valid firmware
+  in the recovery menu, which also opens by itself when there's no valid firmware
   ([specification §11.6](docs/SPEC.md#116-midi-mode-fm-1)). The unit reads the
   package twice, to check it and then to write it, so an installer's progress
   bar fills about twice as fast as the unit's. Wait for the unit.

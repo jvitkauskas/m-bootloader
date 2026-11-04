@@ -1012,7 +1012,7 @@ The bootloader calls the entry using the C calling convention with one argument,
 
 ### 11.6 MIDI mode (FM-1)
 
-MIDI mode installs firmware over USB MIDI, so that a browser installer on a phone can do what M-Flasher does from a computer. It's a menu item below `DOWNLOAD MODE`, and it also starts by itself at power-on when no firmware is valid and the menu key isn't held. PLAY leaves it while nothing has been written. The SMK-37 doesn't have it yet.
+MIDI mode installs firmware over USB MIDI, so that a browser installer on a phone can do what M-Flasher does from a computer. It's a menu item below `DOWNLOAD MODE`, so with no valid firmware it's one key press from the menu that opens by itself. PLAY leaves it while nothing has been written. The SMK-37 doesn't have it yet.
 
 It's a class-compliant USB-MIDI device, `FM-1 Update`, 1209:0002, on USB0, polled with interrupts off. Receive buffers need 4 bytes more than the packet size, as the controller's DMA writes past a full packet. Accesses to the controller's registers through `0x11804` have to be spaced apart: a few cycles between them made it babble on IN, and the host then disabled the port, on about a third of transmits. It answers the M-UPGRADE update protocol the way firmware update loaders do, as `ota-FM-1_900`, which browser installers look for.
 

@@ -517,19 +517,8 @@ __attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
         reason = "TRIM ERROR";
     bool need_menu = want_menu || !flash_ok || guarded == CORE_GUARD_ERROR;
     bool updates_done = false;
-#ifdef MIDI_MODE
-    bool midi_tried = false;
-#endif
     for (; ; ) {
         if (need_menu) {
-#ifdef MIDI_MODE
-            /* No valid firmware, and nobody asked for the menu: someone may only have a phone. */
-            if (!want_menu && !midi_tried && app.state != CORE_APP_OK) {
-                midi_tried = true;
-                screen();
-                midi_mode();
-            }
-#endif
             bypass = menu() || bypass;
             need_menu = false;
         }
