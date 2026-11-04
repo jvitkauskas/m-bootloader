@@ -22,7 +22,23 @@ enum {
 };
 static unsigned t_checks, t_failures, t_cases;
 static jmp_buf t_escape;
-static unsigned t_app_calls, t_update_calls, t_resets;
+static unsigned t_app_calls, t_update_calls, t_resets, t_sd_calls;
+static bool t_sd_card;
+static const char *t_sd_result;
+
+/* The card is on the panel's bus, which the simulated chip doesn't model; these stand in for src/sdboot.c. */
+bool sd_probe(unsigned lsb_mhz)
+{
+    (void)lsb_mhz;
+    return t_sd_card;
+}
+
+const char *sd_stage2(unsigned lsb_mhz)
+{
+    (void)lsb_mhz;
+    ++t_sd_calls;
+    return t_sd_result;
+}
 static bool t_app_returns, t_update_returns;
 static bool t_bad_quad_on_return;
 static void (*t_update_hook)(void);
@@ -145,6 +161,9 @@ static void t_reset_boot_state(void)
     effective_width = 0;
     mounted = xip_attempted = screen_ready = false;
     reason = NULL;
+    t_sd_calls = 0;
+    t_sd_card = false;
+    t_sd_result = NULL;
 }
 
 static void t_prep(unsigned fixture)
@@ -1083,6 +1102,51 @@ static void t_public_recovery(void)
     CHECK(t_row_is(8, "> DOWNLOAD MODE"));
 }
 
+static void t_sd_menu(void)
+{
+    /* No card: no item. */
+    t_prep(4);
+    sim.limit = 2500000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(!t_sd_calls);
+    CHECK(t_row_is(8, "> DOWNLOAD MODE"));
+    /* A card puts it on top, selected; the SMK-37 has no card bus. */
+    t_prep(4);
+    t_sd_card = true;
+    sim.limit = 2500000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_row_is(8, SMK ? "> DOWNLOAD MODE":"> SD CARD"));
+    CHECK(t_row_is(9, SMK ? "":"  DOWNLOAD MODE"));
+    if (SMK)
+        return;
+    /* A failure shows in the menu, which stays usable. */
+    t_prep(4);
+    t_sd_card = true;
+    t_sd_result = "NO /MBOOT/MENU.BIN";
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_sd_calls == 1 && !t_resets);
+    CHECK(t_row_is(2, "NO /MBOOT/MENU.BIN"));
+    CHECK(t_row_is(8, "> SD CARD"));
+    /* Stage 2 returning comes back here too, with the old reason cleared. */
+    t_prep(4);
+    t_sd_card = true;
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_sd_calls == 1 && !t_resets);
+    CHECK(t_row_is(2, ""));
+    CHECK(t_row_is(8, "> SD CARD"));
+    /* Moving down still reaches the rest. */
+    t_prep(4);
+    t_sd_card = true;
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    CHECK(t_go() == END_RESET && t_usb_reset());
+    CHECK(!t_sd_calls);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -1108,6 +1172,7 @@ int main(void)
     puts(SMK ? "boot simulation: SMK-37":"boot simulation: FM-1");
     t_fm1_matrix_enable();
     t_public_recovery();
+    t_sd_menu();
     t_normal();
     if (t_fixture_present[t_own_fixture()]) {
         t_keys_and_menu();

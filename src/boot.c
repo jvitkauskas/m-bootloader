@@ -4,6 +4,7 @@
 #include "platform.h"
 #include "board.h"
 #include "display.h"
+#include "sdboot.h"
 #include <string.h>
 #define RETAINED ((uint8_t *)(uintptr_t)0x01c7fd80)
 #define YELLOW 0xffe0
@@ -227,11 +228,20 @@ __attribute__((noinline)) static bool menu(void) {
     core_request_scan(&nor.flash, header.alignment, work, &updates);
     struct core_wipe plan;
     bool can_wipe = core_wipe_plan(&nor.flash, &app, SMK, &plan);
+#ifndef BOARD_SMK
+    bool card = sd_probe(60);
+#endif
     unsigned selection = 0, last = 0, previous = 0, stable = 0;
     bool first_draw = true;
     for (; ; ) {
-        const char *actions[4];
-        unsigned types[4], count = 0;
+        const char *actions[5];
+        unsigned types[5], count = 0;
+#ifndef BOARD_SMK
+        if (card) {
+            actions[count] = "SD CARD";
+            types[count++] = 4;
+        }
+#endif
         if (app.state == CORE_APP_OK) {
             actions[count] = "BOOT APP";
             types[count++] = 0;
@@ -321,6 +331,18 @@ __attribute__((noinline)) static bool menu(void) {
         unsigned action = types[selection];
         if (action == 1)
             download_screen();
+#ifndef BOARD_SMK
+        if (action == 4) {
+            /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
+            reason = sd_stage2(60);
+            /* stage 2 reprograms the flash interface */
+            flash_init(effective_width, config.spi_divider);
+            clear_rows(0, 14);
+            release_select();
+            last = previous = stable = 0;
+            continue;
+        }
+#endif
         if (action == 2 || action == 3) {
             if (!confirm(action == 3, &plan)) {
                 release_select();
