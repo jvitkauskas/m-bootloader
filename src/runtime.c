@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include <stddef.h>
 #include <stdint.h>
+#ifndef STAGE1
 void *memcpy(void *d, const void *s, size_t n) {
     unsigned char *p = d;
     const unsigned char *q = s;
@@ -9,6 +10,8 @@ void *memcpy(void *d, const void *s, size_t n) {
     return d;
 }
 
+#endif
+#ifndef STAGE0
 void *memmove(void *d, const void *s, size_t n) {
     unsigned char *p = d;
     const unsigned char *q = s;
@@ -23,6 +26,8 @@ void *memmove(void *d, const void *s, size_t n) {
     return d;
 }
 
+#endif
+#ifndef STAGE1
 void *memset(void *d, int v, size_t n) {
     unsigned char *p = d;
     while (n--)
@@ -30,6 +35,8 @@ void *memset(void *d, int v, size_t n) {
     return d;
 }
 
+#endif
+#ifndef STAGE0
 int memcmp(const void *a, const void *b, size_t n) {
     const unsigned char *p = a, *q = b;
     while (n--) {
@@ -48,6 +55,8 @@ size_t strlen(const char *s) {
     return n;
 }
 
+#endif
+#ifndef STAGE1
 /* Unsigned restoring division: no vendor compiler-runtime dependency. */
 uint32_t __udivsi3(uint32_t a, uint32_t b) {
     uint32_t q = 0, r = 0;
@@ -68,6 +77,11 @@ uint32_t __umodsi3(uint32_t a, uint32_t b) {
     return b ? a-__udivsi3(a, b)*b : 0;
 }
 
+#endif
+#ifndef STAGE0
+#ifdef STAGE1
+uint32_t __udivsi3(uint32_t a, uint32_t b);
+#endif
 int32_t __divsi3(int32_t a, int32_t b) {
     uint32_t ua = a < 0 ? 0u-(uint32_t)a:(uint32_t)a;
     uint32_t ub = b < 0 ? 0u-(uint32_t)b:(uint32_t)b;
@@ -78,3 +92,4 @@ int32_t __divsi3(int32_t a, int32_t b) {
 int32_t __modsi3(int32_t a, int32_t b) {
     return b ? (int32_t)((uint32_t)a-(uint32_t)__divsi3(a, b)*(uint32_t)b) : 0;
 }
+#endif

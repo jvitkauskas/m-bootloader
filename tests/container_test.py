@@ -8,6 +8,7 @@ import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from bankcb import crc16, enc, extract, install, pack, validate
 from check_build import inspect
+from join_stages import join, stage0_code_hash
 from version import boot_version
 
 FIXTURES = {
@@ -144,7 +145,20 @@ for board in ('fm1', 'smk37'):
     assert own_container == pack(payload, board)
     assert validate(own_container, board) == board
     assert len(own_container) <= 0x3f3c
-    inspect(directory / 'uboot.elf', directory / 'payload.bin', 0x1c02000, 0x1c0a800, 'boot_entry', True)
+    inspect(directory / 'stage0.elf', directory / 'stage0.bin', 0x1c02000, 0x1c0a800, 'boot_entry', True)
+    # §4.4: stage 1 starts where stage 0 ends, and the hash ignores only the version.
+    stage0, stage1 = (directory / 'stage0.bin').read_bytes(), (directory / 'stage1.bin').read_bytes()
+    assert payload == stage0+stage1
+    joined = Path('build', f'{board}-joined.bin')
+    sizes = join(directory / 'stage0.elf', directory / 'stage0.bin', directory / 'stage1.elf', directory / 'stage1.bin', joined)
+    assert joined.read_bytes() == payload
+    joined.unlink()
+    assert sizes['stage0_bytes'] == len(stage0) and sizes['stage1_bytes'] == len(stage1)
+    assert sizes['stage0_code_sha256'] == stage0_code_hash(stage0)
+    assert stage0_code_hash(stage0[:0x50]+bytes([255])*32+stage0[0x70:]) == sizes['stage0_code_sha256']
+    assert stage0_code_hash(stage0[:0x70]+bytes([stage0[0x70]^1])+stage0[0x71:]) != sizes['stage0_code_sha256']
+    assert stage0_code_hash(bytes([stage0[0]^1])+stage0[1:]) != sizes['stage0_code_sha256']
+    refuses(join, directory / 'stage0.elf', directory / 'stage0.bin', directory / 'stage0.elf', directory / 'stage0.bin', joined)
     refuses(validate, own_container, 'smk37' if board == 'fm1' else 'fm1')
     refuses(pack, payload + bytes(0x3f2d), board)
     for at in (0, 4, 12, 14, 16, 0x50, len(own_container)-1):

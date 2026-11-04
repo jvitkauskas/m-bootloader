@@ -160,7 +160,8 @@ repository, and the tests skip them when absent.
 
 | Path | What |
 |---|---|
-| `src/startup.S`, `src/boot.c` | entry, start-up decisions, menu |
+| `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
+| `src/boot.c` | stage 1: start-up decisions, menu |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |

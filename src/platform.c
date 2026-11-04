@@ -3,10 +3,26 @@
 #include <string.h>
 #define SPI 0x11c00u
 #define P33 0x13e00u
+/* Stage 0 owns what comes first in this file, and stage 1 calls it: docs/SPEC.md §4.4. */
+#if defined(STAGE1)
+extern bool failed, dma_active;
+extern unsigned timer_mhz;
+bool wait_mask(uint32_t address, uint32_t mask, bool value);
+void settle(unsigned n);
+static unsigned read_width = 1;
+static uint32_t capacity;
+#elif defined(STAGE0)
+#define SHARED
+bool failed, dma_active;
+unsigned timer_mhz = 24;
+#else
+#define SHARED static
 static bool failed, dma_active;
 static unsigned read_width = 1, timer_mhz = 24;
 static uint32_t capacity;
-static bool wait_mask(uint32_t address, uint32_t mask, bool value) {
+#endif
+#ifndef STAGE1
+SHARED bool wait_mask(uint32_t address, uint32_t mask, bool value) {
     for (uint32_t n = 3000000; n; --n)
         if (!!(REG(address)&mask) == value)
             return true;
@@ -51,7 +67,7 @@ bool gpio_read(unsigned p, unsigned n) {
     return !!(GPIO(p, 4)&BIT(n));
 }
 
-static void settle(unsigned n) {
+SHARED void settle(unsigned n) {
 #ifdef BOOT_SIM
     void boot_sim_settle(unsigned iterations);
     boot_sim_settle(n);
@@ -148,6 +164,8 @@ bool hal_clock_a(void) {
     return !failed;
 }
 
+#endif /* !STAGE1 */
+#ifndef STAGE0
 unsigned hal_clock_b(void) {
     unsigned mhz = 0;
     if ((REG(0x10014)&255) == 0x80 && !(REG(0x10008)&0x30700)) {
@@ -501,6 +519,8 @@ bool hal_xip(uint32_t base, uint16_t key, unsigned width, unsigned baud) {
     return true;
 }
 
+#endif /* !STAGE0 */
+#ifndef STAGE1
 void hal_reset(void) {
 #ifdef BOOT_SIM
     void boot_sim_reset(void) __attribute__((noreturn));
@@ -514,3 +534,4 @@ void hal_reset(void) {
 #endif
     }
 }
+#endif /* !STAGE1 */

@@ -25,5 +25,5 @@ boot_normal:
     ssp = r1
     r1 = __main_stack_top
     sp = r1
-    goto boot_main
+    goto stage0_main
 .size boot_entry,.-boot_entry
