@@ -10,11 +10,13 @@ OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
 HOSTCC ?= cc
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
 COMMON := core platform display runtime
-BOOT := $(COMMON) contract board boot
+# The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
+STAGE0 := stage0 board platform runtime
+STAGE1 := core platform display runtime contract boot sdboot
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 HEADERS := $(wildcard include/*.h)
-SIM_SOURCES := src/core.c src/contract.c src/platform.c src/board.c src/display.c tests/boot_sim.c tests/boot_nor.c
+SIM_SOURCES := src/core.c src/contract.c src/platform.c src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
 LIFECYCLE_SOURCES := src/core.c src/loader.c src/platform.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
@@ -38,14 +40,27 @@ build/$(1)/%.o: src/%.c $(HEADERS) Makefile
 build/$(1)/startup.o: src/startup.S build/boot_version.h Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild $(2) -c $$< -o $$@
-build/$(1)/target.ld: tools/target.ld.S
+build/$(1)/s0/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
-	$(CLANG) -E -P -x c -DENTRY_SYMBOL=boot_entry -DRAM_ORIGIN=0x1c02000 -DRAM_LENGTH=0x8800 $$< -o $$@
-build/$(1)/uboot.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(BOOT))) build/$(1)/startup.o build/$(1)/target.ld
-	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/target.ld -Map build/$(1)/uboot.map -o $$@ $$(filter %.o,$$^)
-build/$(1)/payload.bin: build/$(1)/uboot.elf tools/check_build.py
+	$(CLANG) $(CFLAGS) -DSTAGE0 $(2) -c $$< -o $$@
+build/$(1)/s1/%.o: src/%.c $(HEADERS) Makefile
+	@mkdir -p $$(@D)
+	$(CLANG) $(CFLAGS) -flto -DSTAGE1 $(2) -c $$< -o $$@
+build/$(1)/stage0.ld: tools/stage0.ld.S
+	@mkdir -p $$(@D)
+	$(CLANG) -E -P -x c $$< -o $$@
+build/$(1)/stage0.elf: $$(addprefix build/$(1)/s0/,$$(addsuffix .o,$$(STAGE0))) build/$(1)/startup.o build/$(1)/stage0.ld
+	$(LINK) --relax -T build/$(1)/stage0.ld -Map build/$(1)/stage0.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage0.bin: build/$(1)/stage0.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
-	python3 tools/check_build.py $$< $$@ 0x1c02000 0x1c0a800 boot_entry --boot > build/$(1)/size.json
+build/$(1)/stage1.ld: tools/stage1.ld.S build/$(1)/stage0.bin
+	$(CLANG) -E -P -x c -DSTAGE1_ORIGIN=$$$$((0x1c02000+$$$$(stat -c%s build/$(1)/stage0.bin))) $$< -o $$@
+build/$(1)/stage1.elf: $$(addprefix build/$(1)/s1/,$$(addsuffix .o,$$(STAGE1))) build/$(1)/stage0.elf build/$(1)/stage1.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections --just-symbols=build/$(1)/stage0.elf -T build/$(1)/stage1.ld -Map build/$(1)/stage1.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage1.bin: build/$(1)/stage1.elf
+	$(OBJCOPY) -O binary -j .text $$< $$@
+build/$(1)/payload.bin: build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin tools/check_build.py tools/join_stages.py
+	python3 tools/join_stages.py build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin $$@ > build/$(1)/size.json
 build/$(1)/uboot.boot: build/$(1)/payload.bin tools/bankcb.py
 	python3 tools/bankcb.py wrap $(1) $$< $$@
 # The installer: a staged updater carrying this uboot.boot (src/installer.c).
@@ -103,6 +118,9 @@ build/panel-board-test: src/board.c src/display.c tests/panel_board_test.c $(HEA
 build/platform-test: src/platform.c tests/platform_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o $@
+build/sdboot-test: src/core.c src/sdboot.c tests/sdboot_test.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/core.c tests/sdboot_test.c -o $@
 build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c -o $@
@@ -114,12 +132,13 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
+test: all build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
 	./build/panel-board-test
 	./build/platform-test
+	./build/sdboot-test
 	./build/boot-test-fm1
 	./build/boot-test-smk37
 	./build/loader-lifecycle-test
@@ -139,6 +158,8 @@ sanitize:
 	./build/panel-board-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o build/platform-test-sanitize
 	./build/platform-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/core.c tests/sdboot_test.c -o build/sdboot-test-sanitize
+	./build/sdboot-test-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_test.c -o build/boot-test-fm1-sanitize
 	./build/boot-test-fm1-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_test.c -o build/boot-test-smk37-sanitize

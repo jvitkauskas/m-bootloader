@@ -4,8 +4,9 @@
 #include "platform.h"
 #include "board.h"
 #include "display.h"
+#include "sdboot.h"
+#include "stage0.h"
 #include <string.h>
-#define RETAINED ((uint8_t *)(uintptr_t)0x01c7fd80)
 #define YELLOW 0xffe0
 #define WHITE 0xffff
 #define GREEN 0x07e0
@@ -47,13 +48,6 @@ static uint32_t pointer(const void *p) {
     return (uint32_t)(uintptr_t)p;
 }
 
-static void rom_download(void) __attribute__((noreturn));
-static void rom_download(void) {
-    memcpy(RETAINED, "usb_update_mode", 16);
-    sync_cpu();
-    hal_reset();
-}
-
 static bool screen(void) {
     if (!screen_ready)
         screen_ready = display_init(BOARD);
@@ -85,24 +79,6 @@ static unsigned number(char *s, unsigned pos, uint32_t v, unsigned base, unsigne
         s[pos++] = temp[--n];
     s[pos] = 0;
     return pos;
-}
-
-__attribute__((noinline)) static bool apply_config(void) {
-    p33_write(9, (p33_read(9)&0xf0) | 11);
-    p33_write(6, (p33_read(6)&0xf8) | 3);
-    if (!SMK)
-        p33_write(5, (p33_read(5)&0xf8) | 4); /* 3.2 V, as FM-1 016's configuration */
-    for (unsigned n = 0; n < 2; ++n)
-        sync_cpu();
-    for (unsigned n = 0; n < 16; ++n)
-        p33_write(0xd0+n, 0);
-    for (unsigned n = 0; n < 3; ++n)
-        p33_write(0xad+n, 0);
-    for (unsigned n = 0; n < 2; ++n)
-        sync_cpu();
-    if (hal_fault())
-        return false;
-    return hal_clock_a();
 }
 
 __attribute__((noinline)) static void identify(void) {
@@ -227,11 +203,20 @@ __attribute__((noinline)) static bool menu(void) {
     core_request_scan(&nor.flash, header.alignment, work, &updates);
     struct core_wipe plan;
     bool can_wipe = core_wipe_plan(&nor.flash, &app, SMK, &plan);
+#ifndef BOARD_SMK
+    bool card = sd_probe(60);
+#endif
     unsigned selection = 0, last = 0, previous = 0, stable = 0;
     bool first_draw = true;
     for (; ; ) {
-        const char *actions[4];
-        unsigned types[4], count = 0;
+        const char *actions[5];
+        unsigned types[5], count = 0;
+#ifndef BOARD_SMK
+        if (card) {
+            actions[count] = "SD CARD";
+            types[count++] = 4;
+        }
+#endif
         if (app.state == CORE_APP_OK) {
             actions[count] = "BOOT APP";
             types[count++] = 0;
@@ -321,6 +306,18 @@ __attribute__((noinline)) static bool menu(void) {
         unsigned action = types[selection];
         if (action == 1)
             download_screen();
+#ifndef BOARD_SMK
+        if (action == 4) {
+            /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
+            reason = sd_stage2(60);
+            /* stage 2 reprograms the flash interface */
+            flash_init(effective_width, config.spi_divider);
+            clear_rows(0, 14);
+            release_select();
+            last = previous = stable = 0;
+            continue;
+        }
+#endif
         if (action == 2 || action == 3) {
             if (!confirm(action == 3, &plan)) {
                 release_select();
@@ -390,22 +387,14 @@ static bool xip_crc(void) {
     return true;
 }
 
-void boot_main(const uint32_t *device) {
+__attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
     bool bypass = contract_consume_bypass(RETAINED);
 #ifndef BOOT_SIM
     memset(__bss_start, 0, (size_t)(__bss_end-__bss_start));
 #endif
-    hal_early();
     (void)device;
     /* The values every known configuration has: §5.3. */
     core_config_defaults(&config);
-    REG(0x13004) = 0xffff;
-    REG(0x40304) = 0xffff;
-    if (!apply_config())
-        rom_download();
-    board_init(SMK);
-    if (board_hold(KEY_RECOVERY, 1000))
-        rom_download();
     bool want_menu = board_hold(KEY_SELECT, 1000);
     board_restore();
     bool flash_ok = flash_init(1, 1);

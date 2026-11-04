@@ -10,7 +10,7 @@ symbols = {'boot_normal': BASE+0x70, '__exception_stack_top': BASE+0x6000,
            '__main_stack_top': BASE+0x7000, '__payload_end': BASE+0x3800}
 pre = ['r1 = 0', 'rete = r1', f'r1 = {symbols["boot_normal"]}', 'reti = r1', 'rti']
 post = [f'r1 = {symbols["__exception_stack_top"]}', 'ssp = r1',
-        f'r1 = {symbols["__main_stack_top"]}', 'sp = r1', 'goto 512 <boot_main>']
+        f'r1 = {symbols["__main_stack_top"]}', 'sp = r1', 'goto 512 <stage0_main>']
 
 
 def listing(before, after):

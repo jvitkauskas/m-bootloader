@@ -24,6 +24,11 @@ run with it.
   - **Wipe user data**: erase the settings areas the firmware declares, and
     nothing else. The menu lists the exact ranges, and you hold the key for
     3 s to confirm.
+- **SD card (FM-1).** With an [m-card](https://github.com/jvitkauskas/m-card)
+  board and a FAT32 card fitted, the menu gets an **SD card** item at the top.
+  It loads and runs `/MBOOT/MENU.BIN` from the card, which can be any program
+  built for it ([docs/SPEC.md](docs/SPEC.md) §11.5). The card is only touched
+  when the menu is open. This is new and not yet tested on real hardware.
 - **Checked start.** Every firmware file's checksum is verified before the
   firmware starts.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
@@ -65,6 +70,10 @@ M-Flasher instead.
 **Going from FM-1 016 back to 015 leaves garbage presets and wrong pitch,** with
 any bootloader: 016 overwrites the presets once it runs, and official updates do
 not restore them. Only a backup with the original area does.
+
+**Baud Girl overwrites the SMK-37's stock presets.** Stock firmware installed
+afterwards has none, with any bootloader, until a backup with the original area
+is restored. Back up before installing it.
 
 **Not tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
@@ -155,11 +164,13 @@ repository, and the tests skip them when absent.
 
 | Path | What |
 |---|---|
-| `src/startup.S`, `src/boot.c` | entry, start-up decisions, menu |
+| `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
+| `src/boot.c` | stage 1: start-up decisions, menu |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
 | `src/loader.c`, `src/loader_target.c` | the flash loader |
+| `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
 | `tools/` | container and M-UPGRADE package packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
