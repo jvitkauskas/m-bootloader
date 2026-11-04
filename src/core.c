@@ -744,21 +744,22 @@ unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint
 
 static bool boot_allocation_safe(uint32_t address, uint32_t length, uint32_t capacity)
 {
-    return address < capacity && length <= capacity - address && !(address < 0x38d0 && address + length > 0xa0);
+    return address < capacity && length <= capacity - address && !(address < CORE_BOOT_AREA && address + length > 0xa0);
 }
 
 bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity)
 {
-    uint8_t head[32], record[32], other[32];
+    uint8_t head[32], record[32], other[32], config[32], blob[CORE_CONFIG_SIZE];
     struct core_record r;
-    uint32_t offset, config = 0;
-    if (size < 0x80 || size > 0x3830 || core_le16(container) != 1 || core_le16(container + 2) != size - 16 || core_le32(container + 4) != 0x01c02000 || core_le32(container + 8) != 16 || core_crc16(0, container, 14) != core_le16(container + 14) || core_crc16(0, container + 16, size - 16) != core_le16(container + 12))
+    uint32_t offset;
+    bool have_config = false;
+    if (size < 0x80 || size > CORE_BOOT_MAX || core_le16(container) != 1 || core_le16(container + 2) != size - 16 || core_le32(container + 4) != 0x01c02000 || core_le32(container + 8) != 16 || core_crc16(0, container, 14) != core_le16(container + 14) || core_crc16(0, container + 16, size - 16) != core_le16(container + 12))
         return false;
     bytes_copy(head, area, 32);
     bytes_copy(record, area + 32, 32);
     core_enc(0xffff, head, 32);
     core_enc(0xffff, record, 32);
-    if (core_crc16(0, head + 2, 30) != core_le16(head) || !core_record_parse(&r, record) || !text_equal(r.name, "uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > 0x3830)
+    if (core_crc16(0, head + 2, 30) != core_le16(head) || !core_record_parse(&r, record) || !text_equal(r.name, "uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > CORE_BOOT_MAX)
         return false;
     /* A0 is the first data allocation, so only three more records fit. */
     for (offset = 64; offset < 0xa0; offset += 32) {
@@ -766,6 +767,18 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
         core_enc(0xffff, other, 32);
         if (!core_record_parse(&r, other))
             return false;
+        if (text_equal(r.name, "isd_config.ini")) {
+            /* Only its chip-key record is kept, so that has to be good. */
+            if (have_config || r.address < 0x38d0 || r.length < CORE_CONFIG_SIZE ||
+                r.length > CORE_BOOT_AREA || r.address > CORE_BOOT_AREA - r.length)
+                return false;
+            bytes_copy(blob, area + r.address, CORE_CONFIG_SIZE);
+            if (core_crc16(0, blob, 32) != core_le16(blob + 32))
+                return false;
+            bytes_copy(config, other, 32);
+            have_config = true;
+            continue;
+        }
         bool sentinel = r.length == 0 || r.length == 0xffffffffu;
         if (text_equal(r.name, "app_dir_head") || text_equal(r.name, "app_dir_head2")) {
             /* Directory lengths are sentinels or bank-info addresses. */
@@ -773,13 +786,8 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
                 return false;
         } else if (!boot_allocation_safe(r.address, sentinel ? 32 : r.length, capacity))
             return false;
-        if (text_equal(r.name, "isd_config.ini")) {
-            if (config || sentinel)
-                return false;
-            config = r.address;
-        }
     }
-    if (!config || 0xa0 + size > config)
+    if (!have_config)
         return false;
     core_put_le16(record + 2, core_crc16(0, container, size));
     core_put_le32(record + 4, 0xa0);
@@ -787,8 +795,20 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
     core_put_le16(record, core_crc16(0, record + 2, 30));
     core_enc(0xffff, record, 32);
     bytes_copy(area + 32, record, 32);
-    for (offset = 0xa0; offset < 0x38d0; ++offset)
+    core_put_le16(config + 2, core_crc16(0, blob, CORE_CONFIG_SIZE));
+    core_put_le32(config + 4, CORE_CONFIG_AT);
+    core_put_le32(config + 8, CORE_CONFIG_SIZE);
+    core_put_le16(config, core_crc16(0, config + 2, 30));
+    core_enc(0xffff, config, 32);
+    for (offset = 64; offset < 0xa0; offset += 32) {
+        bytes_copy(other, area + offset, 32);
+        core_enc(0xffff, other, 32);
+        if (core_record_parse(&r, other) && text_equal(r.name, "isd_config.ini"))
+            bytes_copy(area + offset, config, 32);
+    }
+    for (offset = 0xa0; offset < CORE_BOOT_AREA; ++offset)
         area[offset] = 0xff;
+    bytes_copy(area + CORE_CONFIG_AT, blob, CORE_CONFIG_SIZE);
     bytes_copy(area + 0xa0, container, size);
     core_enc(0xffff, area + 0xa0, 16);
     core_enc(0xffff, area + 0xb0, size - 16);

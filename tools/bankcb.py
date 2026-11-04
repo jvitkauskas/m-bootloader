@@ -27,7 +27,7 @@ def validate(container, board=None):
     banks, length, load, offset, payload_crc, header_crc = struct.unpack_from('<HHIIHH', container)
     if (banks, load, offset) != (1, 0x01c02000, 16):
         raise ValueError('unsupported BANKCB geometry')
-    if len(container) != length + 16 or not 0x70 <= length <= 0x3820:
+    if len(container) != length + 16 or not 0x70 <= length <= 0x3f2c:
         raise ValueError('payload size or stock flash slot violation')
     if crc16(container[:14]) != header_crc or crc16(container[16:]) != payload_crc:
         raise ValueError('BANKCB CRC mismatch')
@@ -44,8 +44,8 @@ def validate(container, board=None):
 
 
 def pack(payload, board):
-    if len(payload) > 0x3820:
-        raise ValueError('payload exceeds 14,368-byte slot')
+    if len(payload) > 0x3f2c:
+        raise ValueError('payload exceeds 16,172-byte slot')
     head = struct.pack('<HHIIH', 1, len(payload), 0x01c02000, 16, crc16(payload))
     result = head + struct.pack('<H', crc16(head)) + payload
     validate(result, board)
@@ -62,44 +62,53 @@ def install(image, container):
     if crc16(record[2:]) != struct.unpack_from('<H', record)[0] or record[16:32].split(b'\0')[0] != b'uboot.boot':
         raise ValueError('invalid boot directory record')
     address, length = struct.unpack_from('<II', record, 4)
-    if address != 0xa0 or not 16 <= length <= 0x3830:
+    if address != 0xa0 or not 16 <= length <= 0x3f3c:
         raise ValueError('unsupported boot allocation')
 
     def preserve_allocation(address, length):
         if address >= len(image) or length > len(image) - address:
             raise ValueError('other boot-area allocation is outside the image')
-        if address < 0x38d0 and address + length > 0xa0:
-            raise ValueError('other boot-area allocation overlaps the rewritten slot')
+        if address < 0x4000 and address + length > 0xa0:
+            raise ValueError('other boot-area allocation overlaps the rewritten area')
 
     # A0 is the first data allocation, so only these three more records fit.
     # Validate all of them: an unreadable record cannot establish a safe slot.
-    config_address = None
+    config_slot = blob = None
     for offset in range(64, 0xa0, 32):
         other = enc(image[offset:offset+32])
         if crc16(other[2:]) != struct.unpack_from('<H', other)[0]:
             raise ValueError('invalid boot-area directory record')
         name = other[16:32].split(b'\0', 1)[0]
         address, length = struct.unpack_from('<II', other, 4)
-        if name in (b'app_dir_head', b'app_dir_head2'):
+        if name == b'isd_config.ini':
+            # Only its chip-key record is kept, so that has to be good.
+            if config_slot is not None or address < 0x38d0 or length < 34 or address + length > 0x4000:
+                raise ValueError('invalid configuration allocation')
+            blob = image[address:address+34]
+            if crc16(blob[:32]) != struct.unpack_from('<H', blob, 32)[0]:
+                raise ValueError('invalid chip-key record')
+            config_slot = offset
+        elif name in (b'app_dir_head', b'app_dir_head2'):
             # Directory lengths are sentinels or bank-info addresses, not sizes.
             preserve_allocation(address, 32)
             if length not in (0, 0xffffffff):
                 preserve_allocation(length, 32)
         else:
             preserve_allocation(address, 32 if length in (0, 0xffffffff) else length)
-        if name == b'isd_config.ini':
-            if config_address is not None or length in (0, 0xffffffff):
-                raise ValueError('invalid configuration allocation')
-            config_address = address
-    if config_address is None or 0xa0 + len(container) > config_address:
-        raise ValueError('new container must end before the configuration')
+    if config_slot is None:
+        raise ValueError('no configuration')
     out = bytearray(image)
     struct.pack_into('<HII', record, 2, crc16(container), 0xa0, len(container))
     struct.pack_into('<H', record, 0, crc16(record[2:]))
     out[32:64] = enc(record)
-    out[0xa0:0x38d0] = b'\xff' * (0x38d0-0xa0)
+    config = bytearray(enc(image[config_slot:config_slot+32]))
+    struct.pack_into('<HII', config, 2, crc16(blob), 0x3fdc, 34)
+    struct.pack_into('<H', config, 0, crc16(config[2:]))
+    out[config_slot:config_slot+32] = enc(config)
+    out[0xa0:0x4000] = b'\xff' * (0x4000-0xa0)
     out[0xa0:0xb0] = enc(container[:16])
     out[0xb0:0xa0+len(container)] = enc(container[16:])
+    out[0x3fdc:0x3ffe] = blob
     return bytes(out)
 
 
@@ -108,7 +117,7 @@ def extract(image):
     if crc16(record[2:]) != struct.unpack_from('<H', record)[0]:
         raise ValueError('invalid record CRC')
     address, size = struct.unpack_from('<II', record, 4)
-    if address != 0xa0 or size < 16 or size > 0x3830 or address+size > len(image):
+    if address != 0xa0 or size < 16 or size > 0x3f3c or address+size > len(image):
         raise ValueError('invalid boot record geometry')
     container = enc(image[address:address+16]) + enc(image[address+16:address+size])
     validate(container)

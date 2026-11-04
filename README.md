@@ -63,7 +63,7 @@ board, `smk37-uboot.boot` or `fm1-uboot.boot` from the
 m-flasher bootloader --file smk37-uboot.boot
 ```
 
-M-Flasher writes only the bootloader and keeps the rest of the boot area. If
+M-Flasher writes only the boot area. It keeps the chip-key record that firmware installers need and drops the rest of the configuration, which the bootloader does not use, for more room ([specification §5.3](docs/SPEC.md#53-configuration-blob)). If
 the bootloader is ever broken, the USB_KEY dongle still forces the chip into
 download mode
 ([specification §4.3](docs/SPEC.md#43-recovery-independent-of-a-valid-boot-image)).

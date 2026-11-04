@@ -44,31 +44,51 @@ def synthetic_image():
     struct.pack_into('<H', head, 0, crc16(head[2:]))
     image[:32] = enc(head)
     image[32:64] = file_record(b'uboot.boot', 0xa0, 0x3830)
-    image[64:96] = file_record(b'isd_config.ini', 0x38d0, 16, 2)
+    image[64:96] = file_record(b'isd_config.ini', 0x38d0, 699, 2)
     image[96:128] = file_record(b'app_dir_head', 0x4000, 0xffffffff, 0x81)
     image[128:160] = file_record(b'key_mac', 0xff000, 0x1000, 0x12)
-    image[0x38d0:0x38e0] = b'CONFIG-SENTINEL!'
+    blob = bytes(range(16, 48))
+    image[0x38d0:0x38f2] = blob + struct.pack('<H', crc16(blob))
     return bytes(image)
 
 
 def check_round_trip(original, container):
     changed = install(original, container)
+    before_config = enc(original[64:96])
+    at = struct.unpack_from('<I', before_config, 4)[0]
     assert len(changed) == len(original)
     assert changed[:32] == original[:32]
-    assert changed[64:0xa0] == original[64:0xa0]
-    assert changed[0x38d0:] == original[0x38d0:]
+    assert changed[96:0xa0] == original[96:0xa0]
+    assert changed[0x4000:] == original[0x4000:]
     assert extract(changed) == container
-    assert changed[0xa0+len(container):0x38d0] == bytes([255])*(0x3830-len(container))
+    # Everything between the bootloader and the chip-key record is erased.
+    assert changed[0xa0+len(container):0x3fdc] == bytes([255])*(0x3fdc-0xa0-len(container))
+    assert changed[0x3fdc:0x3ffe] == original[at:at+34]
+    assert changed[0x3ffe:0x4000] == b'\xff\xff'
     before_record, after_record = enc(original[32:64]), enc(changed[32:64])
     assert before_record[12:] == after_record[12:]
     assert struct.unpack_from('<H', after_record, 2)[0] == crc16(container)
     assert struct.unpack_from('<II', after_record, 4) == (0xa0, len(container))
+    after_config = enc(changed[64:96])
+    assert after_config[12:] == before_config[12:]
+    assert crc16(after_config[2:]) == struct.unpack_from('<H', after_config)[0]
+    assert struct.unpack_from('<H', after_config, 2)[0] == crc16(original[at:at+34])
+    assert struct.unpack_from('<II', after_config, 4) == (0x3fdc, 34)
     assert install(changed, container) == changed
 
 
 def check_adverse_layouts(container):
     original = synthetic_image()
     check_round_trip(original, container)
+    # FM-1 016's layout: the configuration further on, and longer.
+    moved = bytearray(original)
+    moved[64:96] = file_record(b'isd_config.ini', 0x3938, 755, 2)
+    moved[0x3938:0x395a] = original[0x38d0:0x38f2]
+    check_round_trip(bytes(moved), container)
+    # Only the chip-key record is kept: without a good one, nothing is written.
+    damaged = bytearray(original)
+    damaged[0x38d0] ^= 1
+    refuses(install, damaged, container)
     # The full slot is rewritten, including padding after a smaller container.
     for slot, name, address, length, attribute in (
         (64, b'isd_config.ini', 0x2000, 16, 2),
@@ -85,7 +105,9 @@ def check_adverse_layouts(container):
         (128, b'other_record', 0x90, 0x20, 0x12),
         (128, b'other_record', 0xffff0, 0x20, 0x12),
         (32, b'uboot.boot', 0x2000, 0x1000, 0),
-        (32, b'uboot.boot', 0xa0, 0x3831, 0),
+        (32, b'uboot.boot', 0xa0, 0x3f3d, 0),
+        (64, b'isd_config.ini', 0x3fe0, 34, 2),
+        (64, b'isd_config.ini', 0x38d0, 33, 2),
     ):
         bad = bytearray(original)
         bad[slot:slot+32] = file_record(name, address, length, attribute)
@@ -121,10 +143,10 @@ for board in ('fm1', 'smk37'):
     assert payload[0x50:0x70] == boot_version().encode('ascii').ljust(32, b'\0')
     assert own_container == pack(payload, board)
     assert validate(own_container, board) == board
-    assert len(own_container) <= 0x3830
+    assert len(own_container) <= 0x3f3c
     inspect(directory / 'uboot.elf', directory / 'payload.bin', 0x1c02000, 0x1c0a800, 'boot_entry', True)
     refuses(validate, own_container, 'smk37' if board == 'fm1' else 'fm1')
-    refuses(pack, payload + bytes(0x3821), board)
+    refuses(pack, payload + bytes(0x3f2d), board)
     for at in (0, 4, 12, 14, 16, 0x50, len(own_container)-1):
         bad = bytearray(own_container)
         bad[at] ^= 1

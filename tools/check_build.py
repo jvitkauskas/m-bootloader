@@ -70,7 +70,7 @@ def inspect(path, raw_path, base, limit, entry, boot=False):
         raise ValueError(f'{path}: callable entry or RAM limit violation')
     if len(raw) != symbols['__payload_end']-base:
         raise ValueError(f'{path}: initialized data absent or stray binary bytes')
-    if boot and (len(raw) > 0x3820 or raw[0x40:0x48] != b'AC79BLID'):
+    if boot and (len(raw) > 0x3f2c or raw[0x40:0x48] != b'AC79BLID'):
         raise ValueError(f'{path}: boot slot/identity violation')
     if boot:
         inspect_startup(path, symbols, base)
