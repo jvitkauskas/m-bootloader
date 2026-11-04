@@ -152,8 +152,33 @@ bool mu_program(uint32_t address, const void *data, uint32_t size) {
     return flash_program(0, address, data, size);
 }
 
-void mu_progress(unsigned percent) {
-    display_progress(percent, GREEN);
+static void midi_bar(unsigned y, unsigned percent) {
+    display_rect(12, y+2, 216*percent/100, 8, GREEN);
+}
+
+static void midi_frame(unsigned y) {
+    display_rect(10, y, 220, 12, WHITE);
+    display_rect(12, y+2, 216, 8, 0);
+}
+
+void mu_progress(bool writing, unsigned percent) {
+    static unsigned shown;
+    /* A pass's start draws the screen for it. */
+    if (!percent) {
+        if (!writing) {
+            clear_rows(5, 14);
+            display_text(5, WHITE, "CHECKING PACKAGE");
+            midi_frame(96);
+            display_text(8, WHITE, "WRITING FIRMWARE");
+            midi_frame(144);
+            display_text(11, WHITE, "PLAY: BACK");
+        } else
+            display_text(11, YELLOW, "DO NOT UNPLUG");
+        shown = 0;
+    }
+    if (percent != shown || percent == 100)
+        midi_bar(writing ? 144:96, percent);
+    shown = percent;
 }
 
 /* Only returns if nothing was written. */
@@ -175,9 +200,9 @@ static void midi_mode(void) {
     if (r == MU_DOWNLOAD)
         download_screen();
     if (r != MU_CANCELLED && r != MU_DONE) {
-        display_text(10, RED, failures[r]);
+        display_text(13, RED, failures[r]);
         if (written)
-            display_text(11, RED, "RESTARTS: TRY AGAIN");
+            display_text(14, RED, "RESTARTS: TRY AGAIN");
         hal_delay_us(2000000);
     }
     if (r == MU_DONE)

@@ -190,7 +190,7 @@ static enum mu_result check_flash(uint8_t *sector, uint32_t offset, uint32_t siz
             return MU_LOST;
         whole = core_crc16(whole, sector, MU_SECTOR);
         sector_crc[at/MU_SECTOR] = core_crc16(0, sector, MU_SECTOR);
-        mu_progress(at/(size/50));
+        mu_progress(false, at*100/size);
     }
     return whole == crc ? MU_DONE:MU_BAD_PACKAGE;
 }
@@ -231,6 +231,8 @@ static enum mu_result install(uint16_t key, uint8_t *sector, bool *written) {
     if (r != MU_DONE)
         return r;
     /* The firmware's first sector goes last: until then, what's in flash can't pass as firmware. */
+    mu_progress(false, 100);
+    mu_progress(true, 0);
     *written = erasing = true;
     if (!mu_erase(MU_FIRST))
         return MU_FLASH_ERROR;
@@ -238,12 +240,12 @@ static enum mu_result install(uint16_t key, uint8_t *sector, bool *written) {
         r = write_sector(offset, at, sector, written);
         if (r != MU_DONE)
             return r;
-        mu_progress(50+at/(size/50));
+        mu_progress(true, at*100/size);
     }
     r = write_sector(offset, MU_FIRST, sector, written);
     if (r != MU_DONE)
         return r;
-    mu_progress(100);
+    mu_progress(true, 100);
     /* The host's "success" isn't needed: it only has to see that we finished. */
     (void)ask(FINISH, 8, sector);
     return MU_DONE;

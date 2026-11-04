@@ -23,7 +23,7 @@ static int corrupt_at_pass2 = -1;
 static uint32_t pass2_seen;
 static char identity[32];
 static bool answer_handshake, handshake_sent;
-static unsigned cancel_after, soft_after;
+static unsigned cancel_after, soft_after, check_percent, write_percent;
 
 static uint32_t pack7(const uint8_t *in, uint32_t n, uint8_t *out) {
     uint32_t acc = 0, bits = 0, o = 0;
@@ -180,8 +180,16 @@ bool mu_program(uint32_t address, const void *data, uint32_t size) {
     return true;
 }
 
-void mu_progress(unsigned percent) {
+void mu_progress(bool writing, unsigned percent) {
     assert(percent <= 100);
+    /* The check finishes before writing starts, and nothing is erased until it has. */
+    if (writing) {
+        assert(check_percent == 100);
+        write_percent = percent;
+    } else {
+        assert(!erases && !write_percent);
+        check_percent = percent;
+    }
 }
 
 /* An M-UPGRADE package: its header, then flash.bin with the firmware encrypted for the key. */
@@ -232,7 +240,7 @@ static void reset_all(void) {
     memset(first_erase_order, 0, sizeof(first_erase_order));
     identity_seen = finish_seen = stop_answering = cancel_now = wrote_outside = false;
     corrupt_at_pass2 = -1;
-    cancel_after = soft_after = 0;
+    cancel_after = soft_after = check_percent = write_percent = 0;
     reply_size = 0;
 }
 
@@ -256,7 +264,7 @@ int main(void) {
     reset_all();
     ask_upgrade();
     enum mu_result r = mu_run(KEY, sector, &written);
-    assert(r == MU_DONE && written && finish_seen && !wrote_outside);
+    assert(r == MU_DONE && written && finish_seen && !wrote_outside && write_percent == 100);
     assert(!memcmp(flash+MU_FIRST, package+PACKAGE_OFFSET+MU_FIRST, APP_SIZE-MU_FIRST));
     assert(outside_same(APP_SIZE));
     unsigned first_at = MU_FIRST/MU_SECTOR;
@@ -264,7 +272,7 @@ int main(void) {
     for (uint32_t s = first_at+1; s < APP_SIZE/MU_SECTOR; ++s)
         assert(last_program_order[s] < last_program_order[first_at]);
     /* Installing it again rewrites only the first sector, erased up front and again to write it. */
-    erases = programs = 0;
+    erases = programs = check_percent = write_percent = 0;
     finish_seen = false;
     ask_upgrade();
     assert(mu_run(KEY, sector, &written) == MU_DONE && finish_seen);

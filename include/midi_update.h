@@ -28,5 +28,6 @@ bool mu_cancel(void);
 bool mu_read(uint32_t address, void *out, uint32_t size);
 bool mu_erase(uint32_t address);
 bool mu_program(uint32_t address, const void *data, uint32_t size);
-void mu_progress(unsigned percent);
+/* Each pass counts 0 to 100: reading the package to check it, then writing it. */
+void mu_progress(bool writing, unsigned percent);
 #endif
