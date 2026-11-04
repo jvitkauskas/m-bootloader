@@ -21,27 +21,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Check runner architecture
-        run: test "$(uname -m)" = x86_64
-      - name: Cache verified toolchain
+      - name: Set up the pi32v2 LLVM toolchain (checks the release's SHA256SUMS)
         id: toolchain
-        uses: actions/cache@v4
+        uses: jvitkauskas/pi32v2-isa/.github/actions/setup-pi32v2@66ac37bb2ae40e5dbbd5588a6a7c2d7baf829d7f
         with:
-          path: toolchain
-          key: jieli-linux-x86_64-f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958
-      - name: Download and verify toolchain
-        if: steps.toolchain.outputs.cache-hit != 'true'
+          version: pi32v2-23.1.5-2
+      - name: Point the build at the toolchain
         shell: bash
-        run: |
-          archive="$RUNNER_TEMP/jieli-linux-toolchains-20250324.1.tar.xz"
-          curl --fail --location --retry 3 \
-            https://jl-update.oss-cn-shenzhen.aliyuncs.com/jieli-linux-toolchains-20250324.1.tar.xz \
-            --output "$archive"
-          test "$(stat --format=%s "$archive")" = 26009040
-          echo "f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958  $archive" | sha256sum --check
-          mkdir -p toolchain
-          tar --extract --xz --file="$archive" --directory=toolchain --strip-components=1 \
-            jieli-linux-toolchains-20250324.1/
+        run: echo "TOOLCHAIN=${{ steps.toolchain.outputs.path }}" >> "$GITHUB_ENV"
       - name: Build with entry, flash and RAM checks
         run: make -j2
       - name: Public tests (private fixtures are absent)

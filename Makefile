@@ -2,9 +2,11 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
 .DELETE_ON_ERROR:
-CLANG := toolchain/common/bin/clang
-LINK := toolchain/pi32v2/bin/lto-wrapper
-OBJCOPY := toolchain/common/bin/objcopy
+# The pi32v2 LLVM toolchain (see README), unpacked in toolchain/ or at TOOLCHAIN=<directory>.
+export TOOLCHAIN ?= toolchain
+CLANG := $(TOOLCHAIN)/bin/clang
+LINK := $(TOOLCHAIN)/bin/ld.lld
+OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
 HOSTCC ?= cc
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
 COMMON := core platform display runtime
@@ -40,8 +42,7 @@ build/$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=boot_entry -DRAM_ORIGIN=0x1c02000 -DRAM_LENGTH=0x8800 $$< -o $$@
 build/$(1)/uboot.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(BOOT))) build/$(1)/startup.o build/$(1)/target.ld
-	@mkdir -p build/tmp
-	TMPDIR="$(CURDIR)/build/tmp" $(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/target.ld -Map build/$(1)/uboot.map -o $$@ $$(filter %.o,$$^)
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/target.ld -Map build/$(1)/uboot.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/payload.bin: build/$(1)/uboot.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
 	python3 tools/check_build.py $$< $$@ 0x1c02000 0x1c0a800 boot_entry --boot > build/$(1)/size.json
@@ -53,8 +54,7 @@ build/$(1)/installer_start.o: src/installer_start.S build/$(1)/uboot.boot Makefi
 build/$(1)/installer.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=installer_entry -DRAM_ORIGIN=0x1c0a800 -DRAM_LENGTH=0xc000 -DINSTALLER_BUILD $$< -o $$@
 build/$(1)/installer.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(INSTALLER))) build/$(1)/installer_start.o build/$(1)/installer.ld
-	@mkdir -p build/tmp
-	TMPDIR="$(CURDIR)/build/tmp" $(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/installer.ld -Map build/$(1)/installer.map -o $$@ $$(filter %.o,$$^)
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/installer.ld -Map build/$(1)/installer.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/installer.bin: build/$(1)/installer.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
 	python3 tools/check_build.py $$< $$@ 0x1c0a800 0x1c16800 installer_entry > build/$(1)/installer-size.json
@@ -74,8 +74,7 @@ build/loader-$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=loader_entry -DRAM_ORIGIN=$(2) -DRAM_LENGTH=0x8000 -DLOADER_BUILD $$< -o $$@
 build/loader-$(1)/loader.elf: $$(addprefix build/loader-$(1)/,$$(addsuffix .o,$$(LOADER))) build/loader-$(1)/target.ld
-	@mkdir -p build/tmp
-	TMPDIR="$(CURDIR)/build/tmp" $(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o,$$^)
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o,$$^)
 build/loader/mflr-loader-$(1).bin: build/loader-$(1)/loader.elf tools/check_build.py
 	@mkdir -p $$(@D)
 	$(OBJCOPY) -O binary -j .text $$< $$@

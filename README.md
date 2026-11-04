@@ -97,15 +97,19 @@ skips the model and version checks.
 
 ## Build
 
-You need Linux x86-64, Python 3, GNU Make and a C compiler, and JieLi's
-toolchain 20250324.1:
+You need Python 3, GNU Make and a C compiler, and the
+[pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release
+`pi32v2-23.1.5-2`. Nothing from JieLi is needed. On Linux x86-64:
 
 ```sh
-curl -fLo toolchain.tar.xz https://jl-update.oss-cn-shenzhen.aliyuncs.com/jieli-linux-toolchains-20250324.1.tar.xz
-echo 'f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958  toolchain.tar.xz' | sha256sum -c
+curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.5-2/pi32v2-llvm-23.1.5-2-linux-x64.tar.xz
+echo 'cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990  toolchain.tar.xz' | sha256sum -c
 mkdir toolchain && tar -xJf toolchain.tar.xz -C toolchain --strip-components=1
 make
 ```
+
+The release also has packages for Linux arm64 and macOS, with their checksums in
+`SHA256SUMS`. `make TOOLCHAIN=<directory>` uses a toolchain unpacked elsewhere.
 
 | Output | What |
 |---|---|
@@ -114,7 +118,7 @@ make
 | `build/fm1/uboot.fwsc`, `build/smk37/uboot-pro.fwsc`, `uboot-elite.fwsc` | the same bootloaders as M-UPGRADE packages; the Elite's differs from the Pro's only in the model name M-UPGRADE checks |
 | `build/loader/mflr-loader-a.bin`, `-b.bin` | flash loader, at RAM `0x01C20000` and `0x01C28000` |
 
-Builds are reproducible: the same commit gives the same bytes. The version
+Builds are reproducible: the same commit and toolchain release give the same bytes. The version
 shown by the menu and by M-Flasher is `VERSION` plus the git commit, for
 example `1.1-e9a25e1`. The build fails if an image outgrows its slot.
 
