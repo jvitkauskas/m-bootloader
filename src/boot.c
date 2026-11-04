@@ -90,6 +90,8 @@ static unsigned number(char *s, unsigned pos, uint32_t v, unsigned base, unsigne
 __attribute__((noinline)) static bool apply_config(void) {
     p33_write(9, (p33_read(9)&0xf0) | 11);
     p33_write(6, (p33_read(6)&0xf8) | 3);
+    if (!SMK)
+        p33_write(5, (p33_read(5)&0xf8) | 4); /* 3.2 V, as FM-1 016's configuration */
     for (unsigned n = 0; n < 2; ++n)
         sync_cpu();
     for (unsigned n = 0; n < 16; ++n)
@@ -101,31 +103,6 @@ __attribute__((noinline)) static bool apply_config(void) {
     if (hal_fault())
         return false;
     return hal_clock_a();
-}
-
-__attribute__((noinline)) static bool read_config(const uint32_t *device) {
-    core_config_defaults(&config);
-    if (device[1] || !device[0] || !device[3])
-        return false;
-    uint8_t raw[32];
-    struct core_record record;
-    void *params = (void *)(uintptr_t)device[0];
-    int (*read_rom)(void *, void *, uint32_t, uint32_t) = (void *)(uintptr_t)device[3];
-    REG(0x13004) = 0xffff;
-    REG(0x40304) = 0xffff;
-    memset(raw, 0, sizeof(raw));
-    ((uint8_t *)params)[1] = 1;
-    (void)read_rom(params, raw, 64, 32);
-    if (!core_record_parse(&record, raw) || memcmp(record.name, "isd_config.ini", 15))
-        return false;
-    if (!record.length || record.length > sizeof(work) || !core_range(record.address, record.length, 0x100000))
-        return false;
-    memset(work, 0, record.length);
-    ((uint8_t *)params)[1] = 0;
-    (void)read_rom(params, work, record.address, record.length);
-    if (record.data_crc != 0xffff && core_crc16(0, work, record.length) != record.data_crc)
-        return false;
-    return core_config_parse(&config, work, record.length);
 }
 
 __attribute__((noinline)) static void identify(void) {
@@ -419,7 +396,11 @@ void boot_main(const uint32_t *device) {
     memset(__bss_start, 0, (size_t)(__bss_end-__bss_start));
 #endif
     hal_early();
-    bool config_ok = read_config(device);
+    (void)device;
+    /* The values every known configuration has: §5.3. */
+    core_config_defaults(&config);
+    REG(0x13004) = 0xffff;
+    REG(0x40304) = 0xffff;
     if (!apply_config())
         rom_download();
     board_init(SMK);
@@ -433,13 +414,11 @@ void boot_main(const uint32_t *device) {
     effective_width = flash_read_width();
     mounted = flash_ok && core_app_mount_header(&nor.flash, unit_key, &app, &header);
     enum core_guard_result guarded = core_guard(&nor, SMK, work);
-    if (!config_ok)
-        reason = "BAD CONFIG";
-    else if (!flash_ok)
+    if (!flash_ok)
         reason = "FLASH ERROR";
     else if (guarded == CORE_GUARD_ERROR)
         reason = "TRIM ERROR";
-    bool need_menu = want_menu || !config_ok || !flash_ok || guarded == CORE_GUARD_ERROR;
+    bool need_menu = want_menu || !flash_ok || guarded == CORE_GUARD_ERROR;
     bool updates_done = false;
     for (; ; ) {
         if (need_menu) {

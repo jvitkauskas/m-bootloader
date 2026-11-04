@@ -36,9 +36,8 @@ struct core_config {
     uint8_t width, spi_divider, read_mode, hsb_divider, lsb_divider;
     uint8_t oscillator_tag, high_current, one_pin, reset_pin, reset_level, reset_hold;
 };
-/* Explicit board recovery profile; parse replaces it only on complete success. */
+/* The values every known configuration has. */
 void core_config_defaults(struct core_config *c);
-bool core_config_parse(struct core_config *c, const uint8_t *blob, uint32_t size);
 bool core_chipkey(const uint8_t prefix[34], uint16_t *key);
 struct core_record {
     uint32_t address, length;

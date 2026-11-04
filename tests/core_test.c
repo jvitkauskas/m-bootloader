@@ -157,120 +157,6 @@ static void test_primitives(void)
     ++assertions;
 }
 
-static uint32_t add_config(uint8_t *blob, uint32_t pos, const char *key, const void *value, uint8_t size)
-{
-    size_t key_size = strlen(key) + 1;
-    blob[pos++] = size;
-    memcpy(blob + pos, key, key_size);
-    pos += (uint32_t)key_size;
-    memcpy(blob + pos, value, size);
-    return pos + size;
-}
-
-static uint32_t add_number(uint8_t *blob, uint32_t pos, const char *key, uint32_t value)
-{
-    uint8_t raw[4];
-    core_put_le32(raw, value);
-    return add_config(blob, pos, key, raw, 4);
-}
-
-static uint32_t minimal_config(uint8_t *blob)
-{
-    uint32_t p = 34;
-    memset(blob, 0, 512);
-    p = add_config(blob, p, "OSC", "OSC0", 4);
-    p = add_number(blob, p, "OSC_FREQ", 24000000);
-    p = add_number(blob, p, "SYS_CLK", 360000000);
-    p = add_number(blob, p, "HSB_DIV", 1);
-    return add_number(blob, p, "LSB_DIV", 2);
-}
-
-/* FM-1 016's configuration: 320 MHz, the voltage keys, no UTBD or VLVD. */
-static void test_config_016(void)
-{
-    static uint8_t blob[256];
-    struct core_config c;
-    uint32_t p = 34;
-    p = add_config(blob, p, "SPI", "4_1_0_0", 7);
-    p = add_config(blob, p, "OSC", "OSC0", 4);
-    p = add_number(blob, p, "OSC_FREQ", 24000000);
-    p = add_number(blob, p, "OSC_HC_EN", 0);
-    p = add_number(blob, p, "OSC_1PIN_EN", 0);
-    p = add_number(blob, p, "SYS_CLK", 320000000);
-    p = add_number(blob, p, "HSB_DIV", 1);
-    p = add_number(blob, p, "LSB_DIV", 2);
-    p = add_config(blob, p, "RESET", "PB01_08_0", 9);
-    p = add_number(blob, p, "UPDATE_JUMP", 0);
-    p = add_number(blob, p, "VDDIO", 4);
-    p = add_number(blob, p, "DVDD", 11);
-    p = add_number(blob, p, "DCDC14", 3);
-    p = add_number(blob, p, "ENABLE_SDRAM", 0);
-    CHECK(core_config_parse(&c, blob, p));
-    CHECK(c.system_hz == 360000000); /* what we run at, not what it says */
-    CHECK(c.width == 4 && c.spi_divider == 1);
-    /* only the two known clocks */
-    uint32_t at = 34;
-    while (memcmp(blob + at + 1, "SYS_CLK", 8))
-        at += 1 + (uint32_t)strlen((char *)blob + at + 1) + 1 + blob[at];
-    core_put_le32(blob + at + 1 + 8, 240000000);
-    CHECK(!core_config_parse(&c, blob, p));
-}
-
-static void test_config(void)
-{
-    uint8_t blob[512];
-    uint32_t n = minimal_config(blob), good;
-    struct core_config c;
-    CHECK(core_config_parse(&c, blob, n));
-    CHECK(c.oscillator_tag == 0 && c.oscillator_hz == 24000000);
-    CHECK(c.width == 4 && c.spi_divider == 1 && c.hsb_divider == 1 && c.lsb_divider == 2);
-    good = n;
-    /* §5.3: dropped keys are ignored, including unsupported value encodings. */
-    static const char *const dropped[] = {
-        "PORT_INPUT", "PORT_OUTPUT", "ERR_PORT_OUTPUT",
-        "BOOT_DELAY", "UTRX", "UTTX", "DVDD", "VDDIO", "DCDC14"
-    };
-    struct core_config expected = c;
-    for (unsigned i = 0; i < sizeof(dropped) / sizeof(dropped[0]); ++i) {
-        n = add_config(blob, good, dropped[i], "invalid, deliberately ignored", 29);
-        CHECK(core_config_parse(&c, blob, n));
-        CHECK(!memcmp(&c, &expected, sizeof(c)));
-        n = add_number(blob, good, dropped[i], UINT32_MAX);
-        CHECK(core_config_parse(&c, blob, n));
-        CHECK(!memcmp(&c, &expected, sizeof(c)));
-    }
-    n = add_number(blob, good, "ENABLE_SDRAM", 1);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_number(blob, good, "LSB_DIV", UINT32_MAX);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_number(blob, good, "SYS_CLK", 0);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_number(blob, good, "OSC_HC_EN", 1);
-    n = add_number(blob, n, "OSC_1PIN_EN", 1);
-    CHECK(core_config_parse(&c, blob, n));
-    CHECK(c.high_current == 1 && c.one_pin == 1);
-    n = add_number(blob, good, "OSC_HC_EN", 2);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_number(blob, good, "OSC_1PIN_EN", 2);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_config(blob, good, "SYS_CLK", "x", 1);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_config(blob, good, "SPI", "2_3_0_0", 7);
-    CHECK(!core_config_parse(&c, blob, n));
-    n = add_config(blob, good, "RESET", "PB01_08_0", 9);
-    CHECK(core_config_parse(&c, blob, n));
-    CHECK(c.reset_pin == 17 && c.reset_hold == 8);
-    n = add_config(blob, good, "UNKNOWN", "abc", 3);
-    CHECK(core_config_parse(&c, blob, n));
-    CHECK(!core_config_parse(&c, blob, n - 1));
-    CHECK(!core_config_parse(&c, blob, 4097));
-    memset(blob + good, 'X', 20);
-    blob[good] = 4;
-    CHECK(!core_config_parse(&c, blob, good + 20));
-    CHECK(!core_config_parse(&c, blob, 34));
-    ++assertions;
-}
-
 static void encode_record(uint32_t address, uint32_t relative, bool app, uint16_t key, const char *name, uint32_t data_address, uint32_t size, uint8_t attr, uint16_t crc)
 {
     uint8_t raw[32];
@@ -393,7 +279,6 @@ static void test_fixture(const char *name, uint32_t crc32, uint32_t app_length, 
 {
     struct core_header h;
     struct core_record config;
-    struct core_config c;
     struct core_app app;
     struct core_wipe plan;
     uint16_t key;
@@ -411,8 +296,6 @@ static void test_fixture(const char *name, uint32_t crc32, uint32_t app_length, 
     CHECK(core_read(&flash, config.address, workspace, config.length));
     CHECK(core_crc16(0, workspace, config.length) == config.data_crc);
     CHECK(core_chipkey(workspace, &key) && key == 0x980f);
-    CHECK(core_config_parse(&c, workspace, config.length));
-    CHECK(c.width == 4 && c.spi_divider == 1 && c.read_mode == 4 && !c.oscillator_tag);
     CHECK(core_app_mount(&flash, key, &app));
     CHECK(app.base == 0x4000 && app.entry == 0x02000120);
     CHECK(app.file_count == 2 && app.app_length == app_length && app.files[0].data_crc == app_crc);
@@ -776,8 +659,6 @@ static void test_guard(void)
 int main(void)
 {
     test_primitives();
-    test_config();
-    test_config_016();
     test_banks();
     test_lz4();
     test_fixture("fm1-stock.bin", 0xf98496a0, 581564, 0x5d48, 0x8e0dc, 0x93000, 0xe9000, 0xe9000, false);
