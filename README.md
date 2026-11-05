@@ -21,9 +21,10 @@ run with it.
   ([specification §11.6](docs/SPEC.md#116-midi-mode)). The unit reads the
   package twice, to check it and then to write it, so an installer's progress
   bar fills about twice as fast as the unit's. Wait for the unit. Tested with
-  SLOOP's, Felucca's, Melodee's and ChoralRoot's installers, from Linux, Android and iOS
-  (the MIDIWeb app), and on the SMK-37 Pro with ChoralRoot's SMK-37 installer from
-  Linux. Baud Girl's installer refuses it, and needs M-VAVE's firmware on the unit.
+  SLOOP's, Felucca's, Melodee's and ChoralRoot's installers, from Linux, macOS, Android
+  and iOS (the MIDIWeb app), and on the SMK-37 Pro with ChoralRoot's and Felucca's
+  SMK-37 installers from Linux. Baud Girl's installer refuses it, and needs M-VAVE's
+  firmware on the unit.
   Keep the installer's tab in front, as browsers slow background tabs down.
   If you stop an install with the menu key or a restart, choose MIDI mode again
   before an installer's resume button can find the unit. On an SMK-37 Elite, which
@@ -60,11 +61,11 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-Build `1.4-ac26c70`, with the short configuration, on an FM-1 and an SMK-37 Pro:
-installing with M-Flasher and M-UPGRADE, stock firmware, putting the stock
-bootloader back, and Baud Girl. On the FM-1 also official 015 and 016 updates,
-SLOOP, Felucca, ChoralRoot and Melodee. The SMK-37's own official update has not
-been run from it. `VDDIO` has not been measured.
+This release, `2.0-c43a32f`, on an FM-1 and an SMK-37 Pro: installing over 1.3 with
+M-Flasher and over 1.2 with M-UPGRADE, an official 016 update, Baud Girl, a browser
+installer from running firmware, and MIDI mode. On the FM-1 also installing with
+M-UPGRADE from the stock bootloader, and M-Flasher on macOS and Windows. `VDDIO` has
+not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
@@ -90,11 +91,12 @@ is restored. Back up before installing it.
 
 **Not tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
-(`0x856014`). One such unit did not start after m-bootloader was installed, and
-the cause is not known yet
-([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)). Check
-**FLASH CHIP** in M-Flasher before installing. With `0xB36014`, whether through
-M-Flasher or M-UPGRADE, install it at your own risk.
+(`0x856014`). One such unit did not start after version 1.1 or 1.2 was installed,
+and the cause is not known. Another runs 1.3 with its firmware, menu and download
+mode working ([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)).
+This version has not been tried on it. Check **FLASH CHIP** in M-Flasher before
+installing. With `0xB36014`, whether through M-Flasher or M-UPGRADE, install it at
+your own risk.
 
 ## Install
 
@@ -132,8 +134,8 @@ bootloader and its boot-area record, shows its progress on the screen, and
 restarts the unit. M-UPGRADE then waits for an updater that never comes, and
 times out with an error; the installation is done by then. Tested from
 M-VAVE's bootloader on an FM-1 (firmware 015) and on an SMK-37 with the Pro and
-the Elite firmware (016). This version was tested on an FM-1 and an SMK-37 Pro,
-both on firmware 016, and leaves the same boot area as M-Flasher.
+the Elite firmware (016). This version was tested on an FM-1 with firmware 015 and
+an SMK-37 Pro with firmware 016, and leaves the same boot area as M-Flasher.
 
 The packages are labelled version 099, as M-UPGRADE refuses the version a unit
 already has. If it refuses a unit running other firmware, its force upgrade
