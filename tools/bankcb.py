@@ -5,6 +5,19 @@ from pathlib import Path
 import struct
 
 
+# What's left of the configuration: the chip-key record, and the settings 1.3 and
+# older require, so that they start if installed over this version (SPEC section 5.3).
+CONFIG_KEY = 34
+CONFIG_SETTINGS = b''.join(bytes([4]) + name + b'\0' + value for name, value in (
+    (b'OSC', b'OSC0'),
+    (b'OSC_FREQ', struct.pack('<I', 24000000)),
+    (b'SYS_CLK', struct.pack('<I', 360000000)),
+    (b'HSB_DIV', struct.pack('<I', 1)),
+    (b'LSB_DIV', struct.pack('<I', 2)),
+))
+CONFIG_AT = 0x4000 - CONFIG_KEY - len(CONFIG_SETTINGS)
+
+
 def crc16(data, state=0):
     for byte in data:
         state ^= byte << 8
@@ -27,7 +40,7 @@ def validate(container, board=None):
     banks, length, load, offset, payload_crc, header_crc = struct.unpack_from('<HHIIHH', container)
     if (banks, load, offset) != (1, 0x01c02000, 16):
         raise ValueError('unsupported BANKCB geometry')
-    if len(container) != length + 16 or not 0x70 <= length <= 0x3f2c:
+    if len(container) != length + 16 or not 0x70 <= length <= 0x3ef0:
         raise ValueError('payload size or stock flash slot violation')
     if crc16(container[:14]) != header_crc or crc16(container[16:]) != payload_crc:
         raise ValueError('BANKCB CRC mismatch')
@@ -44,7 +57,7 @@ def validate(container, board=None):
 
 
 def pack(payload, board):
-    if len(payload) > 0x3f2c:
+    if len(payload) > 0x3ef0:
         raise ValueError('payload exceeds 16,172-byte slot')
     head = struct.pack('<HHIIH', 1, len(payload), 0x01c02000, 16, crc16(payload))
     result = head + struct.pack('<H', crc16(head)) + payload
@@ -62,7 +75,7 @@ def install(image, container):
     if crc16(record[2:]) != struct.unpack_from('<H', record)[0] or record[16:32].split(b'\0')[0] != b'uboot.boot':
         raise ValueError('invalid boot directory record')
     address, length = struct.unpack_from('<II', record, 4)
-    if address != 0xa0 or not 16 <= length <= 0x3f3c:
+    if address != 0xa0 or not 16 <= length <= CONFIG_AT-0xa0:
         raise ValueError('unsupported boot allocation')
 
     def preserve_allocation(address, length):
@@ -82,9 +95,9 @@ def install(image, container):
         address, length = struct.unpack_from('<II', other, 4)
         if name == b'isd_config.ini':
             # Only its chip-key record is kept, so that has to be good.
-            if config_slot is not None or address < 0x38d0 or length < 34 or address + length > 0x4000:
+            if config_slot is not None or address < 0x38d0 or length < CONFIG_KEY or address + length > 0x4000:
                 raise ValueError('invalid configuration allocation')
-            blob = image[address:address+34]
+            blob = image[address:address+CONFIG_KEY] + CONFIG_SETTINGS
             if crc16(blob[:32]) != struct.unpack_from('<H', blob, 32)[0]:
                 raise ValueError('invalid chip-key record')
             config_slot = offset
@@ -102,13 +115,13 @@ def install(image, container):
     struct.pack_into('<H', record, 0, crc16(record[2:]))
     out[32:64] = enc(record)
     config = bytearray(enc(image[config_slot:config_slot+32]))
-    struct.pack_into('<HII', config, 2, crc16(blob), 0x3fdc, 34)
+    struct.pack_into('<HII', config, 2, crc16(blob), CONFIG_AT, len(blob))
     struct.pack_into('<H', config, 0, crc16(config[2:]))
     out[config_slot:config_slot+32] = enc(config)
     out[0xa0:0x4000] = b'\xff' * (0x4000-0xa0)
     out[0xa0:0xb0] = enc(container[:16])
     out[0xb0:0xa0+len(container)] = enc(container[16:])
-    out[0x3fdc:0x3ffe] = blob
+    out[CONFIG_AT:0x4000] = blob
     return bytes(out)
 
 

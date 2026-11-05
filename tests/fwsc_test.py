@@ -75,7 +75,7 @@ def boot_area_variants():
             (96, b'app_dir_head', 0x90, 0xffffffff, 0x81), (96, b'app_dir_head', 0x4000, 0x2000, 0x81),
             (96, b'app_dir_head', 0x4000, 0xff000, 0x81), (128, b'key_mac', 0x3000, 0x1000, 0x12),
             (128, b'other_record', 0xffff0, 0x20, 0x12), (128, b'isd_config.ini', 0x38d0, 16, 2),
-            (32, b'uboot.boot', 0x2000, 0x1000, 0), (32, b'uboot.boot', 0xa0, 0x3f3d, 0),
+            (32, b'uboot.boot', 0x2000, 0x1000, 0), (32, b'uboot.boot', 0xa0, 0x3f01, 0),
             (32, b'uboot.bin', 0xa0, 0x3830, 0)):
         bad = bytearray(image)
         bad[slot:slot + 32] = file_record(name, address, length, attribute)

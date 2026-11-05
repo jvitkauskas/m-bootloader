@@ -102,9 +102,11 @@ bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan,
  * as core_request_scan) whose staged stream ends at stream_end. */
 unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end);
 #define CORE_BOOT_AREA 0x4000u
-/* The chip-key record of the configuration: firmware installers read it (§5.3). */
-#define CORE_CONFIG_SIZE 34u
-#define CORE_CONFIG_AT 0x3fdcu
+/* What's left of the configuration: the chip-key record, which firmware installers read, and
+ * the settings 1.3 and older require, so that they start if installed over this version (§5.3). */
+#define CORE_CONFIG_KEY_SIZE 34u
+#define CORE_CONFIG_SIZE 96u
+#define CORE_CONFIG_AT 0x3fa0u
 #define CORE_BOOT_MAX (CORE_CONFIG_AT - 0xa0u)
 /* Rewrites a stored boot area to hold container as its bootloader, keeping
  * the flash header and every other record (§11.2); false leaves it as found. */

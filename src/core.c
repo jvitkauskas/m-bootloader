@@ -747,6 +747,15 @@ static bool boot_allocation_safe(uint32_t address, uint32_t length, uint32_t cap
     return address < capacity && length <= capacity - address && !(address < CORE_BOOT_AREA && address + length > 0xa0);
 }
 
+/* The settings 1.2 and 1.3 require: value length, name, NUL, value (§5.3). */
+static const uint8_t config_settings[CORE_CONFIG_SIZE - CORE_CONFIG_KEY_SIZE] = {
+    4, 'O', 'S', 'C', 0, 'O', 'S', 'C', '0',
+    4, 'O', 'S', 'C', '_', 'F', 'R', 'E', 'Q', 0, 0x00, 0x36, 0x6e, 0x01,
+    4, 'S', 'Y', 'S', '_', 'C', 'L', 'K', 0, 0x00, 0x2a, 0x75, 0x15,
+    4, 'H', 'S', 'B', '_', 'D', 'I', 'V', 0, 1, 0, 0, 0,
+    4, 'L', 'S', 'B', '_', 'D', 'I', 'V', 0, 2, 0, 0, 0
+};
+
 bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, uint32_t size, uint32_t capacity)
 {
     uint8_t head[32], record[32], other[32], config[32], blob[CORE_CONFIG_SIZE];
@@ -769,10 +778,11 @@ bool core_boot_install(uint8_t area[CORE_BOOT_AREA], const uint8_t *container, u
             return false;
         if (text_equal(r.name, "isd_config.ini")) {
             /* Only its chip-key record is kept, so that has to be good. */
-            if (have_config || r.address < 0x38d0 || r.length < CORE_CONFIG_SIZE ||
+            if (have_config || r.address < 0x38d0 || r.length < CORE_CONFIG_KEY_SIZE ||
                 r.length > CORE_BOOT_AREA || r.address > CORE_BOOT_AREA - r.length)
                 return false;
-            bytes_copy(blob, area + r.address, CORE_CONFIG_SIZE);
+            bytes_copy(blob, area + r.address, CORE_CONFIG_KEY_SIZE);
+            bytes_copy(blob + CORE_CONFIG_KEY_SIZE, config_settings, sizeof(config_settings));
             if (core_crc16(0, blob, 32) != core_le16(blob + 32))
                 return false;
             bytes_copy(config, other, 32);

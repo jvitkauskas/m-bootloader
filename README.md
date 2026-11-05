@@ -61,20 +61,23 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-This release, `2.0-c43a32f`, on an FM-1 and an SMK-37 Pro: installing over 1.3 with
-M-Flasher and over 1.2 with M-UPGRADE, an official 016 update, Baud Girl, a browser
-installer from running firmware, and MIDI mode. On the FM-1 also installing with
-M-UPGRADE from the stock bootloader, and M-Flasher on macOS and Windows. `VDDIO` has
-not been measured.
+This release, `2.1-861e43d`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher,
+and with M-UPGRADE from the stock bootloader, 1.2 and 1.3 installed over it, an official
+016 update, Baud Girl, a browser installer from running firmware, and MIDI mode. On the
+FM-1 also Melodee's installer with its 1.2 option, moving from 2.0, and M-Flasher on macOS and
+Windows. Before it, `2.0-c43a32f`, the same bootloader code, was tested over 1.3 and 1.2 on both
+units. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
 M-Flasher or M-UPGRADE.
 
-**Do not install 1.3 or older over this version.** They need the configuration it
-removes, and stop at their menu with `BAD CONFIG` on every start; **Boot app**
-still starts the firmware. Melodee's installer offers 1.2 as an option, so leave
-that unticked. Reinstalling this version with M-Flasher fixes it.
+**1.2 and 1.3 start if installed over this version.** It doesn't read the configuration,
+but keeps the settings they require. This fixes `BAD CONFIG` after Melodee's or fm1-base's
+1.2 option. Version 2.0 kept only the chip key, so 1.3 and older stop at their menu with
+`BAD CONFIG` over 2.0; **Boot app** still starts the firmware, and installing this version
+fixes it. 1.2 also shows `BAD CONFIG` on a unit with official FM-1 016's configuration,
+which this version doesn't change until it's installed, as 1.2 rejects that 320 MHz clock.
 
 **`FAILED -5` from Felucca-family firmware.** Melodee's **Return to official V15**,
 and M-UPGRADE on an SMK-37 running such firmware, refuse because the boot area
@@ -87,7 +90,8 @@ not restore them. Only a backup with the original area does.
 
 **Baud Girl overwrites the SMK-37's stock presets.** Stock firmware installed
 afterwards has none, with any bootloader, until a backup with the original area
-is restored. Back up before installing it.
+is restored. Its installer also rewrites the SMK-37's Bluetooth sector at `0xC0000`,
+which may lose pairings. Calibration stays. Back up before installing it.
 
 **Little tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
