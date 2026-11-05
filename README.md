@@ -21,9 +21,10 @@ run with it.
   ([specification §11.6](docs/SPEC.md#116-midi-mode)). The unit reads the
   package twice, to check it and then to write it, so an installer's progress
   bar fills about twice as fast as the unit's. Wait for the unit. Tested with
-  SLOOP's, Melodee's and ChoralRoot's installers, from Linux, Android and iOS
+  SLOOP's, Felucca's, Melodee's and ChoralRoot's installers, from Linux, Android and iOS
   (the MIDIWeb app), and on the SMK-37 Pro with ChoralRoot's SMK-37 installer from
   Linux. Baud Girl's installer refuses it, and needs M-VAVE's firmware on the unit.
+  Keep the installer's tab in front, as browsers slow background tabs down.
   If you stop an install with the menu key or a restart, choose MIDI mode again
   before an installer's resume button can find the unit. On an SMK-37 Elite, which
   hasn't been tested, an install this way leaves it reporting itself as a Pro.
