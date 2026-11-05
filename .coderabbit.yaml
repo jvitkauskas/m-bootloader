@@ -19,8 +19,10 @@ reviews:
     - path: "src/stage0.c"
       instructions: |
         Stage 0 is not compressed and must always reach hold-REC download
-        mode. Flag anything before the board_hold(KEY_RECOVERY, ...) check that
-        can hang or that depends on stage 1, the decoder or the screen.
+        mode. Apply docs/SPEC.md section 4.4 to the whole file: no dependency on
+        stage 1, the flash, the screen or the firmware, and the jump to
+        stage1_entry is the one way into stage 1. Also flag anything before the
+        board_hold(KEY_RECOVERY, ...) check that can hang or uses the decoder.
     - path: "src/upkr.c"
       instructions: |
         The decoder reads a pack from flash that may be damaged. It must stay
@@ -28,15 +30,17 @@ reviews:
         mode.
     - path: "src/usb_midi.c"
       instructions: |
-        This chip needs USB register accesses spaced apart (settle()) and
-        receive buffers 4 bytes longer than a packet. Do not suggest removing
-        either, and flag new accesses that skip the spacing.
+        Accesses through the controller's register at 0x11804 (CON1) must be
+        spaced apart (settle() in sie_start()), and receive buffers need 4 bytes
+        more than a packet. Do not suggest removing either, and flag new
+        commands to the controller that don't go through sie_start().
     - path: "src/midi_update.c"
       instructions: |
         Everything here comes from a USB host and cannot be trusted. Check
-        lengths and addresses. The whole package must be checked before the
-        first erase, nothing may be written outside MU_FIRST..MU_LIMIT, and
-        MU_FIRST is written last so that an interrupted update can't boot.
+        lengths and addresses. All of flash.bin must be read and CRC-checked
+        before the first erase, nothing may be written outside
+        MU_FIRST..MU_LIMIT, and MU_FIRST is written last so that an interrupted
+        update can't boot.
     - path: "tests/**"
       instructions: |
         Flag tests whose fake data repeats the assumptions of the code under
