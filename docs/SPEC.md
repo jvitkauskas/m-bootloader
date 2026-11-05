@@ -1010,24 +1010,24 @@ The bootloader calls the entry using the C calling convention with one argument,
 * **return,** which means "carry on": the bootloader sets up the flash interface again and returns to the menu. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
 * **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
 
-### 11.6 MIDI mode (FM-1)
+### 11.6 MIDI mode
 
-MIDI mode installs firmware over USB MIDI, so that a browser installer on a phone can do what M-Flasher does from a computer. It's a menu item below `DOWNLOAD MODE`, so with no valid firmware it's one key press from the menu that opens by itself. PLAY leaves it while nothing has been written. The SMK-37 doesn't have it yet.
+MIDI mode installs firmware over USB MIDI, so that a browser installer on a phone can do what M-Flasher does from a computer. It's a menu item below `DOWNLOAD MODE`, so with no valid firmware it's one key press from the menu that opens by itself. The menu key leaves it while nothing has been written.
 
-It's a class-compliant USB-MIDI device, `FM-1 Update`, 1209:0002, on USB0, polled with interrupts off. Receive buffers need 4 bytes more than the packet size, as the controller's DMA writes past a full packet. Accesses to the controller's registers through `0x11804` have to be spaced apart: a few cycles between them made it babble on IN, and the host then disabled the port, on about a third of transmits. It answers the M-UPGRADE update protocol the way firmware update loaders do, as `ota-FM-1_900`, which browser installers look for.
+It's a class-compliant USB-MIDI device, `FM-1 Update` or `SMK-37 Update`, 1209:0002, on USB0, polled with interrupts off. Receive buffers need 4 bytes more than the packet size, as the controller's DMA writes past a full packet. Accesses to the controller's registers through `0x11804` have to be spaced apart: a few cycles between them made it babble on IN, and the host then disabled the port, on about a third of transmits. It answers the M-UPGRADE update protocol the way firmware update loaders do, as `ota-FM-1_900` or `ota-SMK-37 Pro_900`, which browser installers look for. On the SMK-37, the bare `ota-SMK-37_9xx` means another updater with another package format, to those installers. The bootloader can't tell a Pro from an Elite, so both answer as a Pro, and an install from such an installer leaves an Elite reporting itself as a Pro. The menu's LEDs drive the SMK-37's high-speed USB PHY, so that's handed back first.
 
 **Messages.** F0, 8-to-7 packed bytes, F7. Unpacked: `00 59`, the command, a 24-bit body length, the body, then the complement of the body's byte sum, where the body counts from offset 6. Besides those, `F0 22 24 35 7F F7` starts an install and `F0 22 24 35 7D F7` asks for download mode (§4.2). Command `0x11` with no body asks for the identity, answered in a 27-byte body. Command `0x30` is a read of the package: we send a body of a flag byte, a 32-bit address and a 24-bit length, and the host answers with the same fields then the data, at most 512 bytes.
 
 **The install.**
 
 1. Read the package's header. `flash.bin` is the entry of type 0: `CRC16` at +4, offset at +8 and size at +12, after decrypting it with key `0xFFFF`. The entries' CRC in the header is over them as stored, encrypted.
-2. The size must be whole sectors, above `0x4000` and at most `0xFF000`.
+2. The size must be whole sectors, above `0x4000` and at most `0xFF000`, or `0xC0000` on the SMK-37, which keeps its Bluetooth pairing and calibration at `0xC0000`–`0xC1FFF`.
 3. Refuse the package unless the 32 bytes at `0x4000` of `flash.bin` decrypt with this chip's key to a valid record.
 4. Read all of `flash.bin`, check the entry's CRC, and keep each sector's CRC. Nothing has been erased so far.
 5. Erase `0x4000`. Then, for each later sector and for `0x4000` last, read it again, check its CRC, skip it if flash already holds it, erase, write and verify. What's in flash can't pass as firmware until the end.
 6. Read `0xF0000000`, which tells the installer it's finished, and reset.
 
-Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, size)` is ever written, so the boot area and the key area at `0xFF000` are safe. Unlike an official update, it doesn't install the package's bootloader, or `USR`. It answers only as what it is, never as M-VAVE's updater: Baud Girl's installer refuses it, rightly, as it expects that updater, and nothing is sent. Install Baud Girl from M-VAVE's firmware, which puts the stock bootloader back, then reinstall this one with M-Flasher.
+Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, size)` is ever written, so the boot area and the key area at `0xFF000` are safe, as are the SMK-37's calibration and Bluetooth pairing. Unlike an official update, it doesn't install the package's bootloader, or `USR`. It answers only as what it is, never as M-VAVE's updater: Baud Girl's installer refuses it, rightly, as it expects that updater, and nothing is sent. Install Baud Girl from M-VAVE's firmware, which puts the stock bootloader back, then reinstall this one with M-Flasher.
 
 ## 12. Testing
 
