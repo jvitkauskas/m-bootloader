@@ -20,7 +20,9 @@ run with it.
   in the recovery menu, which also opens by itself when there's no valid firmware
   ([specification §11.6](docs/SPEC.md#116-midi-mode-fm-1)). The unit reads the
   package twice, to check it and then to write it, so an installer's progress
-  bar fills about twice as fast as the unit's. Wait for the unit.
+  bar fills about twice as fast as the unit's. Wait for the unit. Tested with
+  SLOOP's and Melodee's installers, from a desktop and from an Android phone.
+  Baud Girl's installer refuses it, and needs M-VAVE's firmware on the unit.
 - **Recovery menu.** Hold **PLAY** (FM-1) or **SEQ PLAY** (SMK-37) while
   switching on. The menu also opens by itself when the firmware cannot start.
   It shows the firmware's state and size, pending updates and the flash chip,

@@ -1027,7 +1027,7 @@ It's a class-compliant USB-MIDI device, `FM-1 Update`, 1209:0002, on USB0, polle
 5. Erase `0x4000`. Then, for each later sector and for `0x4000` last, read it again, check its CRC, skip it if flash already holds it, erase, write and verify. What's in flash can't pass as firmware until the end.
 6. Read `0xF0000000`, which tells the installer it's finished, and reset.
 
-Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, size)` is ever written, so the boot area and the key area at `0xFF000` are safe. Unlike an official update, it doesn't install the package's bootloader, or `USR`.
+Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, size)` is ever written, so the boot area and the key area at `0xFF000` are safe. Unlike an official update, it doesn't install the package's bootloader, or `USR`. It answers only as what it is, never as M-VAVE's updater: Baud Girl's installer refuses it, rightly, as it expects that updater, and nothing is sent. Install Baud Girl from M-VAVE's firmware, which puts the stock bootloader back, then reinstall this one with M-Flasher.
 
 ## 12. Testing
 

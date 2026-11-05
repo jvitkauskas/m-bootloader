@@ -4,6 +4,7 @@
 #include "midi_update.h"
 #include "core.h"
 #include <assert.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -160,9 +161,26 @@ static void note_write(uint32_t address, uint32_t size) {
         wrote_outside = true;
 }
 
+/* A power cut: at flash operation cut_at, half of it happens, and then nothing else does. */
+static unsigned cut_at, flash_ops;
+static jmp_buf cut;
+
+static void maybe_cut(uint32_t address, const uint8_t *data, uint32_t size) {
+    if (!cut_at || ++flash_ops != cut_at)
+        return;
+    for (uint32_t i = 0; i < size/2; ++i) {
+        if (data)
+            flash[address+i] &= data[i];
+        else
+            flash[address+i] = 0xff;
+    }
+    longjmp(cut, 1);
+}
+
 bool mu_erase(uint32_t address) {
     assert(!(address%MU_SECTOR));
     note_write(address, MU_SECTOR);
+    maybe_cut(address, 0, MU_SECTOR);
     memset(flash+address, 0xff, MU_SECTOR);
     ++erases;
     if (!first_erase_order[address/MU_SECTOR])
@@ -172,6 +190,7 @@ bool mu_erase(uint32_t address) {
 
 bool mu_program(uint32_t address, const void *data, uint32_t size) {
     note_write(address, size);
+    maybe_cut(address, data, size);
     const uint8_t *p = data;
     for (uint32_t i = 0; i < size; ++i)
         flash[address+i] &= p[i];
@@ -255,6 +274,99 @@ static bool untouched(void) {
 
 static bool outside_same(uint32_t size) {
     return !memcmp(flash, original, MU_FIRST) && !memcmp(flash+size, original+size, FLASH-size);
+}
+
+/* Whether the bootloader would start what's in flash, by its own checks. */
+static bool core_read_flash(void *ctx, uint32_t address, void *out, uint32_t size) {
+    (void)ctx;
+    if (address > FLASH || size > FLASH-address)
+        return false;
+    memcpy(out, flash+address, size);
+    return true;
+}
+
+static bool would_start(uint16_t key) {
+    static uint8_t work[CORE_WORK_SIZE];
+    static struct core_app app;
+    static struct core_header header;
+    struct core_flash f = { .read = core_read_flash, .capacity = FLASH };
+    memset(&app, 0, sizeof(app));
+    return core_app_mount_header(&f, key, &app, &header) && core_app_check(&f, &app, work) == CORE_APP_OK;
+}
+
+/* Cuts power at every flash operation in turn (every step-th, for a big image). Each time the boot and
+ * key areas are intact, a part-written firmware can't be started, and installing again finishes it. */
+static unsigned power_cuts(uint32_t size, uint16_t key, unsigned step, bool real) {
+    static uint8_t old[FLASH], want[FLASH];
+    bool written;
+    volatile unsigned tried = 0;
+    memcpy(old, flash, FLASH);
+    memcpy(want, package+PACKAGE_OFFSET, size);
+    for (volatile unsigned at = 1; ; at += step) {
+        memcpy(flash, old, FLASH);
+        cut_at = at;
+        flash_ops = 0;
+        cancel_after = soft_after = check_percent = write_percent = 0;
+        erases = programs = 0;
+        finish_seen = false;
+        reply_size = 0;
+        ask_upgrade();
+        if (!setjmp(cut)) {
+            enum mu_result r = mu_run(key, sector, &written);
+            assert(r == MU_DONE);
+            cut_at = 0;
+            break;                      /* the install finished before this cut */
+        }
+        cut_at = 0;
+        ++tried;
+        assert(!memcmp(flash, old, MU_FIRST) && !memcmp(flash+MU_LIMIT, old+MU_LIMIT, FLASH-MU_LIMIT));
+        if (real)
+            assert(!would_start(key));
+        else
+            assert(memcmp(flash+MU_FIRST, want+MU_FIRST, MU_SECTOR));
+        /* Every so often, go on and finish it, from the flash as the cut left it. */
+        if (tried%(real ? 40:1) == 0) {
+            finish_seen = false;
+            check_percent = write_percent = erases = programs = 0;
+            reply_size = 0;
+            ask_upgrade();
+            assert(mu_run(key, sector, &written) == MU_DONE && finish_seen);
+            assert(!memcmp(flash+MU_FIRST, want+MU_FIRST, size-MU_FIRST));
+            assert(!memcmp(flash, old, MU_FIRST));
+            if (real)
+                assert(would_start(key));
+        }
+    }
+    return tried;
+}
+
+/* M-VAVE's packages aren't public: this part runs where they're in testdata. */
+static uint32_t load_fwsc(const char *path, uint8_t *out, uint32_t *flash_offset, uint32_t *flash_size) {
+    static uint8_t raw[0x200000];
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return 0;
+    size_t size = fread(raw, 1, sizeof(raw), f);
+    fclose(f);
+    uint32_t n = 0, o = 0;
+    while (n < 20 || raw[n*48+47] == 0x7d)
+        ++n;
+    for (uint32_t i = 0; i < n; ++i, o += 47)
+        memcpy(out+o, raw+i*48, 47);
+    memcpy(out+o, raw+n*48, size-n*48);
+    o += (uint32_t)size-n*48;
+    uint8_t head[0x40], entry[0x50];
+    memcpy(head, out, 0x40);
+    core_enc(0xffff, head, 0x40);
+    for (uint32_t i = 0; i < (uint32_t)(head[8] | head[9] << 8); ++i) {
+        memcpy(entry, out+0x40+i*0x50, 0x50);
+        core_enc(0xffff, entry, 0x50);
+        if (!core_le16(entry)) {
+            *flash_offset = entry[8] | (uint32_t)entry[9] << 8 | (uint32_t)entry[10] << 16;
+            *flash_size = entry[12] | (uint32_t)entry[13] << 8 | (uint32_t)entry[14] << 16;
+        }
+    }
+    return o;
 }
 
 int main(void) {
@@ -362,6 +474,25 @@ int main(void) {
     answer_handshake = true;
     assert(mu_run(KEY, sector, &written) == MU_CANCELLED && identity_seen);
     assert(!memcmp(identity, "ota-FM-1_900", 13));
-    printf("midi update: install, refusals, limits and order passed\n");
+    /* Power cuts, on a small package. */
+    make_package(KEY, 0x20000);
+    reset_all();
+    unsigned cuts = power_cuts(0x20000, KEY, 1, false);
+    /* And with real firmware, from one firmware to another. */
+    static uint8_t old_image[0x200000];
+    uint32_t old_offset = 0, old_size = 0, new_offset = 0, new_size = 0;
+    uint32_t have_old = load_fwsc("testdata/fm1-015.fwsc", old_image, &old_offset, &old_size);
+    uint32_t have_new = load_fwsc("testdata/smk37-016.fwsc", package, &new_offset, &new_size);
+    if (have_old && have_new) {
+        package_size = have_new;
+        assert(new_offset == PACKAGE_OFFSET);
+        reset_all();
+        memcpy(flash, old_image+old_offset, old_size);
+        assert(would_start(KEY));
+        unsigned real = power_cuts(new_size, KEY, 1, true);
+        printf("midi update: %u power cuts on real firmware\n", real);
+    } else
+        printf("SKIP: M-VAVE's packages not present (power cuts on real firmware)\n");
+    printf("midi update: install, refusals, limits, order and %u power cuts passed\n", cuts);
     return 0;
 }
