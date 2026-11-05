@@ -138,8 +138,11 @@ void mu_idle(void) {
     }
 }
 
+/* Called about once a millisecond: one odd scan mustn't stop an install. */
 bool mu_cancel(void) {
-    return board_keys()&KEY_SELECT;
+    static unsigned held;
+    held = board_keys()&KEY_SELECT ? held+1:0;
+    return held >= 20;
 }
 
 bool mu_read(uint32_t address, void *out, uint32_t size) {
