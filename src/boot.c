@@ -6,6 +6,11 @@
 #include "display.h"
 #include "sdboot.h"
 #include "stage0.h"
+#ifndef BOOT_SIM
+#define MIDI_MODE 1
+#include "midi_update.h"
+#include "usb_midi.h"
+#endif
 #include <string.h>
 #define YELLOW 0xffe0
 #define WHITE 0xffff
@@ -22,6 +27,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define TITLE "SMK-37 M-BOOTLOADER"
 #define CONTROLS "< > MOVE SEQ PLAY OK"
 #define HOLD "HOLD SEQ PLAY 3 S"
+#define BACK "SEQ PLAY: BACK"
 #define RELEASE "RELEASE SEQ PLAY"
 #else
 #define SMK false
@@ -29,6 +35,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define TITLE "FM-1 M-BOOTLOADER"
 #define CONTROLS "OCT-/+ MOVE PLAY OK"
 #define HOLD "HOLD PLAY 3 S"
+#define BACK "PLAY: BACK"
 #define RELEASE "RELEASE PLAY"
 #endif
 extern uint8_t __bss_start[], __bss_end[];
@@ -118,6 +125,103 @@ static void release_select(void) {
     while (board_keys()&KEY_SELECT)
         board_wait(20, true);
 }
+
+#ifdef MIDI_MODE
+void mu_send(const uint8_t *data, uint32_t size) {
+    usb_midi_send(data, size);
+}
+
+void mu_idle(void) {
+    for (unsigned n = 0; n < 2; ++n) {
+        usb_midi_poll();
+        hal_delay_us(500);
+    }
+}
+
+/* Called about once a millisecond: one odd scan mustn't stop an install. */
+bool mu_cancel(void) {
+    static unsigned held;
+    held = board_keys()&KEY_SELECT ? held+1:0;
+    return held >= 20;
+}
+
+bool mu_read(uint32_t address, void *out, uint32_t size) {
+    return flash_read(0, address, out, size);
+}
+
+bool mu_erase(uint32_t address) {
+    return flash_erase(0, address, MU_SECTOR);
+}
+
+bool mu_program(uint32_t address, const void *data, uint32_t size) {
+    return flash_program(0, address, data, size);
+}
+
+static void midi_bar(unsigned y, unsigned percent) {
+    display_rect(12, y+2, 216*percent/100, 8, GREEN);
+}
+
+static void midi_frame(unsigned y) {
+    display_rect(10, y, 220, 12, WHITE);
+    display_rect(12, y+2, 216, 8, 0);
+}
+
+void mu_progress(bool writing, unsigned percent) {
+    static unsigned shown;
+    /* A pass's start draws the screen for it. */
+    if (!percent) {
+        if (!writing) {
+            clear_rows(5, 14);
+            display_text(5, WHITE, "CHECKING PACKAGE");
+            midi_frame(96);
+            display_text(8, WHITE, "WRITING FIRMWARE");
+            midi_frame(144);
+            display_text(11, WHITE, BACK);
+        } else
+            display_text(11, YELLOW, "DO NOT UNPLUG");
+        shown = 0;
+    }
+    if (percent != shown || percent == 100)
+        midi_bar(writing ? 144:96, percent);
+    shown = percent;
+}
+
+/* Only returns if nothing was written. */
+static void midi_mode(void) {
+    static const char *const failures[] = {
+        [MU_BAD_PACKAGE] = "BAD PACKAGE", [MU_WRONG_KEY] = "WRONG CHIP KEY",
+        [MU_LOST] = "INSTALLER STOPPED", [MU_FLASH_ERROR] = "FLASH ERROR"
+    };
+    bool written;
+    clear_rows(3, 14);
+    display_text(3, GREEN, "MIDI MODE");
+    display_text(5, WHITE, "CONNECT USB, AND");
+    display_text(6, WHITE, "OPEN AN INSTALLER.");
+    display_text(8, WHITE, BACK);
+    while (board_keys()&KEY_SELECT)
+        board_wait(20, false);
+    /* The menu's LEDs drive the SMK-37's high-speed PHY: give it back first. */
+    board_restore();
+    board_init(SMK);
+    usb_midi_start();
+    enum mu_result r = mu_run(unit_key, work, &written);
+    if (r == MU_DOWNLOAD)
+        download_screen();
+    if (r != MU_CANCELLED && r != MU_DONE) {
+        display_text(13, RED, failures[r]);
+        if (written)
+            display_text(14, RED, "RESTARTS: TRY AGAIN");
+        hal_delay_us(2000000);
+    }
+    if (r == MU_DONE)
+        hal_delay_us(200000);
+    usb_midi_stop();
+    if (written || r == MU_DONE)
+        hal_reset();
+    clear_rows(3, 14);
+    release_select();
+}
+#endif
 
 static bool confirm(bool wipe, const struct core_wipe *plan) {
     clear_rows(8, 14);
@@ -223,6 +327,10 @@ __attribute__((noinline)) static bool menu(void) {
         }
         actions[count] = "DOWNLOAD MODE";
         types[count++] = 1;
+#ifdef MIDI_MODE
+        actions[count] = "MIDI MODE";
+        types[count++] = 5;
+#endif
         if (effective_width == config.width && app.base && (app.state == CORE_APP_BAD_CRC || app.state == CORE_APP_INCOMPLETE)) {
             actions[count] = "BOOT ANYWAY";
             types[count++] = 2;
@@ -306,6 +414,14 @@ __attribute__((noinline)) static bool menu(void) {
         unsigned action = types[selection];
         if (action == 1)
             download_screen();
+#ifdef MIDI_MODE
+        if (action == 5) {
+            midi_mode();
+            last = previous = stable = 0;
+            first_draw = true;
+            continue;
+        }
+#endif
 #ifndef BOARD_SMK
         if (action == 4) {
             /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */

@@ -15,6 +15,19 @@ run with it.
 - **Download mode from the keys.** Hold **REC** (FM-1) or **SEQ REC** (SMK-37)
   while switching on. The unit appears on USB in the chip's download mode,
   ready for M-Flasher.
+- **MIDI mode.** Reinstall firmware from a browser installer over USB
+  MIDI, including from a phone, with no computer and no firmware running. It's
+  in the recovery menu, which also opens by itself when there's no valid firmware
+  ([specification §11.6](docs/SPEC.md#116-midi-mode)). The unit reads the
+  package twice, to check it and then to write it, so an installer's progress
+  bar fills about twice as fast as the unit's. Wait for the unit. Tested with
+  SLOOP's, Felucca's, Melodee's and ChoralRoot's installers, from Linux, Android and iOS
+  (the MIDIWeb app), and on the SMK-37 Pro with ChoralRoot's SMK-37 installer from
+  Linux. Baud Girl's installer refuses it, and needs M-VAVE's firmware on the unit.
+  Keep the installer's tab in front, as browsers slow background tabs down.
+  If you stop an install with the menu key or a restart, choose MIDI mode again
+  before an installer's resume button can find the unit. On an SMK-37 Elite, which
+  hasn't been tested, an install this way leaves it reporting itself as a Pro.
 - **Recovery menu.** Hold **PLAY** (FM-1) or **SEQ PLAY** (SMK-37) while
   switching on. The menu also opens by itself when the firmware cannot start.
   It shows the firmware's state and size, pending updates and the flash chip,
@@ -167,6 +180,7 @@ repository, and the tests skip them when absent.
 |---|---|
 | `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
 | `src/boot.c` | stage 1: start-up decisions, menu |
+| `src/midi_update.c`, `src/usb_midi.c` | MIDI mode: the update protocol, and the USB-MIDI device |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
