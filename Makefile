@@ -108,6 +108,9 @@ build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) tools/manifest.py
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o $@
+build/midi-update-test-smk37: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DBOARD_SMK -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o $@
 build/upkr-test: src/upkr.c tests/upkr_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tests/upkr_test.c -o $@
@@ -143,7 +146,7 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/midi-update-test build/upkr-test build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
+test: all build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
@@ -151,6 +154,7 @@ test: all build/midi-update-test build/upkr-test build/sdboot-test build/install
 	./build/platform-test
 	./build/sdboot-test
 	./build/midi-update-test
+	./build/midi-update-test-smk37
 	./build/boot-test-fm1
 	./build/boot-test-smk37
 	./build/loader-lifecycle-test
@@ -174,6 +178,8 @@ sanitize:
 	./build/sdboot-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o build/midi-update-test-sanitize
 	./build/midi-update-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DBOARD_SMK -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o build/midi-update-test-smk37-sanitize
+	./build/midi-update-test-smk37-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/upkr.c tests/upkr_test.c -o build/upkr-test-sanitize
 	./build/upkr-test-sanitize build/fm1/stage1.pack build/fm1/stage1.bin
 	./build/upkr-test-sanitize build/smk37/stage1.pack build/smk37/stage1.bin

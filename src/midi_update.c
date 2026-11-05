@@ -4,9 +4,6 @@
  * the package. The whole package is read and checked before anything is erased. */
 #include "midi_update.h"
 #include "core.h"
-#ifndef MU_IDENTITY
-#define MU_IDENTITY "ota-FM-1_900"
-#endif
 #define FRAME_MAX 640u
 #define PACKET_MAX 512u
 #define TRIES 5u
@@ -14,7 +11,7 @@
 #define FINISH 0xf0000000u
 #define HEADER 0x400u
 #define ENTRY 0x50u
-#define MAX_SECTORS (MU_LIMIT/MU_SECTOR)
+#define MAX_SECTORS (0xff000u/MU_SECTOR)
 
 static uint8_t frame[FRAME_MAX], decoded[PACKET_MAX+16], wire[64];
 static uint16_t sector_crc[MAX_SECTORS];

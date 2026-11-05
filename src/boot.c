@@ -6,7 +6,7 @@
 #include "display.h"
 #include "sdboot.h"
 #include "stage0.h"
-#if !defined(BOARD_SMK) && !defined(BOOT_SIM)
+#ifndef BOOT_SIM
 #define MIDI_MODE 1
 #include "midi_update.h"
 #include "usb_midi.h"
@@ -27,6 +27,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define TITLE "SMK-37 M-BOOTLOADER"
 #define CONTROLS "< > MOVE SEQ PLAY OK"
 #define HOLD "HOLD SEQ PLAY 3 S"
+#define BACK "SEQ PLAY: BACK"
 #define RELEASE "RELEASE SEQ PLAY"
 #else
 #define SMK false
@@ -34,6 +35,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define TITLE "FM-1 M-BOOTLOADER"
 #define CONTROLS "OCT-/+ MOVE PLAY OK"
 #define HOLD "HOLD PLAY 3 S"
+#define BACK "PLAY: BACK"
 #define RELEASE "RELEASE PLAY"
 #endif
 extern uint8_t __bss_start[], __bss_end[];
@@ -171,7 +173,7 @@ void mu_progress(bool writing, unsigned percent) {
             midi_frame(96);
             display_text(8, WHITE, "WRITING FIRMWARE");
             midi_frame(144);
-            display_text(11, WHITE, "PLAY: BACK");
+            display_text(11, WHITE, BACK);
         } else
             display_text(11, YELLOW, "DO NOT UNPLUG");
         shown = 0;
@@ -192,9 +194,12 @@ static void midi_mode(void) {
     display_text(3, GREEN, "MIDI MODE");
     display_text(5, WHITE, "CONNECT USB, AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, "PLAY: BACK");
+    display_text(8, WHITE, BACK);
     while (board_keys()&KEY_SELECT)
         board_wait(20, false);
+    /* The menu's LEDs drive the SMK-37's high-speed PHY: give it back first. */
+    board_restore();
+    board_init(SMK);
     usb_midi_start();
     enum mu_result r = mu_run(unit_key, work, &written);
     if (r == MU_DOWNLOAD)

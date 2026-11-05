@@ -4,9 +4,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 #define MU_SECTOR 0x1000u
-/* The first and last address written: never the boot area, nor the key area at 0xFF000. */
+/* The first address written, and the end: never the boot area, nor the key area at 0xFF000. On the
+ * SMK-37, not its Bluetooth pairing and calibration either, at 0xC0000 to 0xC1FFF. */
 #define MU_FIRST 0x4000u
+#ifdef BOARD_SMK
+#define MU_LIMIT 0xc0000u
+#define MU_IDENTITY "ota-SMK-37 Pro_900"
+#else
 #define MU_LIMIT 0xff000u
+#define MU_IDENTITY "ota-FM-1_900"
+#endif
 enum mu_result {
     MU_CANCELLED, /* nothing was written */
     MU_DONE,

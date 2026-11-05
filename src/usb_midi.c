@@ -40,7 +40,11 @@ static const uint8_t config_descriptor[101] = {
     5, 0x25, 1, 1, 3
 };
 static const uint8_t language_string[4] = { 4, 3, 0x09, 0x04 };
+#ifdef BOARD_SMK
+static const char product[] = "SMK-37 Update";
+#else
 static const char product[] = "FM-1 Update";
+#endif
 
 /* The controller's DMA writes past a full packet when receiving, so these have room to spare. */
 static uint8_t ep0[PACKET+4] __attribute__((aligned(4)));

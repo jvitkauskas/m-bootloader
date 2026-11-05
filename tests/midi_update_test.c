@@ -419,7 +419,11 @@ int main(void) {
     reset_all();
     ask_upgrade();
     assert(mu_run(KEY, sector, &written) == MU_BAD_PACKAGE && untouched());
-    /* The largest package allowed stays below the key area. */
+#ifdef BOARD_SMK
+    /* Its Bluetooth pairing and calibration are out of reach. */
+    assert(MU_LIMIT <= 0xc0000u);
+#endif
+    /* The largest package allowed stays below what must be kept. */
     make_package(KEY, MU_LIMIT);
     reset_all();
     ask_upgrade();
@@ -473,7 +477,7 @@ int main(void) {
     reset_all();
     answer_handshake = true;
     assert(mu_run(KEY, sector, &written) == MU_CANCELLED && identity_seen);
-    assert(!memcmp(identity, "ota-FM-1_900", 13));
+    assert(!memcmp(identity, MU_IDENTITY, sizeof(MU_IDENTITY)));
     /* Power cuts, on a small package. */
     make_package(KEY, 0x20000);
     reset_all();
