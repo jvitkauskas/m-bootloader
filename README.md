@@ -93,8 +93,9 @@ is restored. Back up before installing it.
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
 (`0x856014`). One such unit did not start after version 1.1 or 1.2 was installed,
 and the cause is not known. Another runs 1.3 and this version, on one owner's report,
-with its firmware, menu and download mode working, and a MIDI mode reinstall of the
-same firmware ([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)).
+with its firmware, menu and download mode working. A MIDI mode reinstall of the same
+firmware worked there too, which rewrites only the first 4 KiB sector
+([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)).
 Check **FLASH CHIP** in M-Flasher before installing. With `0xB36014`, whether through
 M-Flasher or M-UPGRADE, install it at your own risk.
 
