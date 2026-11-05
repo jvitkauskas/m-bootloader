@@ -15,6 +15,10 @@ run with it.
 - **Download mode from the keys.** Hold **REC** (FM-1) or **SEQ REC** (SMK-37)
   while switching on. The unit appears on USB in the chip's download mode,
   ready for M-Flasher.
+- **MIDI mode (FM-1).** Reinstall firmware from a browser installer over USB
+  MIDI, including from a phone, with no computer and no firmware running. It's
+  in the menu, and starts by itself when there's no valid firmware
+  ([specification §11.6](docs/SPEC.md#116-midi-mode-fm-1)).
 - **Recovery menu.** Hold **PLAY** (FM-1) or **SEQ PLAY** (SMK-37) while
   switching on. The menu also opens by itself when the firmware cannot start.
   It shows the firmware's state and size, pending updates and the flash chip,
@@ -167,6 +171,7 @@ repository, and the tests skip them when absent.
 |---|---|
 | `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
 | `src/boot.c` | stage 1: start-up decisions, menu |
+| `src/midi_update.c`, `src/usb_midi.c` | MIDI mode: the update protocol, and the USB-MIDI device |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |

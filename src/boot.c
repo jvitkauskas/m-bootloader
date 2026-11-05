@@ -6,6 +6,11 @@
 #include "display.h"
 #include "sdboot.h"
 #include "stage0.h"
+#if !defined(BOARD_SMK) && !defined(BOOT_SIM)
+#define MIDI_MODE 1
+#include "midi_update.h"
+#include "usb_midi.h"
+#endif
 #include <string.h>
 #define YELLOW 0xffe0
 #define WHITE 0xffff
@@ -119,6 +124,72 @@ static void release_select(void) {
         board_wait(20, true);
 }
 
+#ifdef MIDI_MODE
+void mu_send(const uint8_t *data, uint32_t size) {
+    usb_midi_send(data, size);
+}
+
+void mu_idle(void) {
+    for (unsigned n = 0; n < 2; ++n) {
+        usb_midi_poll();
+        hal_delay_us(500);
+    }
+}
+
+bool mu_cancel(void) {
+    return board_keys()&KEY_SELECT;
+}
+
+bool mu_read(uint32_t address, void *out, uint32_t size) {
+    return flash_read(0, address, out, size);
+}
+
+bool mu_erase(uint32_t address) {
+    return flash_erase(0, address, MU_SECTOR);
+}
+
+bool mu_program(uint32_t address, const void *data, uint32_t size) {
+    return flash_program(0, address, data, size);
+}
+
+void mu_progress(unsigned percent) {
+    display_progress(percent, GREEN);
+}
+
+/* Only returns if nothing was written. */
+static void midi_mode(void) {
+    static const char *const failures[] = {
+        [MU_BAD_PACKAGE] = "BAD PACKAGE", [MU_WRONG_KEY] = "WRONG CHIP KEY",
+        [MU_LOST] = "INSTALLER STOPPED", [MU_FLASH_ERROR] = "FLASH ERROR"
+    };
+    bool written;
+    clear_rows(3, 14);
+    display_text(3, GREEN, "MIDI MODE");
+    display_text(5, WHITE, "CONNECT USB, AND");
+    display_text(6, WHITE, "OPEN AN INSTALLER.");
+    display_text(8, WHITE, "PLAY: BACK");
+    while (board_keys()&KEY_SELECT)
+        board_wait(20, false);
+    usb_midi_start();
+    enum mu_result r = mu_run(unit_key, work, &written);
+    if (r == MU_DOWNLOAD)
+        download_screen();
+    if (r != MU_CANCELLED && r != MU_DONE) {
+        display_text(10, RED, failures[r]);
+        if (written)
+            display_text(11, RED, "RESTARTS: TRY AGAIN");
+        hal_delay_us(2000000);
+    }
+    if (r == MU_DONE)
+        hal_delay_us(200000);
+    usb_midi_stop();
+    if (written || r == MU_DONE)
+        hal_reset();
+    clear_rows(3, 14);
+    release_select();
+}
+#endif
+
 static bool confirm(bool wipe, const struct core_wipe *plan) {
     clear_rows(8, 14);
     display_text(8, RED, wipe ? "WIPE USER DATA":"BOOT ANYWAY");
@@ -223,6 +294,10 @@ __attribute__((noinline)) static bool menu(void) {
         }
         actions[count] = "DOWNLOAD MODE";
         types[count++] = 1;
+#ifdef MIDI_MODE
+        actions[count] = "MIDI MODE";
+        types[count++] = 5;
+#endif
         if (effective_width == config.width && app.base && (app.state == CORE_APP_BAD_CRC || app.state == CORE_APP_INCOMPLETE)) {
             actions[count] = "BOOT ANYWAY";
             types[count++] = 2;
@@ -306,6 +381,14 @@ __attribute__((noinline)) static bool menu(void) {
         unsigned action = types[selection];
         if (action == 1)
             download_screen();
+#ifdef MIDI_MODE
+        if (action == 5) {
+            midi_mode();
+            last = previous = stable = 0;
+            first_draw = true;
+            continue;
+        }
+#endif
 #ifndef BOARD_SMK
         if (action == 4) {
             /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
@@ -409,8 +492,19 @@ __attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
         reason = "TRIM ERROR";
     bool need_menu = want_menu || !flash_ok || guarded == CORE_GUARD_ERROR;
     bool updates_done = false;
+#ifdef MIDI_MODE
+    bool midi_tried = false;
+#endif
     for (; ; ) {
         if (need_menu) {
+#ifdef MIDI_MODE
+            /* No valid firmware, and nobody asked for the menu: someone may only have a phone. */
+            if (!want_menu && !midi_tried && app.state != CORE_APP_OK) {
+                midi_tried = true;
+                screen();
+                midi_mode();
+            }
+#endif
             bypass = menu() || bypass;
             need_menu = false;
         }
