@@ -9,6 +9,7 @@ import sys
 import tempfile
 import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import bankcb
 from bankcb import crc16, enc, extract, install, pack, validate
 from check_build import inspect
 from join_stages import join, stage0_code_hash
@@ -57,6 +58,23 @@ def synthetic_image():
     return bytes(image)
 
 
+def older_versions_accept(blob):
+    """What 1.2 and 1.3 require of the configuration, or they stop with BAD CONFIG."""
+    settings, at = {}, 34
+    while at < len(blob):
+        size = blob[at]
+        end = blob.index(0, at+1)
+        settings[bytes(blob[at+1:end])] = bytes(blob[end+1:end+1+size])
+        at = end+1+size
+    return at == len(blob) and settings == {
+        b'OSC': b'OSC0',
+        b'OSC_FREQ': struct.pack('<I', 24000000),
+        b'SYS_CLK': struct.pack('<I', 360000000),
+        b'HSB_DIV': struct.pack('<I', 1),
+        b'LSB_DIV': struct.pack('<I', 2),
+    }
+
+
 def check_round_trip(original, container):
     changed = install(original, container)
     before_config = enc(original[64:96])
@@ -67,9 +85,9 @@ def check_round_trip(original, container):
     assert changed[0x4000:] == original[0x4000:]
     assert extract(changed) == container
     # Everything between the bootloader and the chip-key record is erased.
-    assert changed[0xa0+len(container):0x3fdc] == bytes([255])*(0x3fdc-0xa0-len(container))
-    assert changed[0x3fdc:0x3ffe] == original[at:at+34]
-    assert changed[0x3ffe:0x4000] == b'\xff\xff'
+    assert changed[0xa0+len(container):bankcb.CONFIG_AT] == bytes([255])*(bankcb.CONFIG_AT-0xa0-len(container))
+    assert changed[bankcb.CONFIG_AT:bankcb.CONFIG_AT+34] == original[at:at+34]
+    assert older_versions_accept(changed[bankcb.CONFIG_AT:0x4000])
     before_record, after_record = enc(original[32:64]), enc(changed[32:64])
     assert before_record[12:] == after_record[12:]
     assert struct.unpack_from('<H', after_record, 2)[0] == crc16(container)
@@ -77,8 +95,8 @@ def check_round_trip(original, container):
     after_config = enc(changed[64:96])
     assert after_config[12:] == before_config[12:]
     assert crc16(after_config[2:]) == struct.unpack_from('<H', after_config)[0]
-    assert struct.unpack_from('<H', after_config, 2)[0] == crc16(original[at:at+34])
-    assert struct.unpack_from('<II', after_config, 4) == (0x3fdc, 34)
+    assert struct.unpack_from('<H', after_config, 2)[0] == crc16(changed[bankcb.CONFIG_AT:0x4000])
+    assert struct.unpack_from('<II', after_config, 4) == (bankcb.CONFIG_AT, 96)
     assert install(changed, container) == changed
 
 
@@ -110,7 +128,7 @@ def check_adverse_layouts(container):
         (128, b'other_record', 0x90, 0x20, 0x12),
         (128, b'other_record', 0xffff0, 0x20, 0x12),
         (32, b'uboot.boot', 0x2000, 0x1000, 0),
-        (32, b'uboot.boot', 0xa0, 0x3f3d, 0),
+        (32, b'uboot.boot', 0xa0, 0x3f01, 0),
         (64, b'isd_config.ini', 0x3fe0, 34, 2),
         (64, b'isd_config.ini', 0x38d0, 33, 2),
     ):
@@ -159,7 +177,7 @@ for board in ('fm1', 'smk37'):
     assert payload[0x50:0x70] == boot_version().encode('ascii').ljust(32, b'\0')
     assert own_container == pack(payload, board)
     assert validate(own_container, board) == board
-    assert len(own_container) <= 0x3f3c
+    assert len(own_container) <= bankcb.CONFIG_AT-0xa0
     inspect(directory / 'stage0.elf', directory / 'stage0.bin', 0x1c02000, 0x1c0a800, 'boot_entry', True)
     # §4.4: stage 1 starts where stage 0 ends, and the hash ignores only the version.
     stage0, stage1 = (directory / 'stage0.bin').read_bytes(), (directory / 'stage1.bin').read_bytes()
@@ -177,7 +195,7 @@ for board in ('fm1', 'smk37'):
     assert stage0_code_hash(bytes([stage0[0]^1])+stage0[1:]) != sizes['stage0_code_sha256']
     refuses(join, directory / 'stage0.elf', directory / 'stage0.bin', directory / 'stage0.elf', directory / 'stage0.bin', directory / 'stage1.pack', joined)
     refuses(validate, own_container, 'smk37' if board == 'fm1' else 'fm1')
-    refuses(pack, payload + bytes(0x3f2d), board)
+    refuses(pack, payload + bytes(0x3ef1), board)
     for at in (0, 4, 12, 14, 16, 0x50, len(own_container)-1):
         bad = bytearray(own_container)
         bad[at] ^= 1

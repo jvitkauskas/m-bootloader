@@ -28,6 +28,6 @@ SECTIONS {
 #if defined(INSTALLER_BUILD)
     ASSERT(__payload_end - ORIGIN(ram) <= 0x5b1c, "installer exceeds the stock updater's size")
 #elif !defined(LOADER_BUILD)
-    ASSERT(__payload_end - ORIGIN(ram) <= 0x3f2c, "boot payload would reach the configuration")
+    ASSERT(__payload_end - ORIGIN(ram) <= 0x3ef0, "boot payload would reach the configuration")
 #endif
 }

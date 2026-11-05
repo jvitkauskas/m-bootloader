@@ -39,7 +39,7 @@ def join(stage0_elf, stage0_raw, stage1_elf, stage1_raw, stage1_pack, out):
     if symbol(stage1_elf, '__ram_end') > symbol(stage0_elf, '__stage0_limit'):
         raise ValueError('stage 1 runs into stage 0\'s data')
     payload = Path(stage0_raw).read_bytes()+Path(stage1_pack).read_bytes()
-    if len(payload) > 0x3f2c or payload[0x40:0x48] != b'AC79BLID':
+    if len(payload) > 0x3ef0 or payload[0x40:0x48] != b'AC79BLID':
         raise ValueError('boot slot/identity violation')
     Path(out).write_bytes(payload)
     return {'payload_bytes': len(payload), 'private_ram_bytes': second['private_ram_bytes']+origin-BASE,
