@@ -39,8 +39,8 @@ reviews:
         Everything here comes from a USB host and cannot be trusted. Check
         lengths and addresses. All of flash.bin must be read and CRC-checked
         before the first erase, nothing may be written outside
-        MU_FIRST..MU_LIMIT, and MU_FIRST is written last so that an interrupted
-        update can't boot.
+        MU_FIRST..MU_LIMIT, and MU_FIRST is erased first and written last so
+        that an interrupted update can't boot.
     - path: "tests/**"
       instructions: |
         Flag tests whose fake data repeats the assumptions of the code under
