@@ -64,9 +64,9 @@ run with it.
 This release, `2.1-861e43d`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher,
 and with M-UPGRADE from the stock bootloader, 1.2 and 1.3 installed over it, an official
 016 update, Baud Girl, a browser installer from running firmware, and MIDI mode. On the
-FM-1 also Melodee's installer with its 1.2 option, and moving from 2.0. Before it, `2.0-c43a32f`,
-the same bootloader code, was tested over 1.3 and 1.2 on both units. `VDDIO` has not been
-measured.
+FM-1 also Melodee's installer with its 1.2 option, moving from 2.0, and M-Flasher on macOS and
+Windows. Before it, `2.0-c43a32f`, the same bootloader code, was tested over 1.3 and 1.2 on both
+units. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
