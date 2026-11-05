@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  sequence_diagrams: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  auto_review:
+    # Stacked PRs target other branches.
+    base_branches:
+      - ".*"
+  path_instructions:
+    - path: "**"
+      instructions: |
+        Bare-metal C for the JieLi AC791N (pi32v2), specified in docs/SPEC.md.
+        Check register values, timings and formats against that document.
+        Put mistakes that can brick a unit or lose its data first, and skip
+        style. Stage 0 and the packed stage 1 share a small boot area, so
+        mention changes that add much code.
+    - path: "src/stage0.c"
+      instructions: |
+        Stage 0 is not compressed and must always reach hold-REC download
+        mode. Flag anything before the board_hold(KEY_RECOVERY, ...) check that
+        can hang or that depends on stage 1, the decoder or the screen.
+    - path: "src/upkr.c"
+      instructions: |
+        The decoder reads a pack from flash that may be damaged. It must stay
+        inside its buffers and report failure, which sends the unit to download
+        mode.
+    - path: "src/usb_midi.c"
+      instructions: |
+        This chip needs USB register accesses spaced apart (settle()) and
+        receive buffers 4 bytes longer than a packet. Do not suggest removing
+        either, and flag new accesses that skip the spacing.
+    - path: "src/midi_update.c"
+      instructions: |
+        Everything here comes from a USB host and cannot be trusted. Check
+        lengths and addresses. The whole package must be checked before the
+        first erase, nothing may be written outside MU_FIRST..MU_LIMIT, and
+        MU_FIRST is written last so that an interrupted update can't boot.
+    - path: "tests/**"
+      instructions: |
+        Flag tests whose fake data repeats the assumptions of the code under
+        test, as they can't catch a wrong format.
