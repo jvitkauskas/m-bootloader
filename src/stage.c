@@ -75,13 +75,26 @@ static void show(unsigned row, uint16_t color, const char *text) {
         display_text(row, color, text);
 }
 
+static void clear_rows(void) {
+    for (unsigned row = 3; row < 15; ++row)
+        show(row, WHITE, "");
+}
+
+static void show_way_out(void) {
+    show(8, WHITE, "SWITCH OFF: BACK TO");
+    show(9, WHITE, "THE FIRMWARE");
+}
+
 void mu_progress(bool writing, unsigned percent) {
     static unsigned shown;
     if (!screen)
         return;
+    /* A pass's start draws the screen for it: the bar covers rows 9 and 10. */
     if (!percent) {
+        clear_rows();
         show(3, YELLOW, writing ? "WRITING" : "CHECKING");
-        show(6, YELLOW, writing ? "DO NOT SWITCH OFF" : "");
+        show(5, writing ? YELLOW : WHITE, writing ? "DO NOT SWITCH OFF" : "NOTHING ERASED YET");
+        display_progress(0, GREEN);
         shown = 0;
     }
     if (percent != shown || percent == 100)
@@ -130,10 +143,9 @@ void stage_main(void *context, uint32_t stream_end) {
         for (unsigned row = 0; row < 15; ++row)
             display_text(row, WHITE, "");
         display_text(1, GREEN, TITLE);
-        display_text(3, WHITE, "CONNECT USB, AND");
+        display_text(3, WHITE, "CONNECT USB AND");
         display_text(4, WHITE, "OPEN THE WEB PAGE.");
-        display_text(8, WHITE, "SWITCH OFF: BACK TO");
-        display_text(9, WHITE, "THE FIRMWARE");
+        show_way_out();
     }
     usb_midi_start();
     for (; ; ) {
@@ -149,9 +161,12 @@ void stage_main(void *context, uint32_t stream_end) {
             }
             hal_reset();
         }
+        stay = stay || written;
+        clear_rows();
         show(3, RED, r == MU_BAD_PACKAGE ? "BAD PACKAGE" : r == MU_WRONG_KEY ? "WRONG CHIP KEY"
             : r == MU_LOST ? "HOST STOPPED" : "FLASH ERROR");
-        show(6, written ? RED : WHITE, written ? "INSTALL AGAIN" : "");
-        stay = stay || written;
+        show(5, stay ? RED : WHITE, stay ? "INSTALL AGAIN" : "OPEN THE WEB PAGE.");
+        if (!stay)
+            show_way_out();
     }
 }

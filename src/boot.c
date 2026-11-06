@@ -203,7 +203,7 @@ static void midi_mode(void) {
     bool written;
     clear_rows(3, 14);
     display_text(3, GREEN, "MIDI MODE");
-    display_text(5, WHITE, "CONNECT USB, AND");
+    display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
     display_text(8, WHITE, BACK);
     while (board_keys()&KEY_SELECT)
