@@ -172,6 +172,14 @@ for variant, (path, identity) in BUILT.items():
     refuses(updater_package, variant, bytes(random.getrandbits(8) for _ in range(0x5000)))
     small = bytes(random.getrandbits(8) for _ in range(0x1800))
     assert installed(updater_package(variant, small)) == (identity, small)
+    assert installed(updater_package(variant, small, listed_flash=True)) == (identity, small)
+    # What Felucca-family firmware looks for, in the stage as it's stored.
+    stage_path = {'fm1': 'build/fm1/stage.fwsc', 'smk37-pro': 'build/smk37/stage-pro.fwsc', 'smk37-elite': 'build/smk37/stage-elite.fwsc'}[variant]
+    stage_image = unweave(Path(stage_path).read_bytes())[2]
+    stage_files = {e['name']: e for e in entries(stage_image)}
+    assert stage_files['flash.bin']['type'] == 0 and stage_files['flash.bin']['offset']
+    stored = stage_image[stage_files['ota.bin']['offset']:]
+    assert b'FELUCCA-LOADER-1' in stored[0x48:0x48+64+16]
     assert built == package(variant, containers[board], installers[board])
     assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)

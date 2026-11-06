@@ -10,4 +10,7 @@ stage_entry:
     r2 = __main_stack_top
     sp = r2
     goto stage_main
+    /* Felucca-family firmware stores only its own loader, which writes the app area alone and checks
+     * the chip key, as this stage does. It looks for this mark among the stream's first literals. */
+    .ascii "FELUCCA-LOADER-1"
 .size stage_entry,.-stage_entry

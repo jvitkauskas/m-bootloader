@@ -220,8 +220,10 @@ def package(variant, container, installer, version='099'):
     return updater_package(variant, installer, version)
 
 
-def updater_package(variant, updater, version='099'):
-    """The package for variant: identity, header, and ota.bin with this updater."""
+def updater_package(variant, updater, version='099', listed_flash=False):
+    """The package for variant: identity, header, and ota.bin with this updater.
+    listed_flash adds a blank flash.bin that nothing writes: Felucca-family firmware refuses a
+    package without one, whatever its updater does."""
     _, model, prefix = VARIANTS[variant]
     if not re.fullmatch(r'[0-9]{3}', version):
         raise ValueError('version must be three digits')
@@ -230,15 +232,22 @@ def updater_package(variant, updater, version='099'):
     if len(stream) > STORED_MAX:
         raise ValueError('ota.bin would run into where firmware keeps the update request')
     allocated = -(-len(stream) // 32) * 32
+    blank = b'\xff' * 32 if listed_flash else b''
     entry = bytearray(ENTRY)
     struct.pack_into('<HHHxxIII', entry, 0, OTA_TYPE, 0, crc16(stream), FIRST, len(stream), allocated)
     entry[64:] = b'ota.bin'.ljust(16, b'\0')
+    stored = enc(entry)
+    if listed_flash:
+        other = bytearray(ENTRY)
+        struct.pack_into('<HHHxxIII', other, 0, 0, 1, crc16(blank), FIRST + allocated, len(blank), len(blank))
+        other[64:] = b'flash.bin'.ljust(16, b'\0')
+        stored += enc(other)
     head = bytearray(HEAD)
-    struct.pack_into('<HIHHI', head, 2, crc16(enc(entry)), FIRST + allocated, 1, *HEAD_FIELDS)
+    struct.pack_into('<HIHHI', head, 2, crc16(stored), FIRST + allocated + len(blank), 2 if listed_flash else 1, *HEAD_FIELDS)
     head[16:16 + len(CHIP)] = CHIP
     struct.pack_into('<H', head, 0, crc16(head[2:]))
-    image = enc(head) + enc(entry)
-    image += b'\xff' * (FIRST - len(image)) + stream + b'\xff' * (allocated - len(stream))
+    image = enc(head) + stored
+    image += b'\xff' * (FIRST - len(image)) + stream + b'\xff' * (allocated - len(stream)) + blank
     identity = f'{model}_{version}'
     out = weave(identity, prefix, image)
     if installed(out) != (identity, updater):
@@ -279,7 +288,7 @@ def main():
         args.output.write_bytes(package(args.variant, args.container.read_bytes(), args.installer.read_bytes(),
                                         args.version))
     elif args.op == 'stage':
-        args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version))
+        args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version, listed_flash=True))
     else:
         identity, prefix, image = unweave(args.package.read_bytes())
         print(f'{identity} ({prefix} prefix blocks)')
