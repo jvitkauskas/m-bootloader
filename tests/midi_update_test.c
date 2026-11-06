@@ -23,6 +23,13 @@ static bool identity_seen, finish_seen, stop_answering, cancel_now, wrote_outsid
 static int corrupt_at_pass2 = -1;
 static uint32_t pass2_seen;
 static char identity[32];
+/* A RAM app the stand-in offers, and what happened to it. */
+uint8_t mu_test_app_ram[MU_APP_MAX];
+static uint8_t app[MU_APP_MAX];
+static uint32_t app_size, app_requests;
+static unsigned apps_started, app_stop_after, app_cancel_after;
+static bool app_first_read_seen;
+static uint32_t app_first_read;
 static bool answer_handshake, handshake_sent;
 static unsigned cancel_after, soft_after, check_percent, write_percent;
 
@@ -119,6 +126,23 @@ void mu_send(const uint8_t *data, uint32_t size) {
     uint32_t len = u[11] | (uint32_t)u[12] << 8 | (uint32_t)u[13] << 16;
     if (stop_answering)
         return;
+    if (app_size) {
+        assert(len <= 512 && address+len <= app_size);
+        if (!app_first_read_seen) {
+            app_first_read_seen = true;
+            app_first_read = address;
+        }
+        ++app_requests;
+        if (app_stop_after && app_requests > app_stop_after)
+            return;
+        if (app_cancel_after && app_requests == app_cancel_after) {
+            static const uint8_t soft[] = { 0xf0, 0x22, 0x24, 0x35, 0x7d, 0xf7 };
+            queue_bytes(soft, sizeof(soft));
+            return;
+        }
+        respond(address, app+address, len);
+        return;
+    }
     if (address == 0xf0000000u) {
         finish_seen = true;
         respond(address, (const uint8_t *)"success", 8);
@@ -422,6 +446,90 @@ static enum mu_result host_asks(uint8_t cmd, const uint8_t *body, uint32_t size)
     return r;
 }
 
+void mu_start_app(void) {
+    ++apps_started;
+    /* It really has what was offered, and a host hears before USB stops. */
+    assert(answered == 0x25 && !memcmp(mu_test_app_ram, app, app_size-8));
+}
+
+static void make_app(uint32_t size, uint8_t board, uint8_t format) {
+    for (uint32_t i = 0; i < size-8; ++i)
+        app[i] = (uint8_t)(i*7+(i >> 9));
+    uint16_t crc = core_crc16(0, app, size-8);
+    memcpy(app+size-8, "APP1", 4);
+    app[size-4] = (uint8_t)crc;
+    app[size-3] = (uint8_t)(crc >> 8);
+    app[size-2] = board;
+    app[size-1] = format;
+    app_size = size;
+    app_requests = 0;
+    apps_started = 0;
+    app_stop_after = app_cancel_after = 0;
+    app_first_read_seen = false;
+}
+
+static enum mu_result offer_app(const char *magic, uint32_t size) {
+    uint8_t m[8] = { (uint8_t)magic[0], (uint8_t)magic[1], (uint8_t)magic[2], 0, (uint8_t)size,
+        (uint8_t)(size >> 8), (uint8_t)(size >> 16), (uint8_t)(size >> 24) };
+    answered = -1;
+    return host_asks(0x25, m, 8);
+}
+
+static void test_apps(void) {
+    reset_all();
+#ifdef BOARD_SMK
+    const uint8_t mine = 2, other = 1;
+#else
+    const uint8_t mine = 1, other = 2;
+#endif
+    /* It says it can. */
+    assert(host_asks(0x12, 0, 0) == MU_CANCELLED);
+    assert(answered == 0x12 && answer[7] == MU_RUNS_APPS);
+    /* Any size, for this board or any, reads the trailer first and runs the app. */
+    static const uint32_t sizes[] = { 16, 17, 512, 513, 520, 0x8000, MU_APP_MAX };
+    for (unsigned i = 0; i < sizeof(sizes)/sizeof(sizes[0]); ++i)
+        for (unsigned any = 0; any < 2; ++any) {
+            make_app(sizes[i], any ? 0:mine, 1);
+            assert(offer_app("RUN", sizes[i]) == MU_CANCELLED);
+            assert(apps_started == 1 && app_first_read == sizes[i]-8);
+            assert(answer_size == 8 && !memcmp(answer, "RUN", 4));
+            assert(app_requests == 1+(sizes[i]+511)/512);
+        }
+    /* A wrong trailer costs that one request, and starts nothing. */
+    make_app(0x1000, other, 1);
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && answer[0] == 1);
+    assert(app_requests == 1);
+    make_app(0x1000, mine, 2);
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && app_requests == 1);
+    make_app(0x1000, mine, 1);
+    app[0x1000-8] = 'S';
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && app_requests == 1);
+    /* A wrong CRC is only seen at the end. */
+    make_app(0x1000, mine, 1);
+    app[0x123] ^= 1;
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && answer[0] == 1);
+    /* Sizes outside the limits, and a request that isn't one, aren't asked about. */
+    make_app(0x1000, mine, 1);
+    assert(offer_app("RUN", 15) == MU_CANCELLED && !apps_started && answered == 0 && !app_requests);
+    assert(offer_app("RUN", MU_APP_MAX+1) == MU_CANCELLED && !apps_started && answered == 0 && !app_requests);
+    assert(offer_app("RUX", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && !app_requests);
+    static const uint8_t longer[9] = { 'R', 'U', 'N', 0, 0, 0x10, 0, 0, 0 };
+    answered = -1;
+    assert(host_asks(0x25, longer, 9) == MU_CANCELLED && !apps_started && answered == 0 && !app_requests);
+    /* A host that stops partway starts nothing. */
+    make_app(0x1000, mine, 1);
+    app_stop_after = 3;
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0);
+    /* Download mode still gets out while loading. */
+    make_app(0x1000, mine, 1);
+    app_cancel_after = 3;
+    assert(offer_app("RUN", 0x1000) == MU_DOWNLOAD && !apps_started);
+    /* Nothing here goes near the flash. */
+    assert(!erases && !programs && !memcmp(flash, original, FLASH));
+    app_size = 0;
+    answered = -1;
+}
+
 static void read_request(uint8_t cmd, uint8_t provider, uint32_t address, uint32_t count) {
     uint8_t m[8] = { provider, (uint8_t)address, (uint8_t)(address >> 8), (uint8_t)(address >> 16),
         (uint8_t)(address >> 24), (uint8_t)count, (uint8_t)(count >> 8), (uint8_t)(count >> 16) };
@@ -483,6 +591,7 @@ static void test_host_commands(void) {
 int main(void) {
     bool written;
     test_host_commands();
+    test_apps();
     make_package(KEY, APP_SIZE);
     /* A clean install: only [0x4000, size) changes, and the first sector is finished last. */
     reset_all();

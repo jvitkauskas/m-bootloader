@@ -21,6 +21,12 @@
 #define BOARD 1
 #define TITLE "FM-1 M-FLASHER"
 #endif
+/* The LSB clock: from the bootloader that started us, or from hal_clock_b(). */
+#ifdef STAGE_OTA
+#define LSB_MHZ 60
+#else
+#define LSB_MHZ 48
+#endif
 /* After this long with no message from a host, the unit goes back to its firmware. */
 #define NO_HOST_MS 300000u
 extern uint8_t __bss_start[], __bss_end[];
@@ -119,6 +125,26 @@ static void retire_request(uint32_t stream_end) {
 }
 #endif
 
+static void show_waiting(void) {
+    for (unsigned row = 0; row < 15; ++row)
+        show(row, WHITE, "");
+    show(1, GREEN, TITLE);
+    show(3, WHITE, "CONNECT USB AND");
+    show(4, WHITE, "OPEN THE WEB PAGE.");
+    show_way_out();
+}
+
+void mu_start_app(void) {
+    hal_delay_us(200000);
+    usb_midi_stop();
+    sync_cpu();
+    ((void (*)(unsigned))(uintptr_t)MU_APP_RAM)(LSB_MHZ);
+    flash_init(1, 1);
+    screen = display_init(BOARD);
+    show_waiting();
+    usb_midi_start();
+}
+
 void stage_main(void *context, uint32_t stream_end) __attribute__((noreturn));
 void stage_main(void *context, uint32_t stream_end) {
     (void)context;
@@ -128,7 +154,7 @@ void stage_main(void *context, uint32_t stream_end) {
     hal_early();
 #ifdef STAGE_OTA
     /* The bootloader that started us has set the 60 MHz LSB clock (§3.2). */
-    hal_timer_clock(60);
+    hal_timer_clock(LSB_MHZ);
 #else
     hal_clock_b();
 #endif
@@ -139,14 +165,7 @@ void stage_main(void *context, uint32_t stream_end) {
 #endif
     uint16_t key = (uint16_t)(hal_efuse(1, 3) >> 8);
     screen = display_init(BOARD);
-    if (screen) {
-        for (unsigned row = 0; row < 15; ++row)
-            display_text(row, WHITE, "");
-        display_text(1, GREEN, TITLE);
-        display_text(3, WHITE, "CONNECT USB AND");
-        display_text(4, WHITE, "OPEN THE WEB PAGE.");
-        show_way_out();
-    }
+    show_waiting();
     usb_midi_start();
     for (; ; ) {
         bool written;
