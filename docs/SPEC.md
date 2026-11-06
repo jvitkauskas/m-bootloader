@@ -1001,11 +1001,20 @@ The image is `/MBOOT/MENU.BIN` on a FAT32 volume with 512-byte sectors, either i
 
 The image is a flat binary:
 
-* linked for `0x01C28000`, with its entry at its first byte; it and its RAM stay below `0x01C30000`;
+* linked for `0x01C28000`, with its entry at its first byte;
 * at most `0x8000` bytes, and at least 16;
 * ending in an 8-byte trailer: `STG2`, the CRC16 of `core_crc16` over everything before the trailer (little endian), and two zero bytes.
 
-The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, PC8 an output again, and SPI1 as the panel uses it. There is no other contract, and the image starts the card itself. It may then:
+`tools/stage2.py` adds the trailer to a flat binary. The file is loaded in whole 512-byte sectors, so the trailer and whatever follows it in the last sector land on what's linked right after the image, normally `.bss`. Nothing clears `.bss` for the image.
+
+The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, PC8 an output again, and SPI1 as the panel uses it. The image starts the card itself. When it's called:
+
+* **Clocks** are as in §3.2: system 360 MHz, HSB 180 MHz, LSB 60 MHz.
+* **The watchdog** is off, and the bootloader hasn't enabled interrupts (§4.1). Their state at entry to the bootloader isn't established, so an image that wants them sets them up itself.
+* **The stack** is the bootloader's, in its RAM, with some of its 4,096 bytes already used. The image can move to its own, and must move back before returning.
+* **RAM** from `0x01C0A800` to below `0x01C7FD80` is free: nothing of the bootloader's lives there while the image runs. The RAM's full physical extent is inferred (§2.1).
+
+The retained area from `0x01C7FD80` isn't free, as a reset and the menu both read it (§6). An image writes there only for a purpose of its own, such as the download-mode request (§4.2). It may then:
 
 * **return,** which means "carry on": the bootloader sets up the flash interface again and returns to the menu. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
 * **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
