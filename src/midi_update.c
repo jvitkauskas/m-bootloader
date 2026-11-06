@@ -16,6 +16,7 @@
 static uint8_t frame[FRAME_MAX], decoded[PACKET_MAX+16], wire[FRAME_MAX];
 static uint16_t sector_crc[MAX_SECTORS];
 static uint32_t frame_size;
+uint32_t mu_messages;
 static bool collecting, frame_ready, erasing, download_asked;
 
 void mu_rx(uint8_t b) {
@@ -110,6 +111,8 @@ static unsigned take(uint32_t *size) {
         }
     }
     frame_ready = false;
+    if (kind != NOTHING)
+        ++mu_messages;
     return kind;
 }
 

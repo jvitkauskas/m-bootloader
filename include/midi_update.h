@@ -36,6 +36,8 @@ enum mu_result {
     MU_FLASH_ERROR,
     MU_RESTART    /* the host asked for a restart; nothing was written */
 };
+/* How many messages have come from a host. */
+extern uint32_t mu_messages;
 /* A byte from the USB-MIDI stream. */
 void mu_rx(uint8_t byte);
 /* Answers the updater's protocol until a package is installed or mu_cancel() says stop.

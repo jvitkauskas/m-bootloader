@@ -21,12 +21,12 @@
 #define BOARD 1
 #define TITLE "FM-1 M-FLASHER"
 #endif
-/* A host gets this long to appear, or the unit goes back to its firmware. */
-#define NO_HOST_MS 120000u
+/* After this long with no message from a host, the unit goes back to its firmware. */
+#define NO_HOST_MS 300000u
 extern uint8_t __bss_start[], __bss_end[];
 static uint8_t sector[MU_SECTOR] __attribute__((aligned(4)));
 static bool screen;
-static uint32_t waited;
+static uint32_t waited, seen;
 
 void mu_send(const uint8_t *data, uint32_t size) {
     usb_midi_send(data, size);
@@ -40,9 +40,10 @@ void mu_idle(void) {
 }
 
 bool mu_cancel(void) {
-    if (usb_midi_configured())
+    if (mu_messages != seen) {
+        seen = mu_messages;
         waited = 0;
-    else
+    } else
         ++waited;
     return waited >= NO_HOST_MS;
 }
