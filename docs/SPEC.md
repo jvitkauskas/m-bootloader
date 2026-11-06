@@ -1005,7 +1005,7 @@ The image is a flat binary:
 * at most `0x8000` bytes, and at least 16;
 * ending in an 8-byte trailer: `STG2`, the CRC16 of `core_crc16` over everything before the trailer (little endian), and two zero bytes.
 
-`tools/stage2.py` adds the trailer to a flat binary. The trailer is loaded with the image, so it lands on whatever is linked right after, normally `.bss`, and nothing clears `.bss` for the image.
+`tools/stage2.py` adds the trailer to a flat binary. The file is loaded in whole 512-byte sectors, so the trailer and whatever follows it in the last sector land on what's linked right after the image, normally `.bss`. Nothing clears `.bss` for the image.
 
 The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, PC8 an output again, and SPI1 as the panel uses it. The image starts the card itself. When it's called:
 
