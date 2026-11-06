@@ -17,6 +17,9 @@ def boot_version(root=ROOT):
     if not re.fullmatch(r'[0-9]+\.[0-9]+', version):
         raise ValueError('VERSION must contain major.minor')
 
+    # A test build says so on the menu and to M-Flasher (docs/SPEC.md §11.9).
+    suffix = os.environ.get('BOOT_VERSION_SUFFIX', '')
+
     def git(*args):
         return subprocess.run(['git', '-C', str(root), *args], check=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout.strip()
@@ -32,9 +35,11 @@ def boot_version(root=ROOT):
                                check=False).returncode
         if dirty not in (0, 1):
             raise RuntimeError('could not determine tracked git state')
-        version += '-' + revision + ('-dirty' if dirty else '')
-    # A test build says so on the menu and to M-Flasher (docs/SPEC.md §11.9).
-    version += os.environ.get('BOOT_VERSION_SUFFIX', '')
+        version += '-' + revision
+        if dirty:
+            # A test build's own suffix leaves no room for the whole word on the menu's row.
+            version += '-d' if suffix else '-dirty'
+    version += suffix
     if len(version) > 20:
         raise ValueError('bootloader version exceeds the 20-column menu row')
     return version

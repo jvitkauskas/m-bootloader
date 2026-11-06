@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Exercise clean/dirty revisions, ignored files and exported source builds."""
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -8,6 +9,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from version import boot_version, write_header
+
+# make TEST_REQUESTS=1 test exports this, and the checks below are about a plain build's version.
+os.environ.pop('BOOT_VERSION_SUFFIX', None)
 
 
 def git(root, *args):
@@ -65,6 +69,13 @@ with tempfile.TemporaryDirectory(prefix='version-test-', dir=ROOT / 'build') as 
     # A tracked deletion (other than the required version file) is dirty too.
     (root / '.gitignore').unlink()
     assert boot_version(root) == next_clean + '-dirty'
+    # A test build says so, dirty or not, and still fits the row.
+    os.environ['BOOT_VERSION_SUFFIX'] = '-test'
+    assert boot_version(root) == next_clean + '-d-test'
+    assert len(boot_version(root)) <= 20
+    subprocess.run(['git', '-C', str(root), 'checkout', '--', '.gitignore'], check=True)
+    assert boot_version(root) == next_clean + '-test'
+    os.environ.pop('BOOT_VERSION_SUFFIX')
 
 print('PASS: boot versions follow clean/staged/unstaged revisions, ignore untracked files, '
       'fit the full row, and remain stable outside git')
