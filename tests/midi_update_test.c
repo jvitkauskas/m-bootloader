@@ -28,7 +28,7 @@ uint8_t mu_test_app_ram[MU_APP_MAX];
 static uint8_t app[MU_APP_MAX];
 static uint32_t app_size, app_requests;
 static unsigned apps_started, app_stop_after, app_cancel_after;
-static bool app_first_read_seen;
+static bool app_first_read_seen, app_changes_trailer;
 static uint32_t app_first_read;
 static bool answer_handshake, handshake_sent;
 static unsigned cancel_after, soft_after, check_percent, write_percent;
@@ -141,6 +141,8 @@ void mu_send(const uint8_t *data, uint32_t size) {
             return;
         }
         respond(address, app+address, len);
+        if (app_changes_trailer && app_requests == 1)
+            app[app_size-1] ^= 1;
         return;
     }
     if (address == 0xf0000000u) {
@@ -449,7 +451,7 @@ static enum mu_result host_asks(uint8_t cmd, const uint8_t *body, uint32_t size)
 void mu_start_app(void) {
     ++apps_started;
     /* It really has what was offered, and a host hears before USB stops. */
-    assert(answered == 0x25 && !memcmp(mu_test_app_ram, app, app_size-8));
+    assert(answered == 0x25 && !memcmp(mu_test_app_ram, app, app_size));
 }
 
 static void make_app(uint32_t size, uint8_t board, uint8_t format) {
@@ -465,7 +467,7 @@ static void make_app(uint32_t size, uint8_t board, uint8_t format) {
     app_requests = 0;
     apps_started = 0;
     app_stop_after = app_cancel_after = 0;
-    app_first_read_seen = false;
+    app_first_read_seen = app_changes_trailer = false;
 }
 
 static enum mu_result offer_app(const char *magic, uint32_t size) {
@@ -508,6 +510,21 @@ static void test_apps(void) {
     make_app(0x1000, mine, 1);
     app[0x123] ^= 1;
     assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && answer[0] == 1);
+    /* A trailer that isn't the one the file ends in. */
+    make_app(0x1000, mine, 1);
+    app_changes_trailer = true;
+    assert(offer_app("RUN", 0x1000) == MU_CANCELLED && !apps_started && answered == 0 && answer[0] == 1);
+    /* A file with its CRC from outside this code, so the test can't share a mistake with it. */
+    make_app(16, 0, 1);
+    memcpy(app, "12345678", 8);
+    app[12] = 20;
+    app[13] = 144;
+    assert(offer_app("RUN", 16) == MU_CANCELLED && !apps_started && answered == 0);
+    make_app(16, 0, 1);
+    memcpy(app, "12345678", 8);
+    app[12] = 21;
+    app[13] = 144;
+    assert(offer_app("RUN", 16) == MU_CANCELLED && apps_started == 1 && answered == 0x25);
     /* Sizes outside the limits, and a request that isn't one, aren't asked about. */
     make_app(0x1000, mine, 1);
     assert(offer_app("RUN", 15) == MU_CANCELLED && !apps_started && answered == 0 && !app_requests);

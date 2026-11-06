@@ -334,6 +334,10 @@ static bool load_app(uint32_t size) {
     for (uint32_t at = 0; at < size; at += PACKET_MAX)
         if (!ask(at, size-at < PACKET_MAX ? size-at:PACKET_MAX, MU_APP_RAM+at))
             return false;
+    /* The file's own trailer, not only the one asked for first. */
+    for (unsigned i = 0; i < sizeof(trailer); ++i)
+        if (MU_APP_RAM[size-8+i] != trailer[i])
+            return false;
     return core_crc16(0, MU_APP_RAM, size-8) == core_le16(trailer+4);
 }
 
