@@ -101,7 +101,7 @@ which may lose pairings. Calibration stays. Back up before installing it.
 **Little tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
 (`0x856014`). One such unit did not start after version 1.1 or 1.2 was installed,
-and the cause is not known. Another runs 1.3 and this version, on one owner's report,
+and the cause is not known. Another runs 1.3 and 2.0, on one owner's report,
 with its firmware, menu and download mode working. A MIDI mode reinstall of the same
 firmware worked there too, which rewrites only the first 4 KiB sector
 ([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)).
