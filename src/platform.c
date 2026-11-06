@@ -16,7 +16,11 @@ static uint32_t capacity;
 bool failed, dma_active;
 unsigned timer_mhz = 24;
 #else
+#ifdef RAM_STAGE
+#define SHARED
+#else
 #define SHARED static
+#endif
 static bool failed, dma_active;
 static unsigned read_width = 1, timer_mhz = 24;
 static uint32_t capacity;
