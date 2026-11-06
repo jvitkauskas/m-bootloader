@@ -328,6 +328,25 @@ __attribute__((noinline)) static bool wipe_user(const struct core_wipe *plan) {
     hal_reset();
 }
 
+#ifdef TEST_REQUESTS
+/* A test build's one-shot request, so automated tests can reach menu items with nobody at the keys (docs/SPEC.md
+ * §11.9). It's in RAM, not flash, so a test that dies can't leave the unit stuck on it. */
+#define REQUEST_SD 4u
+#define REQUEST_MIDI 5u
+static unsigned test_request;
+#ifndef BOARD_SMK
+static bool test_sd;
+#endif
+
+static unsigned test_request_consume(uint8_t retained[8]) {
+    if (memcmp(retained, "MBTEST", 6))
+        return 0;
+    unsigned asked = retained[6];
+    memset(retained, 0, 8);
+    return asked == REQUEST_SD || asked == REQUEST_MIDI ? asked:0;
+}
+#endif
+
 __attribute__((noinline)) static bool menu(void) {
     board_init(SMK);
     if (!screen())
@@ -419,6 +438,22 @@ __attribute__((noinline)) static bool menu(void) {
         }
         /* Redraw only on an action; polling keeps the multiplexed LEDs alive. */
         unsigned edge = 0;
+#ifdef TEST_REQUESTS
+        /* With no card there's no such item. Nobody is there to leave the menu, so download mode: */
+        if (test_request) {
+            for (unsigned i = 0; i < count; ++i)
+                if (types[i] == test_request) {
+                    selection = i;
+                    edge = KEY_SELECT;
+                }
+            if (!edge)
+                rom_download();
+#ifndef BOARD_SMK
+            test_sd = test_request == REQUEST_SD;
+#endif
+            test_request = 0;
+        }
+#endif
         while (!edge) {
             board_wait(20, true);
             unsigned keys = board_keys();
@@ -458,6 +493,11 @@ __attribute__((noinline)) static bool menu(void) {
         if (action == 4) {
             /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
             reason = sd_stage2(60);
+#ifdef TEST_REQUESTS
+            /* And after this run, for the same reason. */
+            if (test_sd)
+                rom_download();
+#endif
             /* stage 2 reprograms the flash interface */
             flash_init(effective_width, config.spi_divider);
             clear_rows(0, 14);
@@ -537,13 +577,22 @@ static bool xip_crc(void) {
 
 __attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
     bool bypass = contract_consume_bypass(RETAINED);
+#ifdef TEST_REQUESTS
+    unsigned asked = test_request_consume(RETAINED);
+#endif
 #ifndef BOOT_SIM
     memset(__bss_start, 0, (size_t)(__bss_end-__bss_start));
+#endif
+#ifdef TEST_REQUESTS
+    test_request = asked;
 #endif
     (void)device;
     /* The values every known configuration has: §5.3. */
     core_config_defaults(&config);
     bool want_menu = board_hold(KEY_SELECT, 1000);
+#ifdef TEST_REQUESTS
+    want_menu = want_menu || test_request;
+#endif
     board_restore();
     bool flash_ok = flash_init(1, 1);
     identify();

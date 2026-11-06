@@ -1119,6 +1119,30 @@ A RAM app is a program that runs from RAM and leaves the firmware in flash as it
 
 **An app can return,** except from `run-ram`, if it has written nothing outside the first two rows, apart from what it pushes on the caller's stack and pops again. It restores any clocks it changed and returns with interrupts off. What started it then sets up flash, the screen and USB again. **It must reset** if it changed what the bootloader mounted, such as the firmware in flash.
 
+### 11.9 Test builds
+
+`make TEST_REQUESTS=1`, after `make clean`, makes a bootloader that automated tests can drive with nobody at the keys. Its version ends in `-test`. A build without the option doesn't contain any of this, and releases are built without it.
+
+A host leaves a one-shot request at the start of the retained area (§6), then resets: `MBTEST`, an action, and a zero. The bootloader consumes it as it starts, whatever it holds, and opens the menu as if the key were held. It then chooses that menu item:
+
+| Action | Menu item |
+|---|---|
+| 4 | `SD CARD` |
+| 5 | `MIDI MODE` |
+
+Any other action is ignored, and the unit starts normally, so a request can't wipe anything.
+
+Nobody is at the keys, so a request never ends in the menu. If the menu doesn't have the item, as with no card, the unit goes to download mode. It does the same when a requested `SD CARD` run returns or fails, so a host can read what the image left in RAM. The menu's error text isn't kept, so an image that should run has to leave its own record. A person choosing the item stays in the menu, as in a release.
+
+The request is in RAM, not flash, so it's gone after one start and can't leave a unit stuck in a mode if a test dies. It takes a reset that keeps RAM, not a power cycle. `make test-requests` makes `build/test-request-midi.bin` and `build/test-request-sd.bin`, which do this from download mode:
+
+```sh
+m-flasher download-mode
+m-flasher run-ram build/test-request-midi.bin --addr 0x01C28000
+```
+
+M-Flasher can't confirm the start, as the program resets at once.
+
 ## 12. Testing
 
 Real flash images of units can be used as test fixtures, but they are not published because they contain M-VAVE's firmware and the unit's own calibration. Use only their structural/checksum results in distributable tests; never ship one unit's factory data to other units. Tests of parsers, the image wrapper and state logic SHOULD use such real images and synthetic malformed inputs, through a simulated flash adapter or a host build.
