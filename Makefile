@@ -127,7 +127,12 @@ endef
 $(eval $(call LOADER_template,a,0x1c20000,0x1c28000))
 $(eval $(call LOADER_template,b,0x1c28000,0x1c30000))
 
-stage: build/fm1/stage-ram.bin build/fm1/stage-ota.bin build/smk37/stage-ram.bin build/smk37/stage-ota.bin
+STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc
+stage: build/fm1/stage-ram.bin build/smk37/stage-ram.bin $(STAGE_PRODUCTS)
+build/fm1/stage.fwsc: build/fm1/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage fm1 $< $@
+build/smk37/stage-%.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage smk37-$* $< $@
 build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) tools/manifest.py
 	python3 tools/manifest.py > $@
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
