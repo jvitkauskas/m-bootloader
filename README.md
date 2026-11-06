@@ -46,7 +46,8 @@ run with it.
   board and a FAT32 card fitted, the menu gets an **SD card** item at the top.
   It loads and runs `/MBOOT/MENU.BIN` from the card, which can be any program
   built for it ([docs/SPEC.md](docs/SPEC.md) §11.5). The card is only touched
-  when the menu is open. This is new and not yet tested on real hardware.
+  when the menu is open. It's been tested on an FM-1, where an image ran from
+  the card, returned to the menu and ran again.
 - **Checked start.** Every firmware file's checksum is verified before the
   firmware starts.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
