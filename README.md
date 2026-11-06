@@ -198,7 +198,7 @@ repository, and the tests skip them when absent.
 | `src/loader.c`, `src/loader_target.c` | the flash loader |
 | `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
-| `tools/` | container and M-UPGRADE package packing, build checks |
+| `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
 
 ## Clean room

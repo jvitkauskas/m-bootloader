@@ -206,6 +206,7 @@ test: all build/midi-update-test build/midi-update-test-smk37 build/upkr-test bu
 	python3 tests/version_test.py
 	python3 tests/container_test.py
 	python3 tests/fwsc_test.py
+	python3 tests/stage2_test.py
 sanitize:
 	@mkdir -p build
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/core.c tests/core_test.c -o build/core-test-sanitize
