@@ -66,12 +66,12 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-This release, `2.1-861e43d`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher,
-and with M-UPGRADE from the stock bootloader, 1.2 and 1.3 installed over it, an official
-016 update, Baud Girl, a browser installer from running firmware, and MIDI mode. On the
-FM-1 also Melodee's installer with its 1.2 option, moving from 2.0, and M-Flasher on macOS and
-Windows. Before it, `2.0-c43a32f`, the same bootloader code, was tested over 1.3 and 1.2 on both
-units. `VDDIO` has not been measured.
+This release, `2.2-64f7c9c`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher and through
+the firmware's update route, an official 016 update, the RAM stage, MIDI mode, RAM apps through
+MIDI mode and the stage, and a backup and a firmware write straight after an app. On the FM-1 also
+M-UPGRADE, for an official 016 update and for installing this version from the stock bootloader,
+from a Mac. Not tested on this version: 1.2 and 1.3 installed over it, as the configuration code
+hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
