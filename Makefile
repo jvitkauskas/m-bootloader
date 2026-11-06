@@ -11,6 +11,11 @@ OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
 export UPKR ?= upkr
 HOSTCC ?= cc
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
+# A test build: make clean, then make TEST_REQUESTS=1 (docs/SPEC.md §11.9).
+ifdef TEST_REQUESTS
+CFLAGS += -DTEST_REQUESTS
+export BOOT_VERSION_SUFFIX := -test
+endif
 COMMON := core platform display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 := stage0 upkr board platform runtime
@@ -31,7 +36,7 @@ C_PRODUCTS := build/fm1/uboot.fwsc build/smk37/uboot-pro.fwsc build/smk37/uboot-
 STAGE_RAM := build/fm1/stage-ram.bin build/smk37/stage-ram.bin
 STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc \
 	build/fm1/stage-listed.fwsc build/smk37/stage-pro-listed.fwsc build/smk37/stage-elite-listed.fwsc
-.PHONY: all stage test sanitize clean reproducible FORCE
+.PHONY: all stage test test-requests sanitize clean reproducible FORCE
 all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
 
 # Refresh on every invocation; unchanged versions keep the header's mtime.
@@ -182,6 +187,18 @@ build/sdboot-test: src/core.c src/sdboot.c tests/sdboot_test.c $(HEADERS)
 build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c -o $@
+build/boot-test-requests: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS)
+	@mkdir -p build
+	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_REQUESTS $(SIM_SOURCES) tests/boot_test.c -o $@
+# What asks a test build's bootloader for MIDI mode or the SD card item, through run-ram.
+build/test-request.ld: tools/target.ld.S
+	@mkdir -p build
+	$(CLANG) -E -P -x c -DENTRY_SYMBOL=test_request_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DLOADER_BUILD $< -o $@
+build/test-request-%.bin: src/test_request.c include/platform.h build/test-request.ld
+	$(CLANG) $(CFLAGS) -DTEST_REQUEST=$(if $(filter sd,$*),4,5) -c $< -o build/test-request-$*.o
+	$(LINK) --gc-sections -T build/test-request.ld -o build/test-request-$*.elf build/test-request-$*.o
+	$(OBJCOPY) -O binary -j .text build/test-request-$*.elf $@
+test-requests: build/test-request-midi.bin build/test-request-sd.bin
 build/loader-slot-a-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c $< -o $@
@@ -190,7 +207,7 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
+test: all build/boot-test-requests build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
@@ -201,6 +218,7 @@ test: all build/midi-update-test build/midi-update-test-smk37 build/upkr-test bu
 	./build/midi-update-test-smk37
 	./build/boot-test-fm1
 	./build/boot-test-smk37
+	./build/boot-test-requests
 	./build/loader-lifecycle-test
 	python3 tests/startup_test.py
 	python3 tests/updater_context_test.py $(TOOLCHAIN)/bin/llvm-nm build/fm1/stage1.elf build/smk37/stage1.elf

@@ -164,6 +164,9 @@ static void t_reset_boot_state(void)
     t_sd_calls = 0;
     t_sd_card = false;
     t_sd_result = NULL;
+#ifdef TEST_REQUESTS
+    test_sd = false;
+#endif
 }
 
 static void t_prep(unsigned fixture)
@@ -1147,6 +1150,58 @@ static void t_sd_menu(void)
     CHECK(!t_sd_calls);
 }
 
+#ifdef TEST_REQUESTS
+static void t_requests(void)
+{
+    /* Starts the SD card item with no key, once, consumes the request, and ends in download mode. */
+    t_prep(4);
+    t_sd_card = true;
+    memcpy(RET(0), "MBTEST\4", 8);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_RESET && t_usb_reset());
+    CHECK(t_sd_calls == 1 && !t_app_calls && t_resets == 1);
+    /* The same when the run fails. */
+    t_prep(4);
+    t_sd_card = true;
+    t_sd_result = "NO /MBOOT/MENU.BIN";
+    memcpy(RET(0), "MBTEST\4", 8);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_RESET && t_usb_reset());
+    CHECK(t_sd_calls == 1 && !t_app_calls);
+    /* And with no card, without running anything. */
+    t_prep(4);
+    memcpy(RET(0), "MBTEST\4", 8);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_RESET && t_usb_reset());
+    CHECK(!t_sd_calls && !t_app_calls);
+    /* A person choosing the item without a request stays in the menu, as in a release. */
+    t_prep(4);
+    t_sd_card = true;
+    t_sd_result = "NO /MBOOT/MENU.BIN";
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_sd_calls == 1 && !t_resets);
+    /* Anything else chooses nothing: this is the wipe's action number. */
+    t_prep(4);
+    t_sd_card = true;
+    memcpy(RET(0), "MBTEST\3", 8);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(!t_sd_calls && !t_resets);
+    CHECK(!core_le32(RET(0)) && !core_le32(RET(4)));
+    CHECK(t_row_is(8, "> SD CARD"));
+    /* With firmware, that's a normal start, and so is having no request at all. */
+    if (!t_fixture_present[t_own_fixture()])
+        return;
+    t_prep(t_own_fixture());
+    memcpy(RET(0), "MBTEST\3", 8);
+    CHECK(t_go() == END_APP);
+    t_prep(t_own_fixture());
+    CHECK(t_go() == END_APP);
+}
+#endif
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -1173,6 +1228,9 @@ int main(void)
     t_fm1_matrix_enable();
     t_public_recovery();
     t_sd_menu();
+#ifdef TEST_REQUESTS
+    t_requests();
+#endif
     t_normal();
     if (t_fixture_present[t_own_fixture()]) {
         t_keys_and_menu();
