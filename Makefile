@@ -17,6 +17,8 @@ STAGE0 := stage0 upkr board platform runtime
 STAGE1 := core platform display runtime contract boot sdboot midi_update usb_midi
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
+# MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
+STAGE := $(COMMON) midi_update usb_midi
 HEADERS := $(wildcard include/*.h)
 SIM_SOURCES := src/core.c src/contract.c src/platform.c src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
@@ -25,8 +27,12 @@ A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
 # M-UPGRADE packages: only our installer, which writes the bootloader.
 C_PRODUCTS := build/fm1/uboot.fwsc build/smk37/uboot-pro.fwsc build/smk37/uboot-elite.fwsc
-.PHONY: all test sanitize clean reproducible FORCE
-all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) build/manifest.json
+# The RAM stage: for run-ram, and M-UPGRADE-style packages holding only it.
+STAGE_RAM := build/fm1/stage-ram.bin build/smk37/stage-ram.bin
+STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc \
+	build/fm1/stage-listed.fwsc build/smk37/stage-pro-listed.fwsc build/smk37/stage-elite-listed.fwsc
+.PHONY: all stage test sanitize clean reproducible FORCE
+all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
 
 # Refresh on every invocation; unchanged versions keep the header's mtime.
 # Only A's entry includes this header. B remains the hardware-tested MFLR1.3.
@@ -78,6 +84,30 @@ build/$(1)/installer.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(INSTALLER)
 build/$(1)/installer.bin: build/$(1)/installer.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
 	python3 tools/check_build.py $$< $$@ 0x1c0a800 0x1c16800 installer_entry > build/$(1)/installer-size.json
+# The RAM stage: linked for the updater's address, and for run-ram's slot.
+build/$(1)/st/%.o: src/%.c $(HEADERS) Makefile
+	@mkdir -p $$(@D)
+	$(CLANG) $(CFLAGS) -flto -DRAM_STAGE $(2) -c $$< -o $$@
+build/$(1)/stage_start.o: src/stage_start.S Makefile
+	$(CLANG) -target pi32v2 -mcpu=r3 $(2) -c $$< -o $$@
+build/$(1)/stage_ota.o: src/stage.c $(HEADERS) Makefile build/boot_version.h
+	$(CLANG) $(CFLAGS) -flto $(2) -DSTAGE_OTA -DSTAGE_VERSION=\"$$$$(cat VERSION)\" -c $$< -o $$@
+build/$(1)/stage_ram.o: src/stage.c $(HEADERS) Makefile build/boot_version.h
+	$(CLANG) $(CFLAGS) -flto $(2) -DSTAGE_VERSION=\"$$$$(cat VERSION)\" -c $$< -o $$@
+build/$(1)/stage-ota.ld: tools/target.ld.S
+	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c0a800 -DRAM_LENGTH=0xc000 -DINSTALLER_BUILD $$< -o $$@
+build/$(1)/stage-ram.ld: tools/target.ld.S
+	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DINSTALLER_BUILD $$< -o $$@
+build/$(1)/stage-ota.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/stage_ota.o build/$(1)/stage_start.o build/$(1)/stage-ota.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ota.ld -Map build/$(1)/stage-ota.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage-ram.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/stage_ram.o build/$(1)/stage_start.o build/$(1)/stage-ram.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ram.ld -Map build/$(1)/stage-ram.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage-ota.bin: build/$(1)/stage-ota.elf tools/check_build.py
+	$(OBJCOPY) -O binary -j .text $$< $$@
+	python3 tools/check_build.py $$< $$@ 0x1c0a800 0x1c16800 stage_entry > build/$(1)/stage-ota-size.json
+build/$(1)/stage-ram.bin: build/$(1)/stage-ram.elf tools/check_build.py
+	$(OBJCOPY) -O binary -j .text $$< $$@
+	python3 tools/check_build.py $$< $$@ 0x1c28000 0x1c30000 stage_entry > build/$(1)/stage-ram-size.json
 endef
 $(eval $(call BOARD_template,fm1,))
 $(eval $(call BOARD_template,smk37,-DBOARD_SMK))
@@ -103,7 +133,21 @@ endef
 $(eval $(call LOADER_template,a,0x1c20000,0x1c28000))
 $(eval $(call LOADER_template,b,0x1c28000,0x1c30000))
 
-build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) tools/manifest.py
+stage: $(STAGE_RAM) $(STAGE_PRODUCTS)
+build/fm1/stage.fwsc: build/fm1/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage fm1 $< $@
+build/smk37/stage-pro.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage smk37-pro $< $@
+build/smk37/stage-elite.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage smk37-elite $< $@
+# For Felucca-family firmware, which refuses a package without a flash.bin, as M-VAVE's refuses one with it.
+build/fm1/stage-listed.fwsc: build/fm1/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash fm1 $< $@
+build/smk37/stage-pro-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash smk37-pro $< $@
+build/smk37/stage-elite-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash smk37-elite $< $@
+build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) tools/manifest.py
 	python3 tools/manifest.py > $@
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)

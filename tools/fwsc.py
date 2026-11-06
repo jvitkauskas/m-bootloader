@@ -16,6 +16,7 @@ from bankcb import crc16, enc, validate
 BLOCK, KEEP, MIN_PREFIX, SENTINEL = 48, 47, 20, 0x7d
 HEAD, ENTRY = 64, 80
 UPDATER_LOAD, UPDATER_MAX, UPDATER_NAME = 0x01c0a800, 0x5b1c, b'usb_hid_ota.bin'
+STORED_MAX = 0x4f00
 # Package variant: (bootloader board, model M-UPGRADE expects, identity prefix
 # blocks as in M-VAVE's package). The Elite is an SMK-37 Pro by another name.
 VARIANTS = {
@@ -213,25 +214,43 @@ def updater_code(stream):
 
 def package(variant, container, installer, version='099'):
     """The package for variant: identity, header, and ota.bin with the installer."""
-    board, model, prefix = VARIANTS[variant]
+    board = VARIANTS[variant][0]
     if validate(container) != board or installer.count(container) != 1:
         raise ValueError('installer does not carry this board\'s bootloader')
+    return updater_package(variant, installer, version)
+
+
+def updater_package(variant, updater, version='099', listed_flash=False):
+    """The package for variant: identity, header, and ota.bin with this updater.
+    listed_flash adds a blank flash.bin that nothing writes: Felucca-family firmware refuses a
+    package without one, whatever its updater does."""
+    _, model, prefix = VARIANTS[variant]
     if not re.fullmatch(r'[0-9]{3}', version):
         raise ValueError('version must be three digits')
-    stream = updater_stream(installer)
+    stream = updater_stream(updater)
+    # Firmware stores it in a fixed place, followed by its update request (SPEC section 5.6).
+    if len(stream) > STORED_MAX:
+        raise ValueError('ota.bin would run into where firmware keeps the update request')
     allocated = -(-len(stream) // 32) * 32
+    blank = b'\xff' * 32 if listed_flash else b''
     entry = bytearray(ENTRY)
     struct.pack_into('<HHHxxIII', entry, 0, OTA_TYPE, 0, crc16(stream), FIRST, len(stream), allocated)
     entry[64:] = b'ota.bin'.ljust(16, b'\0')
+    stored = enc(entry)
+    if listed_flash:
+        other = bytearray(ENTRY)
+        struct.pack_into('<HHHxxIII', other, 0, 0, 1, crc16(blank), FIRST + allocated, len(blank), len(blank))
+        other[64:] = b'flash.bin'.ljust(16, b'\0')
+        stored += enc(other)
     head = bytearray(HEAD)
-    struct.pack_into('<HIHHI', head, 2, crc16(enc(entry)), FIRST + allocated, 1, *HEAD_FIELDS)
+    struct.pack_into('<HIHHI', head, 2, crc16(stored), FIRST + allocated + len(blank), 2 if listed_flash else 1, *HEAD_FIELDS)
     head[16:16 + len(CHIP)] = CHIP
     struct.pack_into('<H', head, 0, crc16(head[2:]))
-    image = enc(head) + enc(entry)
-    image += b'\xff' * (FIRST - len(image)) + stream + b'\xff' * (allocated - len(stream))
+    image = enc(head) + stored
+    image += b'\xff' * (FIRST - len(image)) + stream + b'\xff' * (allocated - len(stream)) + blank
     identity = f'{model}_{version}'
     out = weave(identity, prefix, image)
-    if installed(out) != (identity, installer):
+    if installed(out) != (identity, updater):
         raise ValueError('package does not read back')
     return out
 
@@ -257,12 +276,20 @@ def main():
     build.add_argument('container', type=Path)
     build.add_argument('installer', type=Path)
     build.add_argument('output', type=Path)
+    stage = sub.add_parser('stage')
+    stage.add_argument('--version', default='099')
+    stage.add_argument('--listed-flash', action='store_true')
+    stage.add_argument('variant', choices=sorted(VARIANTS))
+    stage.add_argument('code', type=Path)
+    stage.add_argument('output', type=Path)
     show = sub.add_parser('info')
     show.add_argument('package', type=Path)
     args = parser.parse_args()
     if args.op == 'build':
         args.output.write_bytes(package(args.variant, args.container.read_bytes(), args.installer.read_bytes(),
                                         args.version))
+    elif args.op == 'stage':
+        args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version, args.listed_flash))
     else:
         identity, prefix, image = unweave(args.package.read_bytes())
         print(f'{identity} ({prefix} prefix blocks)')

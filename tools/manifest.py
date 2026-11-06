@@ -12,6 +12,14 @@ PRODUCTS = {
     'build/fm1/uboot.fwsc': 'build/fm1/installer-size.json',
     'build/smk37/uboot-pro.fwsc': 'build/smk37/installer-size.json',
     'build/smk37/uboot-elite.fwsc': 'build/smk37/installer-size.json',
+    'build/fm1/stage-ram.bin': 'build/fm1/stage-ram-size.json',
+    'build/smk37/stage-ram.bin': 'build/smk37/stage-ram-size.json',
+    'build/fm1/stage.fwsc': 'build/fm1/stage-ota-size.json',
+    'build/smk37/stage-pro.fwsc': 'build/smk37/stage-ota-size.json',
+    'build/smk37/stage-elite.fwsc': 'build/smk37/stage-ota-size.json',
+    'build/fm1/stage-listed.fwsc': 'build/fm1/stage-ota-size.json',
+    'build/smk37/stage-pro-listed.fwsc': 'build/smk37/stage-ota-size.json',
+    'build/smk37/stage-elite-listed.fwsc': 'build/smk37/stage-ota-size.json',
 }
 
 

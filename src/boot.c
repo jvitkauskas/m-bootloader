@@ -145,6 +145,14 @@ bool mu_cancel(void) {
     return held >= 20;
 }
 
+void mu_unit_info(struct mu_unit *unit) {
+    unit->jedec = jedec;
+    unit->capacity = flash_capacity();
+    flash_uid(unit->uid);
+    unit->kind = MU_BOOTLOADER;
+    unit->version = (const char *)(uintptr_t)0x01c02050;
+}
+
 bool mu_read(uint32_t address, void *out, uint32_t size) {
     return flash_read(0, address, out, size);
 }
@@ -195,7 +203,7 @@ static void midi_mode(void) {
     bool written;
     clear_rows(3, 14);
     display_text(3, GREEN, "MIDI MODE");
-    display_text(5, WHITE, "CONNECT USB, AND");
+    display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
     display_text(8, WHITE, BACK);
     while (board_keys()&KEY_SELECT)
@@ -207,7 +215,7 @@ static void midi_mode(void) {
     enum mu_result r = mu_run(unit_key, work, &written);
     if (r == MU_DOWNLOAD)
         download_screen();
-    if (r != MU_CANCELLED && r != MU_DONE) {
+    if (r != MU_CANCELLED && r != MU_DONE && r != MU_RESTART) {
         display_text(13, RED, failures[r]);
         if (written)
             display_text(14, RED, "RESTARTS: TRY AGAIN");
@@ -216,7 +224,7 @@ static void midi_mode(void) {
     if (r == MU_DONE)
         hal_delay_us(200000);
     usb_midi_stop();
-    if (written || r == MU_DONE)
+    if (written || r == MU_DONE || r == MU_RESTART)
         hal_reset();
     clear_rows(3, 14);
     release_select();

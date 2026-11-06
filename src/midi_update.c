@@ -13,9 +13,10 @@
 #define ENTRY 0x50u
 #define MAX_SECTORS (0xff000u/MU_SECTOR)
 
-static uint8_t frame[FRAME_MAX], decoded[PACKET_MAX+16], wire[64];
+static uint8_t frame[FRAME_MAX], decoded[PACKET_MAX+16], wire[FRAME_MAX];
 static uint16_t sector_crc[MAX_SECTORS];
 static uint32_t frame_size;
+uint32_t mu_messages;
 static bool collecting, frame_ready, erasing, download_asked;
 
 void mu_rx(uint8_t b) {
@@ -39,7 +40,7 @@ static uint32_t le32(const uint8_t *p) {
 
 /* Sends cmd with its body, 8-to-7 packed. */
 static void send_message(uint8_t cmd, const uint8_t *body, uint32_t size) {
-    uint8_t head[6] = { 0, 0x59, cmd, (uint8_t)size };
+    uint8_t head[6] = { 0, 0x59, cmd, (uint8_t)size, (uint8_t)(size >> 8) };
     uint32_t sum = 0, bits = 0, n = 0, at = 0, total = size+7;
     wire[n++] = 0xf0;
     for (uint32_t accumulator = 0; at < total || bits; ) {
@@ -85,7 +86,7 @@ static uint32_t unpack(void) {
     return out;
 }
 
-enum { NOTHING, MESSAGE, ASK_UPGRADE, ASK_DOWNLOAD };
+enum { NOTHING, MESSAGE, ASK_UPGRADE, ASK_DOWNLOAD, ASK_RESTART };
 /* The next message: its size is in *size, decoded and checked. */
 static unsigned take(uint32_t *size) {
     if (!frame_ready)
@@ -96,6 +97,8 @@ static unsigned take(uint32_t *size) {
             kind = ASK_UPGRADE;
         else if (frame[3] == 0x7d)
             kind = ASK_DOWNLOAD;
+        else if (frame[3] == 0x7e)
+            kind = ASK_RESTART;
     } else {
         uint32_t n = unpack(), sum = 0;
         if (n >= 7 && !decoded[0] && decoded[1] == 0x59 && (decoded[3] | (uint32_t)decoded[4] << 8) == n-7 && !decoded[5]) {
@@ -108,6 +111,8 @@ static unsigned take(uint32_t *size) {
         }
     }
     frame_ready = false;
+    if (kind != NOTHING)
+        ++mu_messages;
     return kind;
 }
 
@@ -234,6 +239,8 @@ static enum mu_result install(uint16_t key, uint8_t *sector, bool *written) {
     if (!mu_erase(MU_FIRST))
         return MU_FLASH_ERROR;
     for (uint32_t at = MU_FIRST+MU_SECTOR; at < size; at += MU_SECTOR) {
+        if (at >= MU_KEEP_FROM && at < MU_KEEP_TO)
+            continue;
         r = write_sector(offset, at, sector, written);
         if (r != MU_DONE)
             return r;
@@ -246,6 +253,72 @@ static enum mu_result install(uint16_t key, uint8_t *sector, bool *written) {
     /* The host's "success" isn't needed: it only has to see that we finished. */
     (void)ask(FINISH, 8, sector);
     return MU_DONE;
+}
+
+static void send_refusal(void) {
+    static const uint8_t refused = 1;
+    send_message(0, &refused, 1);
+}
+
+static void put_le32(uint8_t *p, uint32_t v) {
+    for (unsigned i = 0; i < 4; ++i)
+        p[i] = (uint8_t)(v >> (8*i));
+}
+
+/* What's answering: a bootloader or a RAM stage, not a firmware or its update loader. */
+static void send_info(uint16_t key, const struct mu_unit *unit) {
+    static uint8_t info[64];
+    uint32_t n = 28;
+    for (unsigned i = 0; i < 5; ++i)
+        info[i] = (uint8_t)"MBOOT"[i];
+    info[5] = 1;
+    info[6] = unit->kind;
+    info[7] = 0;
+    info[8] = (uint8_t)key;
+    info[9] = (uint8_t)(key >> 8);
+    put_le32(info+10, unit->capacity);
+    put_le32(info+14, unit->jedec);
+    for (unsigned i = 0; i < 8; ++i)
+        info[18+i] = unit->uid[i];
+    info[26] = info[27] = 0;
+    for (const char *v = unit->version; *v && n < sizeof(info)-1; ++v)
+        info[n++] = (uint8_t)*v;
+    info[n++] = 0;
+    send_message(0x12, info, n);
+}
+
+/* Sends count bytes of raw flash from address, or the CRC-32 the chip computes of them. Both body
+ * layouts start with what stock firmware's read uses: provider (0, the flash), address, count. */
+static void serve_read(uint8_t cmd, uint8_t *sector, uint32_t n) {
+    struct mu_unit unit;
+    mu_unit_info(&unit);
+    uint32_t address = le32(decoded+7), count = decoded[11] | (uint32_t)decoded[12] << 8 | (uint32_t)decoded[13] << 16;
+    if (n != 15 || decoded[6] || !count || address >= unit.capacity || count > unit.capacity-address
+            || (cmd == 0x23 && count > PACKET_MAX)) {
+        send_refusal();
+        return;
+    }
+    for (unsigned i = 0; i < 8; ++i)
+        decoded[i] = decoded[6+i];
+    if (cmd == 0x23) {
+        if (mu_read(address, decoded+8, count))
+            send_message(cmd, decoded, 8+count);
+        else
+            send_refusal();
+        return;
+    }
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t at = 0; at < count; at += MU_SECTOR) {
+        uint32_t part = count-at < MU_SECTOR ? count-at:MU_SECTOR;
+        if (!mu_read(address+at, sector, part)) {
+            send_refusal();
+            return;
+        }
+        crc = core_crc32(crc, sector, part);
+        mu_idle();
+    }
+    put_le32(decoded+8, crc^UINT32_MAX);
+    send_message(cmd, decoded, 12);
 }
 
 enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
@@ -264,8 +337,20 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
         }
         if (kind == ASK_DOWNLOAD)
             return MU_DOWNLOAD;
-        if (kind == MESSAGE && decoded[2] == 0x11 && n == 7)
-            send_identity();
+        if (kind == ASK_RESTART)
+            return MU_RESTART;
+        if (kind == MESSAGE) {
+            if (decoded[2] == 0x11 && n == 7)
+                send_identity();
+            else if (decoded[2] == 0x12 && n == 7) {
+                struct mu_unit unit;
+                mu_unit_info(&unit);
+                send_info(key, &unit);
+            } else if (decoded[2] == 0x23 || decoded[2] == 0x24)
+                serve_read(decoded[2], sector, n);
+            else if (decoded[2] != 0x30)
+                send_refusal();
+        }
         if (mu_cancel())
             return MU_CANCELLED;
     }

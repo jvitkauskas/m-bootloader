@@ -9,7 +9,7 @@ import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from bankcb import crc16, enc, install
-from fwsc import (CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
+from fwsc import (updater_package, CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
                   lz4_unblock, package, unweave, updater_code, updater_stream, weave)
 
 HOST = Path('build/installer-host')
@@ -168,6 +168,21 @@ for variant, (path, identity) in BUILT.items():
     board = VARIANTS[variant][0]
     other = 'smk37' if board == 'fm1' else 'fm1'
     built = Path(path).read_bytes()
+    # Only what fits where firmware stores it, whatever the updater holds.
+    refuses(updater_package, variant, bytes(random.getrandbits(8) for _ in range(0x5000)))
+    small = bytes(random.getrandbits(8) for _ in range(0x1800))
+    assert installed(updater_package(variant, small)) == (identity, small)
+    assert installed(updater_package(variant, small, listed_flash=True)) == (identity, small)
+    # What Felucca-family firmware looks for, in the stage as it's stored.
+    stage_path = {'fm1': 'build/fm1/stage', 'smk37-pro': 'build/smk37/stage-pro', 'smk37-elite': 'build/smk37/stage-elite'}[variant]
+    for suffix, listed in (('.fwsc', False), ('-listed.fwsc', True)):
+        stage_image = unweave(Path(stage_path+suffix).read_bytes())[2]
+        stage_files = {e['name']: e for e in entries(stage_image)}
+        assert ('flash.bin' in stage_files) == listed
+        if listed:
+            assert stage_files['flash.bin']['type'] == 0 and stage_files['flash.bin']['offset']
+        stored = stage_image[stage_files['ota.bin']['offset']:]
+        assert b'FELUCCA-LOADER-1' in stored[0x48:0x48+64+16]
     assert built == package(variant, containers[board], installers[board])
     assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)

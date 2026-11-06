@@ -29,6 +29,10 @@ run with it.
   If you stop an install with the menu key or a restart, choose MIDI mode again
   before an installer's resume button can find the unit. On an SMK-37 Elite, which
   hasn't been tested, an install this way leaves it reporting itself as a Pro.
+- **Back up from a browser.** MIDI mode also answers a host's read commands, so
+  a web page can save the whole flash, boot area and key area included,
+  with no firmware running. On a unit without m-bootloader, the same code runs as a
+  stage in RAM, through the firmware's own update route ([specification §11.7](docs/SPEC.md#117-the-ram-stage)).
 - **Recovery menu.** Hold **PLAY** (FM-1) or **SEQ PLAY** (SMK-37) while
   switching on. The menu also opens by itself when the firmware cannot start.
   It shows the firmware's state and size, pending updates and the flash chip,

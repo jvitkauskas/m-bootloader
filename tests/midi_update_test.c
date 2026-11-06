@@ -79,8 +79,13 @@ static void respond(uint32_t address, const uint8_t *data, uint32_t len) {
 }
 
 /* The device's message, as parseRequest and parseIdentity in fm1ota.js read it. */
+/* What the host-initiated commands answered. */
+static uint8_t answer[700], asked[1200];
+static int answered = -1;
+static uint32_t answer_size, asked_size;
+
 void mu_send(const uint8_t *data, uint32_t size) {
-    static uint8_t u[64];
+    static uint8_t u[700];
     assert(data[0] == 0xf0 && data[size-1] == 0xf7);
     uint32_t n = unpack7(data+1, size-2, u);
     assert(u[0] == 0 && u[1] == 0x59);
@@ -94,7 +99,18 @@ void mu_send(const uint8_t *data, uint32_t size) {
         identity_seen = true;
         return;
     }
-    assert(u[2] == 0x30 && n == 15);
+    if (u[2] != 0x30) {
+        uint32_t len = u[3] | (uint32_t)u[4] << 8 | (uint32_t)u[5] << 16, sum = 0;
+        assert(len+7 == n);
+        for (uint32_t i = 6; i < n-1; ++i)
+            sum += u[i];
+        assert((uint8_t)~sum == u[n-1]);
+        answered = u[2];
+        answer_size = len;
+        memcpy(answer, u+6, len);
+        return;
+    }
+    assert(n == 15);
     uint32_t sum = 0;
     for (uint32_t i = 6; i < 14; ++i)
         sum += u[i];
@@ -147,7 +163,23 @@ bool mu_cancel(void) {
         handshake_sent = false;
         return true;
     }
+    if (asked_size) {
+        queue_bytes(asked, asked_size);
+        asked_size = 0;
+        return false;
+    }
+    if (answered >= 0)
+        return true;
     return cancel_now;
+}
+
+void mu_unit_info(struct mu_unit *unit) {
+    static const uint8_t uid[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    unit->jedec = 0x856014;
+    unit->capacity = FLASH;
+    memcpy(unit->uid, uid, 8);
+    unit->kind = MU_STAGE;
+    unit->version = "test";
 }
 
 bool mu_read(uint32_t address, void *out, uint32_t size) {
@@ -157,7 +189,7 @@ bool mu_read(uint32_t address, void *out, uint32_t size) {
 }
 
 static void note_write(uint32_t address, uint32_t size) {
-    if (address < MU_FIRST || address+size > MU_LIMIT)
+    if (address < MU_FIRST || address+size > MU_LIMIT || (address+size > MU_KEEP_FROM && address < MU_KEEP_TO))
         wrote_outside = true;
 }
 
@@ -369,8 +401,88 @@ static uint32_t load_fwsc(const char *path, uint8_t *out, uint32_t *flash_offset
     return o;
 }
 
+/* A host's request, framed as it would be, and the run it gets. */
+static enum mu_result host_asks(uint8_t cmd, const uint8_t *body, uint32_t size) {
+    static uint8_t plain[64];
+    bool written;
+    uint32_t sum = 0;
+    uint8_t head[6] = { 0, 0x59, cmd, (uint8_t)size };
+    memcpy(plain, head, 6);
+    memcpy(plain+6, body, size);
+    for (uint32_t i = 0; i < size; ++i)
+        sum += body[i];
+    plain[6+size] = (uint8_t)~sum;
+    asked[0] = 0xf0;
+    uint32_t n = pack7(plain, 7+size, asked+1);
+    asked[n+1] = 0xf7;
+    asked_size = n+2;
+    answered = -1;
+    enum mu_result r = mu_run(KEY, sector, &written);
+    assert(!written && !erases && !programs);
+    return r;
+}
+
+static void read_request(uint8_t cmd, uint8_t provider, uint32_t address, uint32_t count) {
+    uint8_t m[8] = { provider, (uint8_t)address, (uint8_t)(address >> 8), (uint8_t)(address >> 16),
+        (uint8_t)(address >> 24), (uint8_t)count, (uint8_t)(count >> 8), (uint8_t)(count >> 16) };
+    assert(host_asks(cmd, m, 8) == MU_CANCELLED);
+}
+
+static void test_host_commands(void) {
+    reset_all();
+    for (uint32_t i = 0; i < FLASH; ++i)
+        flash[i] = (uint8_t)(i*13+(i >> 8)+(i >> 16));
+    /* What's answering. */
+    assert(host_asks(0x12, 0, 0) == MU_CANCELLED);
+    assert(answered == 0x12 && !memcmp(answer, "MBOOT", 5) && answer[5] == 1 && answer[6] == MU_STAGE);
+    assert(core_le16(answer+8) == KEY && !memcmp(answer+28, "test", 5));
+    assert(answer[10] == 0 && answer[11] == 0 && answer[12] == 0x10);
+    assert(answer[14] == 0x14 && answer[15] == 0x60 && answer[16] == 0x85 && answer[18] == 1 && answer[25] == 8);
+    /* Raw flash, the boot area and the key area too, each with what was asked echoed. */
+    static const uint32_t places[][2] = { {0, 512}, {0x3f00, 512}, {0xff000, 512}, {FLASH-1, 1}, {FLASH-512, 512}, {0x12345, 7} };
+    for (unsigned i = 0; i < sizeof(places)/sizeof(places[0]); ++i) {
+        read_request(0x23, 0, places[i][0], places[i][1]);
+        assert(answered == 0x23 && answer_size == 8+places[i][1]);
+        assert(answer[0] == 0 && answer[1] == (uint8_t)places[i][0] && answer[5] == (uint8_t)places[i][1]);
+        assert(!memcmp(answer+8, flash+places[i][0], places[i][1]));
+    }
+    /* Refused, with the common error. */
+    static const uint32_t bad[][3] = { {0x23, 0, 0}, {0x23, 0, 513}, {0x23, FLASH, 1}, {0x23, FLASH-1, 2}, {0x23, 0xffffff00u, 512},
+        {0x24, 0, 0}, {0x24, FLASH, 1}, {0x24, 1, FLASH}, {0x24, 0xfffffff0u, 32} };
+    for (unsigned i = 0; i < sizeof(bad)/sizeof(bad[0]); ++i) {
+        read_request((uint8_t)bad[i][0], 0, bad[i][1], bad[i][2]);
+        assert(answered == 0 && answer_size == 1 && answer[0] == 1);
+    }
+    read_request(0x23, 1, 0, 16);
+    assert(answered == 0 && answer[0] == 1);
+    /* A body of another length isn't taken for a request. */
+    static const uint8_t longer[9] = { 0, 0, 0, 0, 0, 16, 0, 0, 0 };
+    assert(host_asks(0x23, longer, 9) == MU_CANCELLED);
+    assert(answered == 0 && answer[0] == 1);
+    /* The chip's CRC-32 of a range, across sectors. */
+    read_request(0x24, 0, 0, FLASH);
+    assert(answered == 0x24 && answer_size == 12);
+    assert((uint32_t)(answer[8] | answer[9] << 8 | answer[10] << 16 | (uint32_t)answer[11] << 24) == (core_crc32(UINT32_MAX, flash, FLASH)^UINT32_MAX));
+    read_request(0x24, 0, 0x1234, 0x2345);
+    assert((uint32_t)(answer[8] | answer[9] << 8 | answer[10] << 16 | (uint32_t)answer[11] << 24) == (core_crc32(UINT32_MAX, flash+0x1234, 0x2345)^UINT32_MAX));
+    /* The commands that erase and write on stock firmware are refused here. */
+    static const uint8_t erase[5] = { 0, 0, 0x40, 0, 0 };
+    static const uint8_t program[12] = { 0, 0, 0x40, 0, 0, 4, 0, 0, 1, 2, 3, 4 };
+    assert(host_asks(0x21, erase, 5) == MU_CANCELLED && answered == 0 && answer[0] == 1);
+    assert(host_asks(0x22, program, 12) == MU_CANCELLED && answered == 0 && answer[0] == 1);
+    /* A restart. */
+    bool written;
+    static const uint8_t restart[] = { 0xf0, 0x22, 0x24, 0x35, 0x7e, 0xf7 };
+    answered = -1;
+    memcpy(asked, restart, sizeof(restart));
+    asked_size = sizeof(restart);
+    assert(mu_run(KEY, sector, &written) == MU_RESTART && !written && !erases);
+    answered = -1;
+}
+
 int main(void) {
     bool written;
+    test_host_commands();
     make_package(KEY, APP_SIZE);
     /* A clean install: only [0x4000, size) changes, and the first sector is finished last. */
     reset_all();
@@ -419,15 +531,16 @@ int main(void) {
     reset_all();
     ask_upgrade();
     assert(mu_run(KEY, sector, &written) == MU_BAD_PACKAGE && untouched());
-#ifdef BOARD_SMK
-    /* Its Bluetooth pairing and calibration are out of reach. */
-    assert(MU_LIMIT <= 0xc0000u);
-#endif
     /* The largest package allowed stays below what must be kept. */
     make_package(KEY, MU_LIMIT);
     reset_all();
     ask_upgrade();
     assert(mu_run(KEY, sector, &written) == MU_DONE && !wrote_outside && outside_same(MU_LIMIT));
+#ifdef BOARD_SMK
+    /* The SMK-37's Bluetooth pairing and calibration stay out of reach, even in a package covering them. */
+    assert(!memcmp(flash+MU_KEEP_FROM, original+MU_KEEP_FROM, MU_KEEP_TO-MU_KEEP_FROM));
+    assert(!memcmp(flash+MU_KEEP_TO, package+PACKAGE_OFFSET+MU_KEEP_TO, MU_LIMIT-MU_KEEP_TO));
+#endif
     /* A sector that arrives different the second time isn't written. */
     make_package(KEY, APP_SIZE);
     reset_all();
