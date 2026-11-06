@@ -1074,6 +1074,44 @@ A `flash.bin` of only those tables passes on all seven firmwares tested, but it 
 
 It leaves on `F0 22 24 35 7E F7`, or the download-mode message, when an install finishes, or after 5 minutes with no message from a host, for an abandoned browser tab. A failed install that has written anything stays in the stage until an install succeeds or a host asks it to leave: the timeout no longer applies, as a restart would leave no firmware, and the stock bootloader has no way back.
 
+### 11.8 RAM apps
+
+A RAM app is a program that runs from RAM and leaves the firmware in flash as it is, unless that's its job. Three routes can start one: a stage 2 on the card (§11.5), MIDI (§11.6, §11.7) and M-Flasher's `run-ram`. All three use the same file.
+
+**The file** is a flat binary:
+
+* linked for `0x01C30000`, with its entry at its first byte;
+* at most `0x4FD80` bytes, so that it ends by `0x01C7FD80`, and at least 16, both counting the trailer;
+* ending in an 8-byte trailer. `tools/stage2.py --app BOARD` adds it.
+
+| Offset | Size | Meaning |
+|---:|---:|---|
+| 0 | 4 | `APP1`. It isn't stage 2's `STG2`, so an app named `MENU.BIN` is refused rather than run at the wrong address. |
+| 4 | 2 | CRC16 of `core_crc16` over everything before the trailer, little endian. |
+| 6 | 1 | Board: 0 any, 1 FM-1, 2 SMK-37. |
+| 7 | 1 | Format, 1. |
+
+**Whatever starts an app** refuses a wrong magic, board or format, reading the trailer first where it can, and starts the app only if the CRC matches. It writes only the file's bytes, and no more: a loader reading whole sectors reads the last partial one through a buffer. The trailer lands on what's linked right after the image, normally `.bss`, and nothing clears `.bss` for the app.
+
+**The entry** is called using the C calling convention with one argument, the LSB clock in MHz: 60 from stage 2 and from the bootloader's MIDI mode, and what its clocks are from the RAM stage. Those callers have interrupts off and the watchdog off, and the app is on the caller's stack. It can move to its own, and must move back before returning.
+
+**From `run-ram`,** the ROM makes the call as in §10.1, so the argument is a pointer to the ROM's three words, not a clock. A value of `0x01000000` or more is such a pointer. There's no way back to the ROM once the app has changed what it relies on, so the app first turns off interrupts and the watchdog and moves to its own stack, takes USB down so that the host stops waiting for the jump's answer, sets the clocks with the `hal_clock_b` sequence (§10.4), which gives LSB 48 MHz, and ends by resetting.
+
+**RAM:**
+
+| Range | Use |
+|---|---|
+| `0x01C30000` to below `0x01C7FD80` | The app's slot, including its `.bss` and stacks. |
+| `0x01C16800` to below `0x01C20000` | Free for an app, which can still return. No route uses it. Some DMA needs RAM below `0x01C20000`, such as WiFi transmit buffers in firmware projects, though that isn't tested from here. |
+| `0x01C20000` to below `0x01C30000` | Stage 2 and the flash loader's slots. An app that writes here must reset, not return. |
+| `0x01C0A800` to below `0x01C16800` | The RAM stage from the update route. An app that writes here must reset, not return. |
+| Below `0x01C0A800` | The bootloader's RAM. An app that writes here must reset, not return. |
+| From `0x01C7FD80` | The retained area (§6). An app writes here only for a purpose of its own, such as the download-mode request (§4.2). |
+
+**Version 1 is polled.** An app that uses interrupts resets instead of returning, as their vector table's usual place, `0x01C7FE00` in firmware projects, is in the retained area.
+
+**An app can return,** except from `run-ram`, if it has written nothing outside the first two rows, apart from what it pushes on the caller's stack and pops again. It restores any clocks it changed and returns with interrupts off. What started it then sets up flash, the screen and USB again. **It must reset** if it changed what the bootloader mounted, such as the firmware in flash.
+
 ## 12. Testing
 
 Real flash images of units can be used as test fixtures, but they are not published because they contain M-VAVE's firmware and the unit's own calibration. Use only their structural/checksum results in distributable tests; never ship one unit's factory data to other units. Tests of parsers, the image wrapper and state logic SHOULD use such real images and synthetic malformed inputs, through a simulated flash adapter or a host build.
