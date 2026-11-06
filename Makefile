@@ -29,7 +29,8 @@ B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
 C_PRODUCTS := build/fm1/uboot.fwsc build/smk37/uboot-pro.fwsc build/smk37/uboot-elite.fwsc
 # The RAM stage: for run-ram, and M-UPGRADE-style packages holding only it.
 STAGE_RAM := build/fm1/stage-ram.bin build/smk37/stage-ram.bin
-STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc
+STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc \
+	build/fm1/stage-listed.fwsc build/smk37/stage-pro-listed.fwsc build/smk37/stage-elite-listed.fwsc
 .PHONY: all stage test sanitize clean reproducible FORCE
 all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
 
@@ -135,8 +136,17 @@ $(eval $(call LOADER_template,b,0x1c28000,0x1c30000))
 stage: $(STAGE_RAM) $(STAGE_PRODUCTS)
 build/fm1/stage.fwsc: build/fm1/stage-ota.bin tools/fwsc.py tools/bankcb.py
 	python3 tools/fwsc.py stage fm1 $< $@
-build/smk37/stage-%.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
-	python3 tools/fwsc.py stage smk37-$* $< $@
+build/smk37/stage-pro.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage smk37-pro $< $@
+build/smk37/stage-elite.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage smk37-elite $< $@
+# For Felucca-family firmware, which refuses a package without a flash.bin, as M-VAVE's refuses one with it.
+build/fm1/stage-listed.fwsc: build/fm1/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash fm1 $< $@
+build/smk37/stage-pro-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash smk37-pro $< $@
+build/smk37/stage-elite-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py stage --listed-flash smk37-elite $< $@
 build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) tools/manifest.py
 	python3 tools/manifest.py > $@
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)

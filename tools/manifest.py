@@ -17,6 +17,9 @@ PRODUCTS = {
     'build/fm1/stage.fwsc': 'build/fm1/stage-ota-size.json',
     'build/smk37/stage-pro.fwsc': 'build/smk37/stage-ota-size.json',
     'build/smk37/stage-elite.fwsc': 'build/smk37/stage-ota-size.json',
+    'build/fm1/stage-listed.fwsc': 'build/fm1/stage-ota-size.json',
+    'build/smk37/stage-pro-listed.fwsc': 'build/smk37/stage-ota-size.json',
+    'build/smk37/stage-elite-listed.fwsc': 'build/smk37/stage-ota-size.json',
 }
 
 

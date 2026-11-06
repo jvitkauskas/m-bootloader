@@ -278,6 +278,7 @@ def main():
     build.add_argument('output', type=Path)
     stage = sub.add_parser('stage')
     stage.add_argument('--version', default='099')
+    stage.add_argument('--listed-flash', action='store_true')
     stage.add_argument('variant', choices=sorted(VARIANTS))
     stage.add_argument('code', type=Path)
     stage.add_argument('output', type=Path)
@@ -288,7 +289,7 @@ def main():
         args.output.write_bytes(package(args.variant, args.container.read_bytes(), args.installer.read_bytes(),
                                         args.version))
     elif args.op == 'stage':
-        args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version, listed_flash=True))
+        args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version, args.listed_flash))
     else:
         identity, prefix, image = unweave(args.package.read_bytes())
         print(f'{identity} ({prefix} prefix blocks)')

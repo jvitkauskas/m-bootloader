@@ -68,6 +68,9 @@ jobs:
             build/fm1/stage.fwsc
             build/smk37/stage-pro.fwsc
             build/smk37/stage-elite.fwsc
+            build/fm1/stage-listed.fwsc
+            build/smk37/stage-pro-listed.fwsc
+            build/smk37/stage-elite-listed.fwsc
             build/loader/mflr-loader-a.bin
             build/loader/mflr-loader-b.bin
             build/manifest.json
@@ -97,11 +100,15 @@ jobs:
           cp artifacts/fm1/stage.fwsc release/fm1-stage.fwsc
           cp artifacts/smk37/stage-pro.fwsc release/smk37-pro-stage.fwsc
           cp artifacts/smk37/stage-elite.fwsc release/smk37-elite-stage.fwsc
+          cp artifacts/fm1/stage-listed.fwsc release/fm1-stage-listed.fwsc
+          cp artifacts/smk37/stage-pro-listed.fwsc release/smk37-pro-stage-listed.fwsc
+          cp artifacts/smk37/stage-elite-listed.fwsc release/smk37-elite-stage-listed.fwsc
           cp artifacts/loader/mflr-loader-a.bin release/mflr-loader-a.bin
           cp artifacts/loader/mflr-loader-b.bin release/mflr-loader-b.bin
           cd release
           sha256sum fm1-uboot.boot smk37-uboot.boot fm1-uboot.fwsc smk37-pro-uboot.fwsc smk37-elite-uboot.fwsc \
             fm1-stage-ram.bin smk37-stage-ram.bin fm1-stage.fwsc smk37-pro-stage.fwsc smk37-elite-stage.fwsc \
+            fm1-stage-listed.fwsc smk37-pro-stage-listed.fwsc smk37-elite-stage-listed.fwsc \
             mflr-loader-a.bin mflr-loader-b.bin > SHA256SUMS
       - name: Publish tag release
         env:
@@ -115,6 +122,7 @@ jobs:
               release/fm1-uboot.boot release/smk37-uboot.boot \
               release/fm1-uboot.fwsc release/smk37-pro-uboot.fwsc release/smk37-elite-uboot.fwsc \
               release/fm1-stage-ram.bin release/smk37-stage-ram.bin release/fm1-stage.fwsc release/smk37-pro-stage.fwsc release/smk37-elite-stage.fwsc \
+              release/fm1-stage-listed.fwsc release/smk37-pro-stage-listed.fwsc release/smk37-elite-stage-listed.fwsc \
               release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
           else
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
@@ -122,5 +130,6 @@ jobs:
               release/fm1-uboot.boot release/smk37-uboot.boot \
               release/fm1-uboot.fwsc release/smk37-pro-uboot.fwsc release/smk37-elite-uboot.fwsc \
               release/fm1-stage-ram.bin release/smk37-stage-ram.bin release/fm1-stage.fwsc release/smk37-pro-stage.fwsc release/smk37-elite-stage.fwsc \
+              release/fm1-stage-listed.fwsc release/smk37-pro-stage-listed.fwsc release/smk37-elite-stage-listed.fwsc \
               release/mflr-loader-a.bin release/mflr-loader-b.bin release/SHA256SUMS
           fi
