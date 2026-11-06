@@ -9,7 +9,7 @@ import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from bankcb import crc16, enc, install
-from fwsc import (CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
+from fwsc import (updater_package, CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
                   lz4_unblock, package, unweave, updater_code, updater_stream, weave)
 
 HOST = Path('build/installer-host')
@@ -168,6 +168,10 @@ for variant, (path, identity) in BUILT.items():
     board = VARIANTS[variant][0]
     other = 'smk37' if board == 'fm1' else 'fm1'
     built = Path(path).read_bytes()
+    # Only what fits where firmware stores it, whatever the updater holds.
+    refuses(updater_package, variant, bytes(random.getrandbits(8) for _ in range(0x5000)))
+    small = bytes(random.getrandbits(8) for _ in range(0x1800))
+    assert installed(updater_package(variant, small)) == (identity, small)
     assert built == package(variant, containers[board], installers[board])
     assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)

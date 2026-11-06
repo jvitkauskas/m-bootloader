@@ -1021,13 +1021,39 @@ It's a class-compliant USB-MIDI device, `FM-1 Update` or `SMK-37 Update`, 1209:0
 **The install.**
 
 1. Read the package's header. `flash.bin` is the entry of type 0: `CRC16` at +4, offset at +8 and size at +12, after decrypting it with key `0xFFFF`. The entries' CRC in the header is over them as stored, encrypted.
-2. The size must be whole sectors, above `0x4000` and at most `0xFF000`, or `0xC0000` on the SMK-37, which keeps its Bluetooth pairing and calibration at `0xC0000`–`0xC1FFF`.
+2. The size must be whole sectors, above `0x4000` and at most `0xFF000`. On the SMK-37, the package's bytes for `0xC0000` to `0xC1FFF`, its Bluetooth pairing and calibration, are left unwritten.
 3. Refuse the package unless the 32 bytes at `0x4000` of `flash.bin` decrypt with this chip's key to a valid record.
 4. Read all of `flash.bin`, check the entry's CRC, and keep each sector's CRC. Nothing has been erased so far.
 5. Erase `0x4000`. Then, for each later sector and for `0x4000` last, read it again, check its CRC, skip it if flash already holds it, erase, write and verify. What's in flash can't pass as firmware until the end.
 6. Read `0xF0000000`, which tells the installer it's finished, and reset.
 
 Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, size)` is ever written, so the boot area and the key area at `0xFF000` are safe, as are the SMK-37's calibration and Bluetooth pairing. Unlike an official update, it doesn't install the package's bootloader, or `USR`. It answers only as what it is, never as M-VAVE's updater: Baud Girl's installer refuses it, rightly, as it expects that updater, and nothing is sent. Install Baud Girl from M-VAVE's firmware, which puts the stock bootloader back, then reinstall this one with M-Flasher.
+
+**Host commands.** Outside an install, MIDI mode also answers these, each with the frame above:
+
+| Command | Body | Answer |
+|---|---|---|
+| `0x11` | none | The 27-byte identity. |
+| `0x12` | none | `MBOOT`, protocol `1`, kind (`1` bootloader, `2` RAM stage), one zero, chip key (u16), capacity (u32), JEDEC ID (u32), the flash's unique ID (8 bytes), two zeros, then the version as text with a closing zero. |
+| `0x23` | Provider `0`, address (u32), count (u24) | Those 8 bytes, then `count` bytes of raw flash as stored. `count` is 1 to 512. |
+| `0x24` | The same | Those 8 bytes, then the CRC-32 the chip computes of the range, as a u32. |
+
+The range must lie inside the flash, and the body must be exactly 8 bytes. Anything refused, and any other command, including those that erase and write on stock firmware (`0x21`, `0x22`), gets command `0` with the body `01`. Reads cover the boot area and key area too: nothing here writes. `F0 22 24 35 7E F7` restarts the unit.
+
+Stock firmware's update service uses this frame as well, and on some versions its `0x21` erases a flash sector without any check. Its checksum doesn't cover the command, so `0x21` and `0x23` differ by one bit. A host must check what's answering with `0x12` before reading, and never build these commands from data.
+
+### 11.7 The RAM stage
+
+The stage (`src/stage.c`) is MIDI mode without the bootloader, for a unit running firmware without m-bootloader. It's the same protocol and flash rules, and it needs no keys.
+
+* **Started through the update route** (`stage*.fwsc`, linked for `0x01C0A800`). The package holds only `ota.bin`, as m-bootloader's do. The firmware stores it, and the installed bootloader, stock or ours, runs it as a staged updater (§6.3). It retires the request first (§6.2), so whatever happens next, the next start runs the firmware.
+* **Started by M-Flasher's `run-ram`** (`stage-ram.bin`, linked for `0x01C28000`), from download mode. This writes nothing to flash.
+
+Firmware stores `ota.bin` so that it ends where its update request begins, for example `0xE7F00` on FM-1 015 and `0xBEF00` on the SMK-37's 016, with the space before that reserved, 20,224 bytes on those. `tools/fwsc.py` refuses a longer one. Storing it erases that area, so it's the one thing a backup from the stage can't show as it was.
+
+The firmware decides whether to accept it. M-VAVE's FM-1 015 and 016, Felucca and Baud Girl do. SLOOP 2.8.5, ChoralRoot and Melodee refuse a package with no `flash.bin`, and keep running.
+
+It leaves on `F0 22 24 35 7E F7`, or the download-mode message, when an install finishes, or after 5 minutes with no message from a host, for an abandoned browser tab. A failed install stays in the stage, to be tried again.
 
 ## 12. Testing
 
