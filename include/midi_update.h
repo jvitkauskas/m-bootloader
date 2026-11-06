@@ -13,13 +13,24 @@
 #define MU_KEEP_FROM 0xc0000u
 #define MU_KEEP_TO 0xc2000u
 #define MU_IDENTITY "ota-SMK-37 Pro_900"
+#define MU_APP_BOARD 2
 #else
 #define MU_KEEP_FROM MU_LIMIT
 #define MU_KEEP_TO MU_LIMIT
 #define MU_IDENTITY "ota-FM-1_900"
+#define MU_APP_BOARD 1
 #endif
-/* What cmd 0x12 tells a host about what's answering. */
+/* A RAM app, run with cmd 0x25: linked for MU_APP_RAM, at most MU_APP_MAX bytes, trailer included. */
+#define MU_APP_MAX 0x4fd80u
+#ifdef MU_TEST_APP_RAM
+extern uint8_t mu_test_app_ram[MU_APP_MAX];
+#define MU_APP_RAM mu_test_app_ram
+#else
+#define MU_APP_RAM ((uint8_t *)(uintptr_t)0x01c30000u)
+#endif
+/* What cmd 0x12 tells a host about what's answering, and what it can do. */
 enum { MU_BOOTLOADER = 1, MU_STAGE = 2 };
+enum { MU_RUNS_APPS = 1 };
 struct mu_unit {
     uint32_t jedec, capacity;
     uint8_t uid[8];
@@ -53,4 +64,6 @@ bool mu_program(uint32_t address, const void *data, uint32_t size);
 /* Each pass counts 0 to 100: reading the package to check it, then writing it. */
 void mu_progress(bool writing, unsigned percent);
 void mu_unit_info(struct mu_unit *unit);
+/* Runs the app loaded at MU_APP_RAM with USB stopped, then starts USB and what the app may have changed. */
+void mu_start_app(void);
 #endif

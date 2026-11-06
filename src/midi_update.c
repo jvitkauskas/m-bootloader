@@ -12,6 +12,9 @@
 #define HEADER 0x400u
 #define ENTRY 0x50u
 #define MAX_SECTORS (0xff000u/MU_SECTOR)
+#define RUN_MAGIC 0x004e5552u /* "RUN" */
+#define APP_MAGIC 0x31505041u /* "APP1" */
+#define APP_FORMAT 1u
 
 static uint8_t frame[FRAME_MAX], decoded[PACKET_MAX+16], wire[FRAME_MAX];
 static uint16_t sector_crc[MAX_SECTORS];
@@ -273,7 +276,7 @@ static void send_info(uint16_t key, const struct mu_unit *unit) {
         info[i] = (uint8_t)"MBOOT"[i];
     info[5] = 1;
     info[6] = unit->kind;
-    info[7] = 0;
+    info[7] = MU_RUNS_APPS;
     info[8] = (uint8_t)key;
     info[9] = (uint8_t)(key >> 8);
     put_le32(info+10, unit->capacity);
@@ -321,6 +324,37 @@ static void serve_read(uint8_t cmd, uint8_t *sector, uint32_t n) {
     send_message(cmd, decoded, 12);
 }
 
+/* The trailer comes first, so a wrong app costs one request. */
+static bool load_app(uint32_t size) {
+    uint8_t trailer[8];
+    if (size < 16 || size > MU_APP_MAX || !ask(size-8, 8, trailer))
+        return false;
+    if (le32(trailer) != APP_MAGIC || (trailer[6] && trailer[6] != MU_APP_BOARD) || trailer[7] != APP_FORMAT)
+        return false;
+    for (uint32_t at = 0; at < size; at += PACKET_MAX)
+        if (!ask(at, size-at < PACKET_MAX ? size-at:PACKET_MAX, MU_APP_RAM+at))
+            return false;
+    /* The file's own trailer, not only the one asked for first. */
+    for (unsigned i = 0; i < sizeof(trailer); ++i)
+        if (MU_APP_RAM[size-8+i] != trailer[i])
+            return false;
+    return core_crc16(0, MU_APP_RAM, size-8) == core_le16(trailer+4);
+}
+
+/* The body is "RUN", a zero and the app's size. The answer echoes it, once the app is loaded. */
+static void run_app(uint32_t n) {
+    uint8_t body[8];
+    for (unsigned i = 0; i < sizeof(body); ++i)
+        body[i] = decoded[6+i];
+    if (n != 15 || le32(body) != RUN_MAGIC || !load_app(le32(body+4))) {
+        send_refusal();
+        return;
+    }
+    send_message(0x25, body, sizeof(body));
+    mu_start_app();
+    frame_ready = collecting = false;
+}
+
 enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
     frame_ready = collecting = erasing = download_asked = false;
     *written = false;
@@ -348,7 +382,11 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
                 send_info(key, &unit);
             } else if (decoded[2] == 0x23 || decoded[2] == 0x24)
                 serve_read(decoded[2], sector, n);
-            else if (decoded[2] != 0x30)
+            else if (decoded[2] == 0x25) {
+                run_app(n);
+                if (download_asked)
+                    return MU_DOWNLOAD;
+            } else if (decoded[2] != 0x30)
                 send_refusal();
         }
         if (mu_cancel())

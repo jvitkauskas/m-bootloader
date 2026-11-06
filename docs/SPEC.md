@@ -1045,11 +1045,16 @@ Before step 5, PLAY or the download-mode message still gets out. Only `[0x4000, 
 | Command | Body | Answer |
 |---|---|---|
 | `0x11` | none | The 27-byte identity. |
-| `0x12` | none | `MBOOT`, protocol `1`, kind (`1` bootloader, `2` RAM stage), one zero, chip key (u16), capacity (u32), JEDEC ID (u32), the flash's unique ID (8 bytes), two zeros, then the version as text with a closing zero. |
+| `0x12` | none | `MBOOT`, protocol `1`, kind (`1` bootloader, `2` RAM stage), flags (bit 0: `0x25` is answered), chip key (u16), capacity (u32), JEDEC ID (u32), the flash's unique ID (8 bytes), two zeros, then the version as text with a closing zero. |
 | `0x23` | Provider `0`, address (u32), count (u24) | Those 8 bytes, then `count` bytes of raw flash as stored. `count` is 1 to 512. |
 | `0x24` | The same | Those 8 bytes, then the CRC-32 the chip computes of the range, as a u32. |
+| `0x25` | `RUN`, one zero, the app's size (u32) | Those 8 bytes, once the app is loaded, and then USB stops and the app runs. |
 
 The range must lie inside the flash, and the body must be exactly 8 bytes. Anything refused, and any other command, including those that erase and write on stock firmware (`0x21`, `0x22`), gets command `0` with the body `01`. Reads cover the boot area and key area too: nothing here writes. `F0 22 24 35 7E F7` restarts the unit.
+
+**Running an app.** `0x25` loads a RAM app (§11.8) and runs it. The unit asks for the app with `0x30` requests, using offsets in its file: first the trailer, its last 8 bytes, and then all of it from the start. A wrong trailer, board or format is refused after that one request, and a wrong CRC after the whole app, in both cases with the common error and with the unit still answering. Nothing here writes to flash.
+
+The answer comes once the app is loaded, and then USB stops and the app runs, called with 60 from MIDI mode and from the stage through the update route, and 48 from the stage through `run-ram`. If it returns, the unit sets up flash, the panel and USB again and answers as before, so a host sees it disappear and come back.
 
 Stock firmware's update service uses this frame as well, and on some versions its `0x21` erases a flash sector without any check. Its checksum doesn't cover the command, so `0x21` and `0x23` differ by one bit. A host must check what's answering with `0x12` before reading, and never build these commands from data.
 

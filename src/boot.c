@@ -198,6 +198,30 @@ void mu_progress(bool writing, unsigned percent) {
     shown = percent;
 }
 
+static void midi_screen(void) {
+    clear_rows(3, 14);
+    display_text(3, GREEN, "MIDI MODE");
+    display_text(5, WHITE, "CONNECT USB AND");
+    display_text(6, WHITE, "OPEN AN INSTALLER.");
+    display_text(8, WHITE, BACK);
+}
+
+void mu_start_app(void) {
+    hal_delay_us(200000);
+    usb_midi_stop();
+    sync_cpu();
+    ((void (*)(unsigned))(uintptr_t)MU_APP_RAM)(60);
+    flash_init(effective_width, config.spi_divider);
+    /* The app can leave the panel in any state, and drawing it clears the menu's first rows. */
+    screen_ready = display_init(BOARD);
+    display_text(0, YELLOW, TITLE);
+    display_text(1, GREY, (const char *)(uintptr_t)0x01c02050);
+    midi_screen();
+    board_restore();
+    board_init(SMK);
+    usb_midi_start();
+}
+
 /* Only returns if nothing was written. */
 static void midi_mode(void) {
     static const char *const failures[] = {
@@ -205,11 +229,7 @@ static void midi_mode(void) {
         [MU_LOST] = "INSTALLER STOPPED", [MU_FLASH_ERROR] = "FLASH ERROR"
     };
     bool written;
-    clear_rows(3, 14);
-    display_text(3, GREEN, "MIDI MODE");
-    display_text(5, WHITE, "CONNECT USB AND");
-    display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, BACK);
+    midi_screen();
     while (board_keys()&KEY_SELECT)
         board_wait(20, false);
     /* The menu's LEDs drive the SMK-37's high-speed PHY: give it back first. */
