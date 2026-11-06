@@ -66,12 +66,12 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-This release, `2.1-861e43d`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher,
-and with M-UPGRADE from the stock bootloader, 1.2 and 1.3 installed over it, an official
-016 update, Baud Girl, a browser installer from running firmware, and MIDI mode. On the
-FM-1 also Melodee's installer with its 1.2 option, moving from 2.0, and M-Flasher on macOS and
-Windows. Before it, `2.0-c43a32f`, the same bootloader code, was tested over 1.3 and 1.2 on both
-units. `VDDIO` has not been measured.
+This release, `2.2-64f7c9c`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher and through
+the firmware's update route, an official 016 update, the RAM stage, MIDI mode, RAM apps through
+MIDI mode and the stage, and a backup and a firmware write straight after an app. On the FM-1 also
+M-UPGRADE, for an official 016 update and for installing this version from the stock bootloader,
+from a Mac. Not tested on this version: 1.2 and 1.3 installed over it, as the configuration code
+hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
@@ -101,7 +101,7 @@ which may lose pairings. Calibration stays. Back up before installing it.
 **Little tested on the FM-1's newer flash chip.** FM-1s sold from late 2026 have a
 UCUN UC25HQ80 flash (JEDEC ID `0xB36014`) instead of the Puya P25Q80H
 (`0x856014`). One such unit did not start after version 1.1 or 1.2 was installed,
-and the cause is not known. Another runs 1.3 and this version, on one owner's report,
+and the cause is not known. Another runs 1.3 and 2.0, on one owner's report,
 with its firmware, menu and download mode working. A MIDI mode reinstall of the same
 firmware worked there too, which rewrites only the first 4 KiB sector
 ([M-Flasher #13](https://github.com/jvitkauskas/m-flasher/issues/13)).
