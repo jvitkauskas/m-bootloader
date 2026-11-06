@@ -1110,7 +1110,7 @@ A RAM app is a program that runs from RAM and leaves the firmware in flash as it
 
 **Version 1 is polled.** An app that uses interrupts resets instead of returning, as their vector table's usual place, `0x01C7FE00` in firmware projects, is in the retained area.
 
-**An app can return,** except from `run-ram`, if it has written nothing outside the first two rows. It restores any clocks it changed and returns with interrupts off. What started it then sets up flash, the screen and USB again. **It must reset** if it changed what the bootloader mounted, such as the firmware in flash.
+**An app can return,** except from `run-ram`, if it has written nothing outside the first two rows, apart from what it pushes on the caller's stack and pops again. It restores any clocks it changed and returns with interrupts off. What started it then sets up flash, the screen and USB again. **It must reset** if it changed what the bootloader mounted, such as the firmware in flash.
 
 ## 12. Testing
 
