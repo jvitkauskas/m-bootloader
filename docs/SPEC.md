@@ -1053,7 +1053,7 @@ Firmware stores `ota.bin` so that it ends where its update request begins, for e
 
 The firmware decides whether to accept it. M-VAVE's FM-1 015 and 016, Felucca and Baud Girl do. SLOOP 2.8.5, ChoralRoot and Melodee refuse a package with no `flash.bin`, and keep running.
 
-It leaves on `F0 22 24 35 7E F7`, or the download-mode message, when an install finishes, or after 5 minutes with no message from a host, for an abandoned browser tab. A failed install stays in the stage, to be tried again.
+It leaves on `F0 22 24 35 7E F7`, or the download-mode message, when an install finishes, or after 5 minutes with no message from a host, for an abandoned browser tab. A failed install that has written anything stays in the stage until an install succeeds or a host asks it to leave: the timeout no longer applies, as a restart would leave no firmware, and the stock bootloader has no way back.
 
 ## 12. Testing
 

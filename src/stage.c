@@ -27,6 +27,8 @@ extern uint8_t __bss_start[], __bss_end[];
 static uint8_t sector[MU_SECTOR] __attribute__((aligned(4)));
 static bool screen;
 static uint32_t waited, seen;
+/* An install stopped partway: restarting now would leave no firmware, and stock has no way back. */
+static bool stay;
 
 void mu_send(const uint8_t *data, uint32_t size) {
     usb_midi_send(data, size);
@@ -45,7 +47,7 @@ bool mu_cancel(void) {
         waited = 0;
     } else
         ++waited;
-    return waited >= NO_HOST_MS;
+    return !stay && waited >= NO_HOST_MS;
 }
 
 bool mu_read(uint32_t address, void *out, uint32_t size) {
@@ -150,5 +152,6 @@ void stage_main(void *context, uint32_t stream_end) {
         show(3, RED, r == MU_BAD_PACKAGE ? "BAD PACKAGE" : r == MU_WRONG_KEY ? "WRONG CHIP KEY"
             : r == MU_LOST ? "HOST STOPPED" : "FLASH ERROR");
         show(6, written ? RED : WHITE, written ? "INSTALL AGAIN" : "");
+        stay = stay || written;
     }
 }
