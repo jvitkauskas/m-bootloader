@@ -1053,6 +1053,14 @@ Firmware stores `ota.bin` so that it ends where its update request begins, for e
 
 The firmware decides whether to accept it. M-VAVE's firmware and Baud Girl store any such package. Felucca-family firmware (SLOOP, ChoralRoot, Melodee) stores an updater other than M-VAVE's only if it's their own: a package listing a `flash.bin`, with `FELUCCA-LOADER-1` among the first literals of its stream. That mark means the updater writes only the app area, and checks the chip key, which is true of the stage. So it carries the mark, and there are two packages. `stage*-listed.fwsc` lists a blank 32-byte `flash.bin` that nothing reads or writes, for Felucca-family firmware. `stage*.fwsc` has none, because M-VAVE's firmware and Baud Girl refuse a package whose `flash.bin` isn't a real one. Felucca takes either. Its firmware also keeps a staged loader of that kind for a rescue, which Melodee and ChoralRoot run if their firmware is damaged or OCT- is held at power-on: after this, that's the stage, which takes their packages the same way, and when it times out, their boot stub falls to ROM download mode.
 
+Why M-VAVE's firmware and Baud Girl refuse the blank `flash.bin`, as found on FM-1 016 by offering packages that differ in one field (a refusal writes nothing): it isn't the size. Blank is refused at any size, and 0x4200 bytes pass if they hold what it reads, which is +0, then 512 bytes at +0x4000, then +0 again:
+
+* At +0, a flash header (section 5.2) with a correct CRC, file system version `0x10` and block alignment 16, and, as stored, with no decoding, `0.01` at +4 and `AC791N_STORY` at +16. Any other version or product is refused, which may be a comparison with the unit's own. The burner size, flash size and options aren't checked.
+* In the boot area's records at +0x20, one called `app_dir_head`.
+* In the app area's table at +0x4000, valid records called `app_area_head` and `VM`.
+
+A `flash.bin` of only those tables passes on all seven firmwares tested, but it can't replace the two packages, because that firmware then takes where to store `ota.bin` from the package's `VM` record, not its own layout. FM-1 016 stores it to end `0x3000` below the end of the listed `VM`: `0xD7000` with no `flash.bin`, from its own `VM`, and `0xE6000` with one listing `0x93000` + `0x56000`, inside its `SEQ64` area. Listing `VM` as zero stored nothing at all on 016, and on 015 reached `0xEA000`, over `BTIF`. A record right for one firmware overwrites another's data, so a package has to have no `flash.bin` for this firmware.
+
 It leaves on `F0 22 24 35 7E F7`, or the download-mode message, when an install finishes, or after 5 minutes with no message from a host, for an abandoned browser tab. A failed install that has written anything stays in the stage until an install succeeds or a host asks it to leave: the timeout no longer applies, as a restart would leave no firmware, and the stock bootloader has no way back.
 
 ## 12. Testing
