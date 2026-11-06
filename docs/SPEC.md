@@ -568,6 +568,8 @@ After successful verification, call the updater with `r0` = pointer to the 24-by
 
 ### 6.4 Updater context layouts
 
+The context and the objects it points to MUST be word aligned, and so must the request. M-VAVE's updater reads them in words, and when they weren't, on `2.2` builds before the fix, it hung at once: black screen, the pads lit and nothing on USB. Flash was unchanged, so hold-REC and a restore recover the unit, but the update request stays valid until then, so a normal start hangs the same way.
+
 The 24-byte context MUST have:
 
 | Offset | Size | Meaning |

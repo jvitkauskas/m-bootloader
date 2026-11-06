@@ -40,7 +40,11 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #endif
 extern uint8_t __bss_start[], __bss_end[];
 static uint8_t work[CORE_WORK_SIZE] __attribute__((aligned(4)));
-static uint8_t request[80], clock_meta[52], memory_meta[60], update_meta[24];
+/* M-VAVE's updater reads what it's given in words, and crashes if these aren't aligned (§6.4). */
+static uint8_t request[80] __attribute__((aligned(4)));
+static uint8_t clock_meta[52] __attribute__((aligned(4)));
+static uint8_t memory_meta[60] __attribute__((aligned(4)));
+static uint8_t update_meta[24] __attribute__((aligned(4)));
 static struct core_config config;
 static struct core_app app;
 static struct core_header header;

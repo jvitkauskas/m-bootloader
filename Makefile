@@ -203,6 +203,7 @@ test: all build/midi-update-test build/midi-update-test-smk37 build/upkr-test bu
 	./build/boot-test-smk37
 	./build/loader-lifecycle-test
 	python3 tests/startup_test.py
+	python3 tests/updater_context_test.py $(TOOLCHAIN)/bin/llvm-nm build/fm1/stage1.elf build/smk37/stage1.elf
 	python3 tests/version_test.py
 	python3 tests/container_test.py
 	python3 tests/fwsc_test.py
