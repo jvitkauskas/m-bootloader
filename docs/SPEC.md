@@ -1027,7 +1027,7 @@ The bootloader calls the entry using the C calling convention with one argument,
 
 The retained area from `0x01C7FD80` isn't free, as a reset and the menu both read it (§6). An image writes there only for a purpose of its own, such as the download-mode request (§4.2). It may then:
 
-* **return,** which means "carry on": the bootloader sets up the flash interface again and returns to the menu. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
+* **return,** which means "carry on": the bootloader sets up the flash interface and the panel again and returns to the menu, so the image can leave SPI1 and the panel in any state. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
 * **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
 
 ### 11.6 MIDI mode
