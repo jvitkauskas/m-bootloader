@@ -202,9 +202,9 @@ build/test-request-%.bin: src/test_request.c include/platform.h build/test-reque
 	$(LINK) --gc-sections -T build/test-request.ld -o build/test-request-$*.elf build/test-request-$*.o
 	$(OBJCOPY) -O binary -j .text build/test-request-$*.elf $@
 test-requests: build/test-request-midi.bin build/test-request-sd.bin
-build/boot-midi-test: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS)
+build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) $(SIM_FLAGS) -O2 $(SIM_SOURCES) tests/boot_midi_test.c -o $@
+	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_midi_test.c -o $@
 build/loader-slot-a-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c $< -o $@
@@ -213,7 +213,7 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/boot-test-requests build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/sdboot-test-smk37 build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/boot-midi-test build/loader-lifecycle-test
+test: all build/boot-test-requests build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/sdboot-test-smk37 build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/boot-midi-test-fm1 build/boot-midi-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
@@ -226,7 +226,8 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	./build/boot-test-fm1
 	./build/boot-test-smk37
 	./build/boot-test-requests
-	./build/boot-midi-test
+	./build/boot-midi-test-fm1
+	./build/boot-midi-test-smk37
 	./build/loader-lifecycle-test
 	python3 tests/startup_test.py
 	python3 tests/updater_context_test.py $(TOOLCHAIN)/bin/llvm-nm build/fm1/stage1.elf build/smk37/stage1.elf
