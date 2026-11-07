@@ -91,9 +91,18 @@ volatile uint32_t *platform_register(uintptr_t address) {
     return &baud;
 }
 
+/* SPEC §11.5, stated here so that a wrong pin in the code can't pass. */
+#ifdef BOARD_SMK
+#define IS_CS(port, pin) ((port) == 2 && (pin) == 8)
+#define IS_DO(port, pin) ((port) == 1 && (pin) == 5)
+#else
+#define IS_CS(port, pin) ((port) == 2 && (pin) == 7)
+#define IS_DO(port, pin) ((port) == 2 && (pin) == 8)
+#endif
+
 void gpio_level(unsigned port, unsigned pin, bool high) {
-    assert((port == CS_PORT && pin == CS_PIN) || (port == DO_PORT && pin == DO_PIN));
-    if (port == CS_PORT && pin == CS_PIN) {
+    assert(IS_CS(port, pin) || IS_DO(port, pin));
+    if (IS_CS(port, pin)) {
         selected = high;
         reply_pos = reply_len = 0;
         command_len = 0;
@@ -101,12 +110,12 @@ void gpio_level(unsigned port, unsigned pin, bool high) {
 }
 
 void gpio_output(unsigned port, unsigned pin, bool high) {
-    assert(port == DO_PORT && pin == DO_PIN);
+    assert(IS_DO(port, pin));
     (void)high;
 }
 
 void gpio_input(unsigned port, unsigned pin, bool up, bool down) {
-    assert(port == DO_PORT && pin == DO_PIN);
+    assert(IS_DO(port, pin));
     assert(up && !down);
 }
 

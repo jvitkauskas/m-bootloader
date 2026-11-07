@@ -496,7 +496,8 @@ __attribute__((noinline)) static bool menu(void) {
             flash_init(effective_width, config.spi_divider);
             if (SMK)
                 board_init(SMK);
-            clear_rows(0, 14);
+            /* The image can leave the panel in any state, and setting it up again clears it. */
+            screen_ready = display_init(BOARD);
             release_select();
             last = previous = stable = 0;
             continue;
