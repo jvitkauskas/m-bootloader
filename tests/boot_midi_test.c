@@ -7,7 +7,8 @@
  *     named, the app not run;
  *   - each of the four keys goes back to the whole menu: its actions as before, the key not taken as a menu step;
  *   - a key that stays down can't hang the unit: pressed in MIDI mode and held, the menu still comes and doesn't take
- *     it as a press; down before MIDI mode opens, it doesn't leave MIDI mode;
+ *     it as a press; down before MIDI mode opens, PLAY included, it neither keeps MIDI mode from opening nor leaves
+ *     it, until it has read as up for 50 scans in a row;
  *   - an install that fails with nothing written doesn't take MIDI mode opened by itself away: it answers again,
  *     the failure in view, and only a key leaves; chosen from the menu, it goes back to the menu as before;
  *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view;
@@ -26,9 +27,10 @@
 #undef main
 
 static unsigned t_midi_runs, t_usb_starts, t_usb_stops;
+static unsigned long long t_usb_started_at;
 /* The stub's first run: an install that fails with nothing written, before it waits. */
 static enum mu_result t_mu_first;
-void usb_midi_start(void) { ++t_usb_starts; }
+void usb_midi_start(void) { ++t_usb_starts; t_usb_started_at = sim.now; }
 void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
 void usb_midi_send(const uint8_t *data, uint32_t size) { (void)data; (void)size; }
@@ -51,8 +53,10 @@ static const unsigned t_menu_keys[] = { KEY_PREV, KEY_NEXT, KEY_SELECT, KEY_RECO
 static void t_midi_prep(unsigned fixture)
 {
     t_prep(fixture);
-    midi_leave = 0;
+    midi_alone = false;
+    midi_stuck = 0;
     t_midi_runs = t_usb_starts = t_usb_stops = 0;
+    t_usb_started_at = 0;
     t_mu_first = MU_CANCELLED;
 }
 
@@ -125,6 +129,67 @@ static void t_midi_stuck(void)
     sim.limit = 6000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    /* PLAY stuck once the power-on check has read it up: nothing waits for it, MIDI mode opens */
+    static const unsigned from[] = { 50, 200 };
+    for (unsigned i = 0; i < sizeof(from)/sizeof(from[0]); ++i) {
+        t_midi_prep(4);
+        t_key(KEY_SELECT, from[i], T_FOREVER);
+        sim.limit = 6000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 1 && t_usb_starts == 1 && t_midi_shown("APP NOT FOUND"));
+        /* and another key leaves it, PLAY not taken as a press in the menu */
+        t_midi_prep(4);
+        t_key(KEY_SELECT, from[i], T_FOREVER);
+        t_key(KEY_NEXT, 4000, 4100);
+        sim.limit = 6000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 1 && !t_resets && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    }
+    /* down from 5 ms, the power-on check sees PLAY held: that asks for the menu itself, no MIDI mode, as before */
+    t_midi_prep(4);
+    t_key(KEY_SELECT, 5, T_FOREVER);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(!t_midi_runs && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+}
+
+/* A key down when MIDI mode opens counts again once it has read as up for 50 scans in a row. */
+static void t_midi_released(void)
+{
+    /* MIDI mode opens after keys that go down at 100 ms, past the power-on checks */
+    t_midi_prep(4);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT && t_usb_started_at > 150000);
+    /* NEXT down at power-on, let go, pressed again: it leaves */
+    t_midi_prep(4);
+    t_key(KEY_NEXT, 0, 1500);
+    t_key(KEY_NEXT, 4000, 4300);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    /* all four down when it opens, let go, then each one leaves */
+    for (unsigned i = 0; i < sizeof(t_menu_keys)/sizeof(t_menu_keys[0]); ++i) {
+        t_midi_prep(4);
+        t_key(KEY_PREV | KEY_NEXT | KEY_SELECT | KEY_RECOVERY, 100, 3500);
+        t_key(t_menu_keys[i], 4500, 4800);
+        sim.limit = 7000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 1 && !t_resets && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    }
+    /* still down: none of them leaves */
+    t_midi_prep(4);
+    t_key(KEY_PREV | KEY_NEXT | KEY_SELECT | KEY_RECOVERY, 100, T_FOREVER);
+    sim.limit = 7000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_midi_shown("APP NOT FOUND"));
+    /* a stuck key that reads up for 10 ms now and then doesn't make MIDI mode leave by itself */
+    t_midi_prep(4);
+    t_key(KEY_NEXT, 0, 3000);
+    t_key(KEY_NEXT, 3010, 4000);
+    t_key(KEY_NEXT, 4010, T_FOREVER);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_midi_shown("APP NOT FOUND"));
 }
 
 /* An install that fails with nothing written: MIDI mode opened by itself stays, the failure in view; only a key
@@ -260,6 +325,14 @@ static void t_midi_app_exit(void)
     sim.limit = 9000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_midi_runs == 1 && !t_resets && t_row_is(8, "> BOOT APP"));
+    /* PLAY stuck from 200 ms, through the app and its return: MIDI mode all the same */
+    t_midi_prep(4);
+    t_synthetic_app();
+    t_app_returns = true;
+    t_key(KEY_SELECT, 200, T_FOREVER);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_app_calls == 1 && t_midi_runs == 1 && t_row_is(2, "APP EXITED") && t_midi_shown("APP OK"));
 }
 
 /* With the board's flash dump (a real image, its app damaged by one bit: APP BAD CRC). */
@@ -311,6 +384,7 @@ int main(int argc, char **argv)
     printf("boot simulation: the menu's MIDI mode by default (%s)\n", SMK ? "SMK-37":"FM-1");
     t_midi_blank();
     t_midi_stuck();
+    t_midi_released();
     t_midi_failures();
     t_midi_reasons();
     t_midi_app_exit();
