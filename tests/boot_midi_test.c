@@ -11,7 +11,8 @@
  *     it, until it has read as up for 50 scans in a row;
  *   - an install that fails with nothing written doesn't take MIDI mode opened by itself away: it answers again,
  *     the failure in view, and only a key leaves; chosen from the menu, it goes back to the menu as before;
- *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view;
+ *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view, also after
+ *     a RAM app has run and left the screen black;
  *   - an app that returns to the bootloader, the panel left off: MIDI mode, APP EXITED, and the menu after it;
  *   - PLAY held at power-on opens the menu itself, no MIDI mode.
  * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
@@ -20,16 +21,19 @@
  * Not here: USB and the clocks. The simulator has no USB controller, and src/usb_midi.c doesn't build for the host,
  * so what an exiting app leaves in them is for hardware (docs/SPEC.md §12.5). */
 #define MIDI_MODE 1
+/* The RAM app mu_start_app() calls is t_ram_app (below), under the name MU_APP_RAM has here. */
+#define MU_TEST_APP_RAM 1
 #include "midi_update.h"
 #include "usb_midi.h"
 #define main boot_test_main
 #include "boot_test.c"
 #undef main
 
-static unsigned t_midi_runs, t_usb_starts, t_usb_stops;
+static unsigned t_midi_runs, t_usb_starts, t_usb_stops, t_ram_app_calls, t_ram_app_mhz;
 static unsigned long long t_usb_started_at;
-/* The stub's first run: an install that fails with nothing written, before it waits. */
+/* The stub's first run: an install that fails with nothing written, or a RAM app run (cmd 0x25), before it waits. */
 static enum mu_result t_mu_first;
+static bool t_mu_ram_app;
 void usb_midi_start(void) { ++t_usb_starts; t_usb_started_at = sim.now; }
 void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
@@ -40,12 +44,26 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
     *written = false;
     if (++t_midi_runs == 1 && t_mu_first != MU_CANCELLED)
         return t_mu_first;
+    if (t_midi_runs == 1 && t_mu_ram_app)
+        mu_start_app();
     for (; ; ) {
         mu_idle();
         if (mu_cancel())
             return MU_CANCELLED;
     }
 }
+
+/* A RAM app that takes the panel down and leaves the screen black. */
+void t_ram_app(unsigned mhz);
+void t_ram_app(unsigned mhz)
+{
+    ++t_ram_app_calls;
+    t_ram_app_mhz = mhz;
+    REG(0x11d00) = 0;
+    sim.panel_on = 0;
+    memset(sim.fb, 0, sizeof(sim.fb));
+}
+__asm__(".globl mu_test_app_ram\n.set mu_test_app_ram, t_ram_app");
 
 static const unsigned t_menu_keys[] = { KEY_PREV, KEY_NEXT, KEY_SELECT, KEY_RECOVERY };
 #define T_FOREVER 100000000u
@@ -55,9 +73,10 @@ static void t_midi_prep(unsigned fixture)
     t_prep(fixture);
     midi_alone = false;
     midi_stuck = 0;
-    t_midi_runs = t_usb_starts = t_usb_stops = 0;
+    t_midi_runs = t_usb_starts = t_usb_stops = t_ram_app_calls = t_ram_app_mhz = 0;
     t_usb_started_at = 0;
     t_mu_first = MU_CANCELLED;
+    t_mu_ram_app = false;
 }
 
 static bool t_midi_shown(const char *state)
@@ -241,6 +260,14 @@ static void t_midi_reasons(void)
         CHECK(t_go() == END_TIMEOUT);
         CHECK(t_midi_runs == 1 && t_row_is(2, "TRIM ERROR") && t_midi_shown("APP NOT FOUND"));
     }
+    /* a RAM app runs (cmd 0x25) and returns, the screen left black: the reason is drawn again with the rest */
+    t_midi_prep(4);
+    sim.jedec = (sim.jedec&~0xffu) | 0x13;
+    t_mu_ram_app = true;
+    sim.limit = 4000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_ram_app_calls == 1 && t_ram_app_mhz == 60 && t_usb_starts == 2 && t_usb_stops == 1);
+    CHECK(t_row_is(2, "FLASH ERROR") && t_midi_shown("APP NOT FOUND"));
 }
 
 /* A synthetic app on a blank flash (the layout of tests/core_test.c's synthetic banks): the header, the application

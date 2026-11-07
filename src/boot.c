@@ -244,6 +244,7 @@ void mu_start_app(void) {
     screen_ready = display_init(BOARD);
     display_text(0, YELLOW, TITLE);
     display_text(1, GREY, (const char *)(uintptr_t)0x01c02050);
+    display_text(2, RED, reason ? reason:"");
     midi_screen();
     board_restore();
     board_init(SMK);
