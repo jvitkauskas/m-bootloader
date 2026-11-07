@@ -247,6 +247,7 @@ static void midi_mode(void) {
         [MU_LOST] = "INSTALLER STOPPED", [MU_FLASH_ERROR] = "FLASH ERROR"
     };
     bool written;
+    enum mu_result r;
     midi_screen();
     while (board_keys()&KEY_SELECT)
         board_wait(20, false);
@@ -254,17 +255,25 @@ static void midi_mode(void) {
     board_restore();
     board_init(SMK);
     usb_midi_start();
-    enum mu_result r = mu_run(unit_key, work, &written);
-    if (r == MU_DOWNLOAD)
-        download_screen();
-    if (r != MU_CANCELLED && r != MU_DONE && r != MU_RESTART) {
+    for (; ; ) {
+        r = mu_run(unit_key, work, &written);
+        if (r == MU_DOWNLOAD)
+            download_screen();
+        if (r != MU_CANCELLED && r != MU_DONE && r != MU_RESTART) {
+            display_text(13, RED, failures[r]);
+            if (written)
+                display_text(14, RED, "RESTARTS: TRY AGAIN");
+            hal_delay_us(2000000);
+        }
+        if (r == MU_DONE)
+            hal_delay_us(200000);
+        /* Opened by itself, only a key leaves: after a failed install that wrote nothing (a closed tab, a cable, a
+         * wrong file), it answers again, with what went wrong in view. */
+        if (!midi_leave || written || r == MU_CANCELLED || r == MU_DONE || r == MU_RESTART)
+            break;
+        midi_screen();
         display_text(13, RED, failures[r]);
-        if (written)
-            display_text(14, RED, "RESTARTS: TRY AGAIN");
-        hal_delay_us(2000000);
     }
-    if (r == MU_DONE)
-        hal_delay_us(200000);
     usb_midi_stop();
     if (written || r == MU_DONE || r == MU_RESTART)
         hal_reset();

@@ -8,6 +8,8 @@
  *   - each of the four keys goes back to the whole menu: its actions as before, the key not taken as a menu step;
  *   - a key that stays down can't hang the unit: pressed in MIDI mode and held, the menu still comes and doesn't take
  *     it as a press; down before MIDI mode opens, it doesn't leave MIDI mode;
+ *   - an install that fails with nothing written doesn't take MIDI mode opened by itself away: it answers again,
+ *     the failure in view, and only a key leaves; chosen from the menu, it goes back to the menu as before;
  *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view;
  *   - an app that returns to the bootloader, the panel left off: MIDI mode, APP EXITED, and the menu after it;
  *   - PLAY held at power-on opens the menu itself, no MIDI mode.
@@ -24,6 +26,8 @@
 #undef main
 
 static unsigned t_midi_runs, t_usb_starts, t_usb_stops;
+/* The stub's first run: an install that fails with nothing written, before it waits. */
+static enum mu_result t_mu_first;
 void usb_midi_start(void) { ++t_usb_starts; }
 void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
@@ -32,7 +36,8 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
 {
     (void)key, (void)sector;
     *written = false;
-    ++t_midi_runs;
+    if (++t_midi_runs == 1 && t_mu_first != MU_CANCELLED)
+        return t_mu_first;
     for (; ; ) {
         mu_idle();
         if (mu_cancel())
@@ -48,6 +53,7 @@ static void t_midi_prep(unsigned fixture)
     t_prep(fixture);
     midi_leave = 0;
     t_midi_runs = t_usb_starts = t_usb_stops = 0;
+    t_mu_first = MU_CANCELLED;
 }
 
 static bool t_midi_shown(const char *state)
@@ -119,6 +125,37 @@ static void t_midi_stuck(void)
     sim.limit = 6000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+}
+
+/* An install that fails with nothing written: MIDI mode opened by itself stays, the failure in view; only a key
+ * leaves. Chosen from the menu, it goes back to the menu as before. */
+static void t_midi_failures(void)
+{
+    static const enum mu_result fails[] = { MU_LOST, MU_BAD_PACKAGE, MU_WRONG_KEY };
+    static const char *const texts[] = { "INSTALLER STOPPED", "BAD PACKAGE", "WRONG CHIP KEY" };
+    for (unsigned i = 0; i < sizeof(fails)/sizeof(fails[0]); ++i) {
+        t_midi_prep(4);
+        t_mu_first = fails[i];
+        sim.limit = 30000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 2 && t_usb_starts == 1 && !t_usb_stops && !t_resets);
+        CHECK(t_midi_shown("APP NOT FOUND") && t_row_is(13, texts[i]));
+        t_midi_prep(4);
+        t_mu_first = fails[i];
+        t_key(KEY_NEXT, 6000, 6100);
+        sim.limit = 8000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 2 && t_usb_stops == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    }
+    /* chosen from the menu: PLAY at power-on, NEXT, PLAY; it fails, and the menu is back */
+    t_midi_prep(4);
+    t_mu_first = MU_LOST;
+    t_open_menu();
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_usb_stops == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(9, "> MIDI MODE"));
 }
 
 /* The other ways the menu comes up by itself: their reason stays in view in MIDI mode. */
@@ -274,6 +311,7 @@ int main(int argc, char **argv)
     printf("boot simulation: the menu's MIDI mode by default (%s)\n", SMK ? "SMK-37":"FM-1");
     t_midi_blank();
     t_midi_stuck();
+    t_midi_failures();
     t_midi_reasons();
     t_midi_app_exit();
     /* the flash dump of the board is an extra: argv[1], else testdata/<board>-stock.bin */
