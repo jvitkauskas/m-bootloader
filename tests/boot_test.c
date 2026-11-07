@@ -46,6 +46,8 @@ const char *sd_stage2(unsigned lsb_mhz)
 static bool t_app_returns, t_update_returns;
 static bool t_bad_quad_on_return;
 static void (*t_update_hook)(void);
+/* What a returning app leaves behind, run as it returns. */
+static void (*t_app_hook)(void);
 static uint8_t t_app_object[24], t_app_header[32], t_reset_retained[256];
 static uint8_t t_update_object[24], t_update_clock[52], t_update_memory[60];
 static uint32_t t_app_entry, t_update_entry, t_update_end;
@@ -88,6 +90,8 @@ void boot_sim_call_app(uint32_t entry, void *object)
         longjmp(t_escape, END_APP);
     if (t_bad_quad_on_return)
         sim.bad_quad = 1;
+    if (t_app_hook)
+        t_app_hook();
 }
 
 void boot_sim_call_updater(uint32_t entry, void *object, uint32_t end)
@@ -196,6 +200,7 @@ static void t_prep(unsigned fixture)
     t_app_returns = t_update_returns = false;
     t_bad_quad_on_return = false;
     t_update_hook = NULL;
+    t_app_hook = NULL;
     memset(t_app_object, 0, sizeof(t_app_object));
     memset(t_reset_retained, 0, sizeof(t_reset_retained));
     memset(RET(0), 0, 256);

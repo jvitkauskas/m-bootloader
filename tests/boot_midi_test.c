@@ -2,17 +2,20 @@
 /* The menu's MIDI mode by default (src/boot.c midi_auto): boot.c built with MIDI_MODE on the boot simulator, the
  * USB MIDI side stubbed (no installer connects: the MIDI loop only polls its cancel). Built for the FM-1 and, with
  * BOARD_SMK, for the SMK-37 (its own binary and output line).
- * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself):
+ * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself) and on a synthetic app:
  *   - the menu that comes up by itself opens in MIDI mode, the app's state and the reason in view, the menu's keys
  *     named, the app not run;
  *   - each of the four keys goes back to the whole menu: its actions as before, the key not taken as a menu step;
  *   - a key that stays down can't hang the unit: pressed in MIDI mode and held, the menu still comes and doesn't take
  *     it as a press; down before MIDI mode opens, it doesn't leave MIDI mode;
  *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view;
+ *   - an app that returns to the bootloader, the panel left off: MIDI mode, APP EXITED, and the menu after it;
  *   - PLAY held at power-on opens the menu itself, no MIDI mode.
  * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
  * bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached. A missing dump is a SKIP of the extra only;
- * with REQUIRE_FIXTURES set in the environment it fails. */
+ * with REQUIRE_FIXTURES set in the environment it fails.
+ * Not here: USB and the clocks. The simulator has no USB controller, and src/usb_midi.c doesn't build for the host,
+ * so what an exiting app leaves in them is for hardware (docs/SPEC.md §12.5). */
 #define MIDI_MODE 1
 #include "midi_update.h"
 #include "usb_midi.h"
@@ -138,6 +141,90 @@ static void t_midi_reasons(void)
     }
 }
 
+/* A synthetic app on a blank flash (the layout of tests/core_test.c's synthetic banks): the header, the application
+ * directory pointing at a bank at 0x10000, and the bank's area head and app.bin, its 32 bytes the entry. */
+static void t_record(uint32_t address, uint32_t relative, bool app, const char *name, uint32_t data, uint32_t size, uint8_t attribute, uint16_t crc)
+{
+    uint8_t raw[32];
+    memset(raw, 0, sizeof(raw));
+    core_put_le16(raw+2, crc);
+    core_put_le32(raw+4, data);
+    core_put_le32(raw+8, size);
+    raw[12] = attribute;
+    memcpy(raw+16, name, strlen(name));
+    core_put_le16(raw, core_crc16(0, raw+2, 30));
+    core_enc(app ? (uint16_t)(0x980f^(relative >> 2)):0xffff, raw, 32);
+    memcpy(sim_nor+address, raw, 32);
+}
+
+static void t_synthetic_app(void)
+{
+    uint8_t raw[32], code[32];
+    memset(raw, 0, sizeof(raw));
+    core_put_le32(raw+8, 0x100000-0x1000);
+    raw[13] = 16;
+    core_put_le16(raw, core_crc16(0, raw+2, 30));
+    core_enc(0xffff, raw, 32);
+    memcpy(sim_nor, raw, 32);
+    t_record(32, 0, false, "app_dir_head", 0x10000, 0, 0x81, 0);
+    memset(code, 0x5a, sizeof(code));
+    t_record(0x10000, 0, true, "app_area_head", 0x02000120, 0x1000, 0x83, 0xffff);
+    t_record(0x10020, 32, true, "app.bin", 0x120, 32, 0x82, core_crc16(0, code, 32));
+    core_enc((uint16_t)(0x980f^(0x120 >> 2)), code, 32);
+    memcpy(sim_nor+0x10120, code, 32);
+}
+
+/* What an app may leave as it returns: the panel's bus off. */
+static void t_app_leaves_panel_off(void)
+{
+    REG(0x11d00) = 0;
+    sim.panel_on = 0;
+}
+
+/* The path after an app exits: MIDI mode starts by itself there too, from whatever the app left. */
+static void t_midi_app_exit(void)
+{
+    /* the synthetic app boots as any app does, and no MIDI mode */
+    t_midi_prep(4);
+    t_synthetic_app();
+    CHECK(t_go() == END_APP);
+    CHECK(t_app_calls == 1 && !t_midi_runs && !t_usb_starts);
+    /* it returns, the panel left off: MIDI mode, with APP EXITED above the app's state */
+    t_midi_prep(4);
+    t_synthetic_app();
+    t_app_returns = true;
+    t_app_hook = t_app_leaves_panel_off;
+    sim.limit = 4000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_app_calls == 1 && t_midi_runs == 1 && t_usb_starts == 1);
+    CHECK(t_row_is(2, "APP EXITED") && t_midi_shown("APP OK"));
+    /* a key: the menu, and BOOT APP from it resets to try again (§7) */
+    t_midi_prep(4);
+    t_synthetic_app();
+    t_app_returns = true;
+    t_app_hook = t_app_leaves_panel_off;
+    t_key(KEY_NEXT, 4000, 4100);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_usb_stops == 1 && t_row_is(2, "APP EXITED") && t_row_is(3, "APP OK"));
+    CHECK(t_row_is(8, "> BOOT APP") && t_row_is(9, "  DOWNLOAD MODE"));
+    t_midi_prep(4);
+    t_synthetic_app();
+    t_app_returns = true;
+    t_key(KEY_NEXT, 4000, 4100);
+    t_key(KEY_SELECT, 4600, 4700);
+    CHECK(t_go() == END_RESET);
+    CHECK(t_app_calls == 1 && t_midi_runs == 1 && !t_usb_reset());
+    /* stuck in MIDI mode after it: the menu still comes */
+    t_midi_prep(4);
+    t_synthetic_app();
+    t_app_returns = true;
+    t_key(KEY_SELECT, 4000, T_FOREVER);
+    sim.limit = 9000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && !t_resets && t_row_is(8, "> BOOT APP"));
+}
+
 /* With the board's flash dump (a real image, its app damaged by one bit: APP BAD CRC). */
 static void t_midi_by_default(void)
 {
@@ -188,6 +275,7 @@ int main(int argc, char **argv)
     t_midi_blank();
     t_midi_stuck();
     t_midi_reasons();
+    t_midi_app_exit();
     /* the flash dump of the board is an extra: argv[1], else testdata/<board>-stock.bin */
     const char *path = argc > 1 ? argv[1] : (SMK ? "testdata/smk37-stock.bin":"testdata/fm1-stock.bin");
     unsigned f = t_own_fixture();
