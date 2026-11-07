@@ -17,7 +17,9 @@ run with it.
   ready for M-Flasher.
 - **MIDI mode.** Reinstall firmware from a browser installer over USB
   MIDI, including from a phone, with no computer and no firmware running. It's
-  in the recovery menu, which also opens by itself when there's no valid firmware
+  in the recovery menu, and when the menu opens by itself it starts in MIDI mode,
+  showing why the firmware didn't start; OCT−, OCT+, PLAY or REC (`<`, `>`, SEQ PLAY
+  or SEQ REC on the SMK-37) go to the menu
   ([specification §11.6](docs/SPEC.md#116-midi-mode)). The unit reads the
   package twice, to check it and then to write it, so an installer's progress
   bar fills about twice as fast as the unit's. Wait for the unit. Tested with
@@ -34,7 +36,8 @@ run with it.
   with no firmware running. On a unit without m-bootloader, the same code runs as a
   stage in RAM, through the firmware's own update route ([specification §11.7](docs/SPEC.md#117-the-ram-stage)).
 - **Recovery menu.** Hold **PLAY** (FM-1) or **SEQ PLAY** (SMK-37) while
-  switching on. The menu also opens by itself when the firmware cannot start.
+  switching on. The menu also opens by itself, in MIDI mode first, when the
+  firmware cannot start or returns.
   It shows the firmware's state and size, pending updates and the flash chip,
   and offers:
   - **Boot app** and **Download mode**;
