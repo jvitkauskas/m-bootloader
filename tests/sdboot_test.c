@@ -92,8 +92,8 @@ volatile uint32_t *platform_register(uintptr_t address) {
 }
 
 void gpio_level(unsigned port, unsigned pin, bool high) {
-    assert(port == 2);
-    if (pin == 7) {
+    assert((port == CS_PORT && pin == CS_PIN) || (port == DO_PORT && pin == DO_PIN));
+    if (port == CS_PORT && pin == CS_PIN) {
         selected = high;
         reply_pos = reply_len = 0;
         command_len = 0;
@@ -101,16 +101,13 @@ void gpio_level(unsigned port, unsigned pin, bool high) {
 }
 
 void gpio_output(unsigned port, unsigned pin, bool high) {
-    (void)port;
-    (void)pin;
+    assert(port == DO_PORT && pin == DO_PIN);
     (void)high;
 }
 
 void gpio_input(unsigned port, unsigned pin, bool up, bool down) {
-    (void)port;
-    (void)pin;
-    (void)up;
-    (void)down;
+    assert(port == DO_PORT && pin == DO_PIN);
+    assert(up && !down);
 }
 
 bool hal_delay_us(uint32_t usec) {

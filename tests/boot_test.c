@@ -1113,15 +1113,13 @@ static void t_sd_menu(void)
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_sd_calls);
     CHECK(t_row_is(8, "> DOWNLOAD MODE"));
-    /* A card puts it on top, selected; the SMK-37 has no card bus. */
+    /* A card puts it on top, selected. */
     t_prep(4);
     t_sd_card = true;
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(t_row_is(8, SMK ? "> DOWNLOAD MODE":"> SD CARD"));
-    CHECK(t_row_is(9, SMK ? "":"  DOWNLOAD MODE"));
-    if (SMK)
-        return;
+    CHECK(t_row_is(8, "> SD CARD"));
+    CHECK(t_row_is(9, "  DOWNLOAD MODE"));
     /* A failure shows in the menu, which stays usable. */
     t_prep(4);
     t_sd_card = true;

@@ -334,9 +334,7 @@ __attribute__((noinline)) static bool wipe_user(const struct core_wipe *plan) {
 #define REQUEST_SD 4u
 #define REQUEST_MIDI 5u
 static unsigned test_request;
-#ifndef BOARD_SMK
 static bool test_sd;
-#endif
 
 static unsigned test_request_consume(uint8_t retained[8]) {
     if (memcmp(retained, "MBTEST", 6))
@@ -358,20 +356,16 @@ __attribute__((noinline)) static bool menu(void) {
     core_request_scan(&nor.flash, header.alignment, work, &updates);
     struct core_wipe plan;
     bool can_wipe = core_wipe_plan(&nor.flash, &app, SMK, &plan);
-#ifndef BOARD_SMK
     bool card = sd_probe(60);
-#endif
     unsigned selection = 0, last = 0, previous = 0, stable = 0;
     bool first_draw = true;
     for (; ; ) {
         const char *actions[5];
         unsigned types[5], count = 0;
-#ifndef BOARD_SMK
         if (card) {
             actions[count] = "SD CARD";
             types[count++] = 4;
         }
-#endif
         if (app.state == CORE_APP_OK) {
             actions[count] = "BOOT APP";
             types[count++] = 0;
@@ -448,9 +442,7 @@ __attribute__((noinline)) static bool menu(void) {
                 }
             if (!edge)
                 rom_download();
-#ifndef BOARD_SMK
             test_sd = test_request == REQUEST_SD;
-#endif
             test_request = 0;
         }
 #endif
@@ -489,8 +481,10 @@ __attribute__((noinline)) static bool menu(void) {
             continue;
         }
 #endif
-#ifndef BOARD_SMK
         if (action == 4) {
+            /* The menu's LEDs drive the SMK-37's high-speed PHY, and stage 2 may want USB: give it back first. */
+            if (SMK)
+                board_restore();
             /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
             reason = sd_stage2(60);
 #ifdef TEST_REQUESTS
@@ -500,12 +494,13 @@ __attribute__((noinline)) static bool menu(void) {
 #endif
             /* stage 2 reprograms the flash interface */
             flash_init(effective_width, config.spi_divider);
+            if (SMK)
+                board_init(SMK);
             clear_rows(0, 14);
             release_select();
             last = previous = stable = 0;
             continue;
         }
-#endif
         if (action == 2 || action == 3) {
             if (!confirm(action == 3, &plan)) {
                 release_select();

@@ -42,8 +42,10 @@ run with it.
   - **Wipe user data**: erase the settings areas the firmware declares, and
     nothing else. The menu lists the exact ranges, and you hold the key for
     3 s to confirm.
-- **SD card (FM-1).** With an [m-card](https://github.com/jvitkauskas/m-card)
-  board and a FAT32 card fitted, the menu gets an **SD card** item at the top.
+- **SD card.** With a card mod and a FAT32 card fitted, the menu gets an
+  **SD card** item at the top. On the FM-1, that's an
+  [m-card](https://github.com/jvitkauskas/m-card) board. On the SMK-37, it's
+  wired by hand ([docs/SPEC.md](docs/SPEC.md) §11.5 has the pins).
   It loads and runs `/MBOOT/MENU.BIN` from the card, which can be any program
   built for it ([docs/SPEC.md](docs/SPEC.md) §11.5). The card is only touched
   when the menu is open. It's been tested on an FM-1, where an image ran from
