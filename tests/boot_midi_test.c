@@ -2,14 +2,15 @@
 /* The menu's MIDI mode by default (src/boot.c midi_auto): boot.c built with MIDI_MODE on the boot simulator, the
  * USB MIDI side stubbed (no installer connects: the MIDI loop only polls its cancel). Built for the FM-1 and, with
  * BOARD_SMK, for the SMK-37 (its own binary and output line).
- * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself): MIDI mode first, every key
- * leaves it, PLAY held at power-on no MIDI mode. With the board's flash dump (argv[1], else testdata/<board>-stock.bin,
- * 1 MiB) as an extra, its app damaged (one bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached.
- * A missing dump is a SKIP of the extra only; with REQUIRE_FIXTURES set in the environment it fails.
+ * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself):
  *   - the menu that comes up by itself opens in MIDI mode, "ANY KEY: MENU", the app not run;
- *   - any key (NEXT) goes back to the whole menu: its actions as before, the key not taken as a menu step;
- *   - from there BOOT ANYWAY is reached and confirmed as before (the other modes stay reachable);
- *   - PLAY held at power-on opens the menu itself, no MIDI mode. */
+ *   - each of the four keys goes back to the whole menu: its actions as before, the key not taken as a menu step;
+ *   - a key that stays down can't hang the unit: pressed in MIDI mode and held, the menu still comes and doesn't take
+ *     it as a press; down before MIDI mode opens, it doesn't leave MIDI mode;
+ *   - PLAY held at power-on opens the menu itself, no MIDI mode.
+ * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
+ * bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached. A missing dump is a SKIP of the extra only;
+ * with REQUIRE_FIXTURES set in the environment it fails. */
 #define MIDI_MODE 1
 #include "midi_update.h"
 #include "usb_midi.h"
@@ -17,9 +18,9 @@
 #include "boot_test.c"
 #undef main
 
-static unsigned t_midi_runs;
-void usb_midi_start(void) {}
-void usb_midi_stop(void) {}
+static unsigned t_midi_runs, t_usb_starts, t_usb_stops;
+void usb_midi_start(void) { ++t_usb_starts; }
+void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
 void usb_midi_send(const uint8_t *data, uint32_t size) { (void)data; (void)size; }
 enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
@@ -34,43 +35,85 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
     }
 }
 
+static const unsigned t_menu_keys[] = { KEY_PREV, KEY_NEXT, KEY_SELECT, KEY_RECOVERY };
+#define T_FOREVER 100000000u
+
+static void t_midi_prep(unsigned fixture)
+{
+    t_prep(fixture);
+    midi_leave = 0;
+    t_midi_runs = t_usb_starts = t_usb_stops = 0;
+}
+
+static bool t_midi_shown(void)
+{
+    return t_row_is(3, "MIDI MODE") && t_row_is(8, "ANY KEY: MENU");
+}
+
 /* No fixture: a blank flash (the public malformed-image case, t_prep(4)) has no app, so the menu comes up by itself
  * with APP NOT FOUND. Runs on every checkout, for the board the binary is built for. */
 static void t_midi_blank(void)
 {
     /* nobody at the unit: MIDI mode */
-    t_prep(4);
-    t_midi_runs = 0;
+    t_midi_prep(4);
     sim.limit = 3000000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(!t_app_calls && t_midi_runs == 1);
-    CHECK(t_row_is(3, "MIDI MODE") && t_row_is(8, "ANY KEY: MENU"));
+    CHECK(!t_app_calls && t_midi_runs == 1 && t_usb_starts == 1);
+    CHECK(t_midi_shown());
     /* NEXT leaves it: the whole menu, the selection where it starts, the key not taken as a step */
-    t_prep(4);
-    t_midi_runs = 0;
+    t_midi_prep(4);
     t_key(KEY_NEXT, 3000, 3300);
     sim.limit = 5000000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(!t_app_calls && t_midi_runs == 1);
+    CHECK(!t_app_calls && t_midi_runs == 1 && t_usb_stops == 1);
     CHECK(t_row_is(3, "APP NOT FOUND"));
     CHECK(t_row_is(8, "> DOWNLOAD MODE") && t_row_is(9, "  MIDI MODE"));
     /* every key leaves it (the release wait and the key mapping differ per board) */
-    static const unsigned keys[] = { KEY_PREV, KEY_NEXT, KEY_SELECT, KEY_RECOVERY };
-    for (unsigned i = 0; i < sizeof(keys)/sizeof(keys[0]); ++i) {
-        t_prep(4);
-        t_midi_runs = 0;
-        t_key(keys[i], 3000, 3300);
+    for (unsigned i = 0; i < sizeof(t_menu_keys)/sizeof(t_menu_keys[0]); ++i) {
+        t_midi_prep(4);
+        t_key(t_menu_keys[i], 3000, 3300);
         sim.limit = 5000000;
         CHECK(t_go() == END_TIMEOUT);
         CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
     }
     /* PLAY held at power-on: the menu itself, no MIDI mode */
-    t_prep(4);
-    t_midi_runs = 0;
+    t_midi_prep(4);
     t_open_menu();
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_midi_runs && !t_app_calls && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+}
+
+/* A key that stays down: the menu all the same, and no press taken from it. */
+static void t_midi_stuck(void)
+{
+    /* each key pressed in MIDI mode and never let go: the menu, at its first item (PLAY would have picked it) */
+    for (unsigned i = 0; i < sizeof(t_menu_keys)/sizeof(t_menu_keys[0]); ++i) {
+        t_midi_prep(4);
+        t_key(t_menu_keys[i], 3000, T_FOREVER);
+        sim.limit = 8000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 1 && !t_resets && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+    }
+    /* let go at last, the next press is a step again */
+    t_midi_prep(4);
+    t_key(KEY_NEXT, 3000, 6000);
+    t_key(KEY_NEXT, 6500, 6600);
+    sim.limit = 8000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_row_is(8, "  DOWNLOAD MODE") && t_row_is(9, "> MIDI MODE"));
+    /* down before MIDI mode opens: it stays in MIDI mode, and another key still leaves it */
+    t_midi_prep(4);
+    t_key(KEY_NEXT, 0, T_FOREVER);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_midi_shown());
+    t_midi_prep(4);
+    t_key(KEY_NEXT, 0, T_FOREVER);
+    t_key(KEY_PREV, 4000, 4100);
+    sim.limit = 6000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
 }
 
 /* With the board's flash dump (a real image, its app damaged by one bit: APP BAD CRC). */
@@ -78,17 +121,15 @@ static void t_midi_by_default(void)
 {
     unsigned f = t_own_fixture();
     /* the app damaged, nobody at the unit: MIDI mode */
-    t_prep(f);
+    t_midi_prep(f);
     t_damage_app();
-    t_midi_runs = 0;
     sim.limit = 3000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_app_calls && t_midi_runs == 1);
-    CHECK(t_row_is(3, "MIDI MODE") && t_row_is(8, "ANY KEY: MENU"));
+    CHECK(t_midi_shown());
     /* NEXT leaves it: the whole menu, the selection where it starts */
-    t_prep(f);
+    t_midi_prep(f);
     t_damage_app();
-    t_midi_runs = 0;
     t_key(KEY_NEXT, 3000, 3300);
     sim.limit = 5000000;
     CHECK(t_go() == END_TIMEOUT);
@@ -96,9 +137,8 @@ static void t_midi_by_default(void)
     CHECK(t_row_is(3, "APP BAD CRC"));
     CHECK(t_row_is(8, "> DOWNLOAD MODE") && t_row_is(9, "  MIDI MODE") && t_row_is(10, "  BOOT ANYWAY"));
     /* then BOOT ANYWAY, as before: two steps down, PLAY, PLAY held for the confirmation */
-    t_prep(f);
+    t_midi_prep(f);
     t_damage_app();
-    t_midi_runs = 0;
     t_key(KEY_NEXT, 3000, 3300);
     t_key(KEY_NEXT, 4000, 4100);
     t_key(KEY_NEXT, 4400, 4500);
@@ -107,8 +147,7 @@ static void t_midi_by_default(void)
     CHECK(t_go() == END_RESET);
     CHECK(t_midi_runs == 1 && !memcmp(t_reset_retained, "BOOTANY", 8));
     /* PLAY held at power-on: the menu itself, no MIDI mode */
-    t_prep(f);
-    t_midi_runs = 0;
+    t_midi_prep(f);
     t_open_menu();
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
@@ -125,6 +164,7 @@ int main(int argc, char **argv)
     t_fm1_matrix_enable();
     printf("boot simulation: the menu's MIDI mode by default (%s)\n", SMK ? "SMK-37":"FM-1");
     t_midi_blank();
+    t_midi_stuck();
     /* the flash dump of the board is an extra: argv[1], else testdata/<board>-stock.bin */
     const char *path = argc > 1 ? argv[1] : (SMK ? "testdata/smk37-stock.bin":"testdata/fm1-stock.bin");
     unsigned f = t_own_fixture();

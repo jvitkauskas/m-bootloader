@@ -57,8 +57,10 @@ static bool mounted, xip_attempted, screen_ready;
 static const char *reason;
 #ifdef MIDI_MODE
 /* The menu came up by itself (no PLAY held at power-on: the app did not boot): it opens in MIDI mode, so a computer can
- * install or restart the unit with nobody at it; any key goes back to the whole menu, every action as before. */
-static bool midi_auto, midi_any_key;
+ * install or restart the unit with nobody at it. Any of the four keys the menu reads goes back to the whole menu, every
+ * action as before, except one already down then (stuck): midi_leave, those keys; 0 when the menu's item opened it. */
+static bool midi_auto;
+static unsigned midi_leave;
 #endif
 static uint32_t pointer(const void *p) {
     return (uint32_t)(uintptr_t)p;
@@ -150,7 +152,7 @@ void mu_idle(void) {
 /* Called about once a millisecond: one odd scan mustn't stop an install. */
 bool mu_cancel(void) {
     static unsigned held;
-    held = board_keys()&(midi_any_key ? ~0u:KEY_SELECT) ? held+1:0;
+    held = board_keys()&(midi_leave ? midi_leave:KEY_SELECT) ? held+1:0;
     return held >= 20;
 }
 
@@ -208,7 +210,7 @@ static void midi_screen(void) {
     display_text(3, GREEN, "MIDI MODE");
     display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, midi_any_key ? "ANY KEY: MENU":BACK);
+    display_text(8, WHITE, midi_leave ? "ANY KEY: MENU":BACK);
 }
 
 void mu_start_app(void) {
@@ -256,10 +258,8 @@ static void midi_mode(void) {
     if (written || r == MU_DONE || r == MU_RESTART)
         hal_reset();
     clear_rows(3, 14);
-    if (midi_any_key)
-        while (board_keys())
-            board_wait(20, true);           /* (the key that left: not a menu action too) */
-    release_select();
+    if (!midi_leave)
+        release_select();
 }
 #endif
 
@@ -440,11 +440,13 @@ __attribute__((noinline)) static bool menu(void) {
 #ifdef MIDI_MODE
             if (midi_auto) {
                 midi_auto = false;          /* (once a start: back in the menu, it stays the menu) */
-                midi_any_key = true;
+                midi_leave = ~board_keys();
                 midi_mode();
-                midi_any_key = false;
-                last = previous = stable = 0;
-                first_draw = true;
+                midi_leave = 0;
+                /* Every key down now is taken as held, not pressed: the one that left, or a stuck one. Nothing waits
+                 * for them to come up, so a key that stays down can't keep the menu away. */
+                last = ~0u;
+                previous = stable = 0;
                 continue;
             }
 #endif
