@@ -29,6 +29,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define HOLD "HOLD SEQ PLAY 3 S"
 #define BACK "SEQ PLAY: BACK"
 #define RELEASE "RELEASE SEQ PLAY"
+#define MENU_KEYS "< > SEQ PLAY SEQ REC"
 #else
 #define SMK false
 #define BOARD 1
@@ -37,6 +38,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define HOLD "HOLD PLAY 3 S"
 #define BACK "PLAY: BACK"
 #define RELEASE "RELEASE PLAY"
+#define MENU_KEYS "OCT- OCT+ PLAY REC"
 #endif
 extern uint8_t __bss_start[], __bss_end[];
 static uint8_t work[CORE_WORK_SIZE] __attribute__((aligned(4)));
@@ -55,6 +57,16 @@ static uint8_t mac[8];
 static unsigned effective_width;
 static bool mounted, xip_attempted, screen_ready;
 static const char *reason;
+#ifdef MIDI_MODE
+/* The menu came up by itself (no PLAY held at power-on: the app did not boot): it opens in MIDI mode, so a computer can
+ * install or restart the unit with nobody at it. Any of the four keys the menu reads goes back to the whole menu, every
+ * action as before, except one already down then (stuck): midi_leave, those keys; 0 when the menu's item opened it. */
+static bool midi_auto;
+static unsigned midi_leave;
+#endif
+static const char *const states[] = {
+    "APP NOT FOUND", "APP OK", "APP BAD CRC", "APP INCOMPLETE"
+};
 static uint32_t pointer(const void *p) {
     return (uint32_t)(uintptr_t)p;
 }
@@ -145,7 +157,7 @@ void mu_idle(void) {
 /* Called about once a millisecond: one odd scan mustn't stop an install. */
 bool mu_cancel(void) {
     static unsigned held;
-    held = board_keys()&KEY_SELECT ? held+1:0;
+    held = board_keys()&(midi_leave ? midi_leave:KEY_SELECT) ? held+1:0;
     return held >= 20;
 }
 
@@ -201,9 +213,15 @@ void mu_progress(bool writing, unsigned percent) {
 static void midi_screen(void) {
     clear_rows(3, 14);
     display_text(3, GREEN, "MIDI MODE");
+    /* With the reason above it, why the app didn't start stays in view (§9.1). */
+    display_text(4, app.state == CORE_APP_OK ? GREEN:RED, states[app.state]);
     display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, BACK);
+    if (midi_leave) {
+        display_text(8, WHITE, "TO OPEN THE MENU:");
+        display_text(9, WHITE, MENU_KEYS);
+    } else
+        display_text(8, WHITE, BACK);
 }
 
 void mu_start_app(void) {
@@ -251,7 +269,8 @@ static void midi_mode(void) {
     if (written || r == MU_DONE || r == MU_RESTART)
         hal_reset();
     clear_rows(3, 14);
-    release_select();
+    if (!midi_leave)
+        release_select();
 }
 #endif
 
@@ -389,9 +408,6 @@ __attribute__((noinline)) static bool menu(void) {
         display_text(0, YELLOW, TITLE);
         display_text(1, GREY, (const char *)(uintptr_t)0x01c02050);
         display_text(2, RED, reason ? reason:"");
-        const char *states[] = {
-            "APP NOT FOUND", "APP OK", "APP BAD CRC", "APP INCOMPLETE"
-        };
         display_text(3, app.state == CORE_APP_OK ? GREEN:RED, states[app.state]);
         char line[21];
         unsigned pos = 0;
@@ -429,6 +445,19 @@ __attribute__((noinline)) static bool menu(void) {
             /* Show status before waiting; entry-held PLAY is not a selection. */
             release_select();
             first_draw = false;
+#ifdef MIDI_MODE
+            if (midi_auto) {
+                midi_auto = false;          /* (once a start: back in the menu, it stays the menu) */
+                midi_leave = ~board_keys();
+                midi_mode();
+                midi_leave = 0;
+                /* Every key down now is taken as held, not pressed: the one that left, or a stuck one. Nothing waits
+                 * for them to come up, so a key that stays down can't keep the menu away. */
+                last = ~0u;
+                previous = stable = 0;
+                continue;
+            }
+#endif
         }
         /* Redraw only on an action; polling keeps the multiplexed LEDs alive. */
         unsigned edge = 0;
@@ -588,6 +617,9 @@ __attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
     bool want_menu = board_hold(KEY_SELECT, 1000);
 #ifdef TEST_REQUESTS
     want_menu = want_menu || test_request;
+#endif
+#ifdef MIDI_MODE
+    midi_auto = !want_menu;
 #endif
     board_restore();
     bool flash_ok = flash_init(1, 1);
