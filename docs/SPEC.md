@@ -993,11 +993,20 @@ The stock expected chip key is 980F; the host logs unexpected keys and refuses a
 
 Factory-data policy is host-owned: the FM-1 factory range is the last sector; SMK adds C1000…C1FFF. For a backup known by UID to be another unit's, the host preserves current factory ranges; a matching UID can restore all flash. If UID metadata is missing, it uses a weaker heuristic based on factory-data equality or currently blank data. This is not proof of provenance. SMK presets/wheel storage is not in the host's fixed factory-range list even though it holds unit values; this specification does not imply otherwise. The bootloader's guard and menu do not replace the host's full backup.
 
-### 11.5 SD card stage 2 (FM-1)
+### 11.5 SD card stage 2
 
-The FM-1 has no card slot. The m-card board (github.com/jvitkauskas/m-card) puts a microSD card on the panel's SPI1, in SPI mode: CLK PC9, card DI PC10, card DO PC8 (the panel's D/C, through 220 ohms), and card CS = NOT PC7 (an inverter on the panel's CS), so the card is selected while PC7 is high and the panel while it is low. There is no card-detect line. The SMK-37 has none of this, so its menu has no such item.
+Neither unit has a card slot. A mod puts a microSD card on the panel's SPI1, in SPI mode. On the FM-1, the m-card board (github.com/jvitkauskas/m-card) does this. The SMK-37 has no such board, and a hand-wired mod has run on an SMK-37 Pro.
 
-The bootloader touches the card only while the menu is open, never on a normal start. Opening the menu tries to start the card, and if it answers the menu shows `SD CARD` as its first item, selected. A session first sends the panel a NOP, so that what is clocked afterwards with the card deselected is ignored, then makes PC8 SPI1's DI, at about 400 kHz until the card has started and LSB/4 afterwards. Choosing the item starts the card again and loads the image; a failure is shown in the menu, which stays usable.
+| Card pin | FM-1 | SMK-37 |
+|---|---|---|
+| CLK | PC9 | PB6 |
+| DI | PC10 | PB7 |
+| DO | PC8, the panel's D/C, through 220 ohms | PB5, the panel's D/C |
+| CS | NOT PC7, an inverter on the panel's CS | NOT PC8, an inverter on the panel's CS |
+
+The card is selected while the panel's CS is high, and the panel while it's low. D/C is the pin that can be SPI1's data input in the panel's pin group on each board. There is no card-detect line. On a unit without a mod, nothing answers, so the menu doesn't get the item.
+
+The bootloader touches the card only while the menu is open, never on a normal start. Opening the menu tries to start the card, and if it answers the menu shows `SD CARD` as its first item, selected. A session first sends the panel a NOP, so that what is clocked afterwards with the card deselected is ignored, then makes D/C SPI1's DI, at about 400 kHz until the card has started and LSB/4 afterwards. Choosing the item starts the card again and loads the image; a failure is shown in the menu, which stays usable.
 
 The image is `/MBOOT/MENU.BIN` on a FAT32 volume with 512-byte sectors, either in the MBR's first partition or with no partition table. Both names are matched as 8.3 names, so the folder and file are found whichever case the host wrote them in. The bootloader doesn't write to the card.
 
@@ -1009,7 +1018,7 @@ The image is a flat binary:
 
 `tools/stage2.py` adds the trailer to a flat binary. The file is loaded in whole 512-byte sectors, so the trailer and whatever follows it in the last sector land on what's linked right after the image, normally `.bss`. Nothing clears `.bss` for the image.
 
-The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, PC8 an output again, and SPI1 as the panel uses it. The image starts the card itself. When it's called:
+The bootloader calls the entry using the C calling convention with one argument, the LSB clock in MHz, after closing its session: card deselected, D/C an output again, and SPI1 as the panel uses it. On the SMK-37, it first gives the high-speed USB PHY back from the menu's LEDs (§8.3), and takes it again if the image returns. The image starts the card itself. When it's called:
 
 * **Clocks** are as in §3.2: system 360 MHz, HSB 180 MHz, LSB 60 MHz.
 * **The watchdog** is off, and the bootloader hasn't enabled interrupts (§4.1). Their state at entry to the bootloader isn't established, so an image that wants them sets them up itself.
@@ -1018,7 +1027,7 @@ The bootloader calls the entry using the C calling convention with one argument,
 
 The retained area from `0x01C7FD80` isn't free, as a reset and the menu both read it (§6). An image writes there only for a purpose of its own, such as the download-mode request (§4.2). It may then:
 
-* **return,** which means "carry on": the bootloader sets up the flash interface again and returns to the menu. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
+* **return,** which means "carry on": the bootloader sets up the flash interface and the panel again and returns to the menu, so the image can leave SPI1 and the panel in any state. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
 * **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
 
 ### 11.6 MIDI mode

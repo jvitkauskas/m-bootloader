@@ -42,12 +42,15 @@ run with it.
   - **Wipe user data**: erase the settings areas the firmware declares, and
     nothing else. The menu lists the exact ranges, and you hold the key for
     3 s to confirm.
-- **SD card (FM-1).** With an [m-card](https://github.com/jvitkauskas/m-card)
-  board and a FAT32 card fitted, the menu gets an **SD card** item at the top.
-  It loads and runs `/MBOOT/MENU.BIN` from the card, which can be any program
-  built for it ([docs/SPEC.md](docs/SPEC.md) §11.5). The card is only touched
-  when the menu is open. It's been tested on an FM-1, where an image ran from
-  the card, returned to the menu and ran again.
+- **SD card.** With a card mod and a FAT32 card fitted, the menu gets an
+  **SD card** item at the top. On the FM-1, that's an
+  [m-card](https://github.com/jvitkauskas/m-card) board. On the SMK-37, it's
+  wired by hand. It loads and runs `/MBOOT/MENU.BIN` from the card, which can
+  be any program built for it ([docs/SPEC.md](docs/SPEC.md) §11.5 has that and
+  the pins). The card is only touched
+  when the menu is open. It's been tested on an FM-1 and on a hand-wired
+  SMK-37 Pro, where an image ran from the card, returned to the menu and ran
+  again.
 - **Checked start.** Every firmware file's checksum is verified before the
   firmware starts.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run

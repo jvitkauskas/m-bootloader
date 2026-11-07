@@ -23,7 +23,7 @@ enum {
 static unsigned t_checks, t_failures, t_cases;
 static jmp_buf t_escape;
 static unsigned t_app_calls, t_update_calls, t_resets, t_sd_calls;
-static bool t_sd_card;
+static bool t_sd_card, t_sd_leaves_spi_off;
 static const char *t_sd_result;
 
 /* The card is on the panel's bus, which the simulated chip doesn't model; these stand in for src/sdboot.c. */
@@ -37,6 +37,10 @@ const char *sd_stage2(unsigned lsb_mhz)
 {
     (void)lsb_mhz;
     ++t_sd_calls;
+    if (t_sd_leaves_spi_off) {
+        REG(0x11d00) = 0;
+        sim.panel_on = 0;
+    }
     return t_sd_result;
 }
 static bool t_app_returns, t_update_returns;
@@ -1113,15 +1117,13 @@ static void t_sd_menu(void)
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_sd_calls);
     CHECK(t_row_is(8, "> DOWNLOAD MODE"));
-    /* A card puts it on top, selected; the SMK-37 has no card bus. */
+    /* A card puts it on top, selected. */
     t_prep(4);
     t_sd_card = true;
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(t_row_is(8, SMK ? "> DOWNLOAD MODE":"> SD CARD"));
-    CHECK(t_row_is(9, SMK ? "":"  DOWNLOAD MODE"));
-    if (SMK)
-        return;
+    CHECK(t_row_is(8, "> SD CARD"));
+    CHECK(t_row_is(9, "  DOWNLOAD MODE"));
     /* A failure shows in the menu, which stays usable. */
     t_prep(4);
     t_sd_card = true;
@@ -1140,6 +1142,17 @@ static void t_sd_menu(void)
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_sd_calls == 1 && !t_resets);
     CHECK(t_row_is(2, ""));
+    CHECK(t_row_is(8, "> SD CARD"));
+    /* An image that leaves the panel off still gets the menu back. */
+    t_prep(4);
+    t_sd_card = true;
+    t_sd_leaves_spi_off = true;
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    t_sd_leaves_spi_off = false;
+    CHECK(t_sd_calls == 1 && !t_resets);
+    CHECK(sim.panel_on);
     CHECK(t_row_is(8, "> SD CARD"));
     /* Moving down still reaches the rest. */
     t_prep(4);

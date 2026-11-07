@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: MIT */
-/* FM-1 SD mod, stage 1: load /MBOOT/MENU.BIN from a FAT32 card into RAM and call it.
+/* SD mod, stage 1: load /MBOOT/MENU.BIN from a FAT32 card into RAM and call it.
  *
- * The card shares the panel's SPI1: CLK PC9, DI PC10, DO PC8 (the panel's D/C), CS = NOT PC7 (an inverter on the
- * panel's CS), so the card is selected while PC7 is high. A session first sends the panel a NOP, so the bytes
- * clocked while the card is deselected are ignored, then turns PC8 into SPI1's DI and SPI1 to separate DI/DO.
+ * The card shares the panel's SPI1, with DO on the panel's D/C and CS = NOT the panel's CS (an inverter), so the card
+ * is selected while that's high. FM-1: CLK PC9, DI PC10, DO PC8, CS = NOT PC7. SMK-37: CLK PB6, DI PB7, DO PB5,
+ * CS = NOT PC8. A session first sends the panel a NOP, so the bytes clocked while the card is deselected are ignored,
+ * then turns D/C into SPI1's DI and SPI1 to separate DI/DO.
  *
  * /MBOOT/MENU.BIN is a flat image linked for SD_STAGE2_ADDRESS, entry at its first byte, at most
  * SD_STAGE2_MAX bytes, ending in an 8-byte trailer: "STG2", CRC16 (core_crc16, little endian) of everything
@@ -13,7 +14,17 @@
 #include "platform.h"
 #include <string.h>
 #define SPI1 0x11d00u
-#define PC(o) GPIO(2, o)
+#ifdef BOARD_SMK
+#define CS_PORT 2
+#define CS_PIN 8
+#define DO_PORT 1
+#define DO_PIN 5
+#else
+#define CS_PORT 2
+#define CS_PIN 7
+#define DO_PORT 2
+#define DO_PIN 8
+#endif
 static uint8_t sb[512] __attribute__((aligned(4)));
 static bool hc;
 static uint32_t fat_lba, data_lba;
@@ -29,7 +40,7 @@ static uint8_t x(uint8_t b) {
 }
 
 static void card(bool on) {
-    gpio_level(2, 7, on);
+    gpio_level(CS_PORT, CS_PIN, on);
 }
 
 static uint8_t cmd(unsigned c, uint32_t a) {
@@ -163,12 +174,12 @@ static const char *load(void) {
 }
 
 static void session_open(unsigned lsb_mhz) {
-    /* Panel NOP (D/C low, CS low), then PC8 as the card's DO, SPI1 separate DI/DO at ~400 kHz. */
-    gpio_level(2, 8, false);
+    /* Panel NOP (D/C low, CS low), then D/C as the card's DO, SPI1 separate DI/DO at ~400 kHz. */
+    gpio_level(DO_PORT, DO_PIN, false);
     card(false);
     REG(SPI1) = 0x4021;
     x(0);
-    gpio_input(2, 8, true, false);
+    gpio_input(DO_PORT, DO_PIN, true, false);
     REG(SPI1) = 0x4029;
     REG(SPI1+4) = lsb_mhz*5/2-1;
 }
@@ -178,7 +189,7 @@ static void session_close(void) {
     x(0xff);
     REG(SPI1) = 0x4021;
     REG(SPI1+4) = 4;
-    gpio_output(2, 8, true);
+    gpio_output(DO_PORT, DO_PIN, true);
 }
 
 bool sd_probe(unsigned lsb_mhz) {
