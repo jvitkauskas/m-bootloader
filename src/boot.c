@@ -29,6 +29,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define HOLD "HOLD SEQ PLAY 3 S"
 #define BACK "SEQ PLAY: BACK"
 #define RELEASE "RELEASE SEQ PLAY"
+#define MENU_KEYS "< > SEQ PLAY SEQ REC"
 #else
 #define SMK false
 #define BOARD 1
@@ -37,6 +38,7 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define HOLD "HOLD PLAY 3 S"
 #define BACK "PLAY: BACK"
 #define RELEASE "RELEASE PLAY"
+#define MENU_KEYS "OCT- OCT+ PLAY REC"
 #endif
 extern uint8_t __bss_start[], __bss_end[];
 static uint8_t work[CORE_WORK_SIZE] __attribute__((aligned(4)));
@@ -62,6 +64,9 @@ static const char *reason;
 static bool midi_auto;
 static unsigned midi_leave;
 #endif
+static const char *const states[] = {
+    "APP NOT FOUND", "APP OK", "APP BAD CRC", "APP INCOMPLETE"
+};
 static uint32_t pointer(const void *p) {
     return (uint32_t)(uintptr_t)p;
 }
@@ -208,9 +213,15 @@ void mu_progress(bool writing, unsigned percent) {
 static void midi_screen(void) {
     clear_rows(3, 14);
     display_text(3, GREEN, "MIDI MODE");
+    /* With the reason above it, why the app didn't start stays in view (§9.1). */
+    display_text(4, app.state == CORE_APP_OK ? GREEN:RED, states[app.state]);
     display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, midi_leave ? "ANY KEY: MENU":BACK);
+    if (midi_leave) {
+        display_text(8, WHITE, "TO OPEN THE MENU:");
+        display_text(9, WHITE, MENU_KEYS);
+    } else
+        display_text(8, WHITE, BACK);
 }
 
 void mu_start_app(void) {
@@ -397,9 +408,6 @@ __attribute__((noinline)) static bool menu(void) {
         display_text(0, YELLOW, TITLE);
         display_text(1, GREY, (const char *)(uintptr_t)0x01c02050);
         display_text(2, RED, reason ? reason:"");
-        const char *states[] = {
-            "APP NOT FOUND", "APP OK", "APP BAD CRC", "APP INCOMPLETE"
-        };
         display_text(3, app.state == CORE_APP_OK ? GREEN:RED, states[app.state]);
         char line[21];
         unsigned pos = 0;

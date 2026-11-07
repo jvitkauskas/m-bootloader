@@ -3,10 +3,12 @@
  * USB MIDI side stubbed (no installer connects: the MIDI loop only polls its cancel). Built for the FM-1 and, with
  * BOARD_SMK, for the SMK-37 (its own binary and output line).
  * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself):
- *   - the menu that comes up by itself opens in MIDI mode, "ANY KEY: MENU", the app not run;
+ *   - the menu that comes up by itself opens in MIDI mode, the app's state and the reason in view, the menu's keys
+ *     named, the app not run;
  *   - each of the four keys goes back to the whole menu: its actions as before, the key not taken as a menu step;
  *   - a key that stays down can't hang the unit: pressed in MIDI mode and held, the menu still comes and doesn't take
  *     it as a press; down before MIDI mode opens, it doesn't leave MIDI mode;
+ *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view;
  *   - PLAY held at power-on opens the menu itself, no MIDI mode.
  * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
  * bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached. A missing dump is a SKIP of the extra only;
@@ -45,21 +47,21 @@ static void t_midi_prep(unsigned fixture)
     t_midi_runs = t_usb_starts = t_usb_stops = 0;
 }
 
-static bool t_midi_shown(void)
+static bool t_midi_shown(const char *state)
 {
-    return t_row_is(3, "MIDI MODE") && t_row_is(8, "ANY KEY: MENU");
+    return t_row_is(3, "MIDI MODE") && t_row_is(4, state) && t_row_is(8, "TO OPEN THE MENU:") && t_row_is(9, MENU_KEYS);
 }
 
 /* No fixture: a blank flash (the public malformed-image case, t_prep(4)) has no app, so the menu comes up by itself
  * with APP NOT FOUND. Runs on every checkout, for the board the binary is built for. */
 static void t_midi_blank(void)
 {
-    /* nobody at the unit: MIDI mode */
+    /* nobody at the unit: MIDI mode, why the app didn't start in view */
     t_midi_prep(4);
     sim.limit = 3000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_app_calls && t_midi_runs == 1 && t_usb_starts == 1);
-    CHECK(t_midi_shown());
+    CHECK(t_midi_shown("APP NOT FOUND") && t_row_is(2, ""));
     /* NEXT leaves it: the whole menu, the selection where it starts, the key not taken as a step */
     t_midi_prep(4);
     t_key(KEY_NEXT, 3000, 3300);
@@ -107,13 +109,33 @@ static void t_midi_stuck(void)
     t_key(KEY_NEXT, 0, T_FOREVER);
     sim.limit = 6000000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(t_midi_runs == 1 && t_midi_shown());
+    CHECK(t_midi_runs == 1 && t_midi_shown("APP NOT FOUND"));
     t_midi_prep(4);
     t_key(KEY_NEXT, 0, T_FOREVER);
     t_key(KEY_PREV, 4000, 4100);
     sim.limit = 6000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_midi_runs == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(8, "> DOWNLOAD MODE"));
+}
+
+/* The other ways the menu comes up by itself: their reason stays in view in MIDI mode. */
+static void t_midi_reasons(void)
+{
+    /* the flash isn't 1 MiB: FLASH ERROR */
+    t_midi_prep(4);
+    sim.jedec = (sim.jedec&~0xffu) | 0x13;
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_midi_runs == 1 && t_row_is(2, "FLASH ERROR") && t_midi_shown("APP NOT FOUND"));
+    if (SMK) {
+        /* calibration to back up, and the flash refuses the write: TRIM ERROR */
+        t_midi_prep(4);
+        memcpy(sim_nor+0xc1000+0x224, "trimdat", 8);
+        nor_budget = 0;
+        sim.limit = 3000000;
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(t_midi_runs == 1 && t_row_is(2, "TRIM ERROR") && t_midi_shown("APP NOT FOUND"));
+    }
 }
 
 /* With the board's flash dump (a real image, its app damaged by one bit: APP BAD CRC). */
@@ -126,7 +148,7 @@ static void t_midi_by_default(void)
     sim.limit = 3000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_app_calls && t_midi_runs == 1);
-    CHECK(t_midi_shown());
+    CHECK(t_midi_shown("APP BAD CRC"));
     /* NEXT leaves it: the whole menu, the selection where it starts */
     t_midi_prep(f);
     t_damage_app();
@@ -165,6 +187,7 @@ int main(int argc, char **argv)
     printf("boot simulation: the menu's MIDI mode by default (%s)\n", SMK ? "SMK-37":"FM-1");
     t_midi_blank();
     t_midi_stuck();
+    t_midi_reasons();
     /* the flash dump of the board is an extra: argv[1], else testdata/<board>-stock.bin */
     const char *path = argc > 1 ? argv[1] : (SMK ? "testdata/smk37-stock.bin":"testdata/fm1-stock.bin");
     unsigned f = t_own_fixture();
