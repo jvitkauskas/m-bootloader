@@ -55,6 +55,11 @@ static uint8_t mac[8];
 static unsigned effective_width;
 static bool mounted, xip_attempted, screen_ready;
 static const char *reason;
+#ifdef MIDI_MODE
+/* The menu came up by itself (no PLAY held at power-on: the app did not boot): it opens in MIDI mode, so a computer can
+ * install or restart the unit with nobody at it; any key goes back to the whole menu, every action as before. */
+static bool midi_auto, midi_any_key;
+#endif
 static uint32_t pointer(const void *p) {
     return (uint32_t)(uintptr_t)p;
 }
@@ -145,7 +150,7 @@ void mu_idle(void) {
 /* Called about once a millisecond: one odd scan mustn't stop an install. */
 bool mu_cancel(void) {
     static unsigned held;
-    held = board_keys()&KEY_SELECT ? held+1:0;
+    held = board_keys()&(midi_any_key ? ~0u:KEY_SELECT) ? held+1:0;
     return held >= 20;
 }
 
@@ -203,7 +208,7 @@ static void midi_screen(void) {
     display_text(3, GREEN, "MIDI MODE");
     display_text(5, WHITE, "CONNECT USB AND");
     display_text(6, WHITE, "OPEN AN INSTALLER.");
-    display_text(8, WHITE, BACK);
+    display_text(8, WHITE, midi_any_key ? "ANY KEY: MENU":BACK);
 }
 
 void mu_start_app(void) {
@@ -251,6 +256,9 @@ static void midi_mode(void) {
     if (written || r == MU_DONE || r == MU_RESTART)
         hal_reset();
     clear_rows(3, 14);
+    if (midi_any_key)
+        while (board_keys())
+            board_wait(20, true);           /* (the key that left: not a menu action too) */
     release_select();
 }
 #endif
@@ -429,6 +437,17 @@ __attribute__((noinline)) static bool menu(void) {
             /* Show status before waiting; entry-held PLAY is not a selection. */
             release_select();
             first_draw = false;
+#ifdef MIDI_MODE
+            if (midi_auto) {
+                midi_auto = false;          /* (once a start: back in the menu, it stays the menu) */
+                midi_any_key = true;
+                midi_mode();
+                midi_any_key = false;
+                last = previous = stable = 0;
+                first_draw = true;
+                continue;
+            }
+#endif
         }
         /* Redraw only on an action; polling keeps the multiplexed LEDs alive. */
         unsigned edge = 0;
@@ -588,6 +607,9 @@ __attribute__((section(".entry"))) void boot_main(const uint32_t *device) {
     bool want_menu = board_hold(KEY_SELECT, 1000);
 #ifdef TEST_REQUESTS
     want_menu = want_menu || test_request;
+#endif
+#ifdef MIDI_MODE
+    midi_auto = !want_menu;
 #endif
     board_restore();
     bool flash_ok = flash_init(1, 1);
