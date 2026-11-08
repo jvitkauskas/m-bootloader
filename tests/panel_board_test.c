@@ -178,7 +178,16 @@ static void panel(bool s) {
     display_rect(240, 0, 1, 1, 0xffff);
     display_rect(239, 239, 2, 1, 0xffff);
     display_row(15, 0xffff, 0, "HI", 2);
+    static const uint8_t rgb[240*2*2];
+    display_pixels(0, 0, 0, 1, rgb);
+    display_pixels(0, 240, 1, 1, rgb);
+    display_pixels(200, 0, 41, 1, rgb);
+    display_pixels(0, 239, 1, 2, rgb);
     assert(dmas == before);
+    /* in buffer-sized pieces: 960 bytes as 384, 384 and 192 */
+    display_pixels(0, 0, 240, 2, rgb);
+    assert(dmas == before+3);
+    before = dmas;
     display_row(0, 0xffff, 0, "hello", 5);
     assert(dmas == before+20);
     display_progress(0, 0x7e0);
