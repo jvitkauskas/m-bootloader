@@ -275,6 +275,6 @@ sanitize:
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(LIFECYCLE_SOURCES) build/loader-slot-a-sanitize.o build/loader-slot-b-sanitize.o -o build/loader-lifecycle-test-sanitize
 	./build/loader-lifecycle-test-sanitize
 reproducible: all
-	python3 tools/reproducible.py
+	python3 tools/reproducible.py $(A_PRODUCTS) $(B_PRODUCTS) $(INSTALLERS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS)
 clean:
 	rm -rf build
