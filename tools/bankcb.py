@@ -58,7 +58,7 @@ def validate(container, board=None):
 
 def pack(payload, board):
     if len(payload) > 0x3ef0:
-        raise ValueError('payload exceeds 16,172-byte slot')
+        raise ValueError('payload exceeds the 16,112-byte (0x3EF0) limit')
     head = struct.pack('<HHIIH', 1, len(payload), 0x01c02000, 16, crc16(payload))
     result = head + struct.pack('<H', crc16(head)) + payload
     validate(result, board)

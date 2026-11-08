@@ -30,14 +30,20 @@ SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie
 LIFECYCLE_SOURCES := src/core.c src/loader.c src/platform.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
-# M-UPGRADE packages: only our installer, which writes the bootloader.
+# M-UPGRADE packages: only our installer, which writes the bootloader. A test build has none: its bootloader is
+# bigger, it doesn't fit where SMK-37 firmware stores an updater, and it goes on with M-Flasher anyway.
+INSTALLERS := build/fm1/installer.bin build/smk37/installer.bin
+ifdef TEST_REQUESTS
+C_PRODUCTS :=
+else
 C_PRODUCTS := build/fm1/uboot.fwsc build/smk37/uboot-pro.fwsc build/smk37/uboot-elite.fwsc
+endif
 # The RAM stage: for run-ram, and M-UPGRADE-style packages holding only it.
 STAGE_RAM := build/fm1/stage-ram.bin build/smk37/stage-ram.bin
 STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/stage-elite.fwsc \
 	build/fm1/stage-listed.fwsc build/smk37/stage-pro-listed.fwsc build/smk37/stage-elite-listed.fwsc
 .PHONY: all stage test test-requests sanitize clean reproducible FORCE
-all: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
+all: $(A_PRODUCTS) $(B_PRODUCTS) $(INSTALLERS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
 
 # Refresh on every invocation; unchanged versions keep the header's mtime.
 # Only A's entry includes this header. B remains the hardware-tested MFLR1.3.
@@ -153,7 +159,7 @@ build/smk37/stage-pro-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools
 build/smk37/stage-elite-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py tools/bankcb.py
 	python3 tools/fwsc.py stage --listed-flash smk37-elite $< $@
 build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) tools/manifest.py
-	python3 tools/manifest.py > $@
+	python3 tools/manifest.py $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) > $@
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DMU_TEST_APP_RAM -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o $@
@@ -233,7 +239,7 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	python3 tests/updater_context_test.py $(TOOLCHAIN)/bin/llvm-nm build/fm1/stage1.elf build/smk37/stage1.elf
 	python3 tests/version_test.py
 	python3 tests/container_test.py
-	python3 tests/fwsc_test.py
+	$(if $(TEST_REQUESTS),NO_INSTALLER_PACKAGES=1 )python3 tests/fwsc_test.py
 	python3 tests/stage2_test.py
 sanitize:
 	@mkdir -p build
@@ -269,6 +275,6 @@ sanitize:
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(LIFECYCLE_SOURCES) build/loader-slot-a-sanitize.o build/loader-slot-b-sanitize.o -o build/loader-lifecycle-test-sanitize
 	./build/loader-lifecycle-test-sanitize
 reproducible: all
-	python3 tools/reproducible.py
+	python3 tools/reproducible.py $(A_PRODUCTS) $(B_PRODUCTS) $(INSTALLERS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS)
 clean:
 	rm -rf build

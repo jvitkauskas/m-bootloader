@@ -2,6 +2,7 @@
 """Hash only the independently built release artifacts; never include fixtures."""
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 PRODUCTS = {
@@ -23,9 +24,14 @@ PRODUCTS = {
 }
 
 
-def main():
+def main(names):
+    """The products named (all of them when none are), each from PRODUCTS."""
+    unknown = [n for n in names if n not in PRODUCTS]
+    if unknown:
+        sys.exit(f'manifest: not a release product: {" ".join(unknown)}')
     result = {}
-    for name, size_path in PRODUCTS.items():
+    for name in names or PRODUCTS:
+        size_path = PRODUCTS[name]
         data = Path(name).read_bytes()
         result[name] = {**json.loads(Path(size_path).read_text()), 'file_bytes': len(data),
                         'sha256': hashlib.sha256(data).hexdigest()}
@@ -33,4 +39,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
