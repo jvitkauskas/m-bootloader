@@ -76,10 +76,11 @@ This release, `2.3-6bc8f45`, on an SMK-37 Pro: installing its M-UPGRADE package 
 bootloader through the firmware's update route, starting firmware, MIDI mode opening by itself on
 damaged firmware and a browser install from it, and installing with M-Flasher. On an FM-1, build
 `0c24142`, whose bootloader code is the same: the package from the stock bootloader and from
-m-bootloader, MIDI mode by itself with stopped and repeated installs, its keys, and the SD card item.
-Not tested on this version: the FM-1's LEDs in MIDI mode, firmware that returns to the bootloader
-with USB running, and 1.2 and 1.3 installed over it, as the configuration code hasn't changed since
-`2.1-861e43d`, where they were. `VDDIO` has not been measured.
+m-bootloader, sent through the firmware's update route by Optimist's command-line installer, MIDI
+mode by itself with stopped and repeated installs, its keys, and the SD card item. Not tested on
+this version: M-VAVE's M-UPGRADE app on the FM-1, the FM-1's LEDs in MIDI mode, firmware that
+returns to the bootloader with USB running, and 1.2 and 1.3 installed over it, as the configuration
+code hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
