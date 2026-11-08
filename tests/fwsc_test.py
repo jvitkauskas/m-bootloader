@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from bankcb import crc16, enc, install
 from fwsc import (updater_package, CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
                   lz4_unblock, package, unweave, updater_code, updater_stream, weave)
+from sfx_symbols import symbols as sfx_symbols
 
 HOST = Path('build/installer-host')
 
@@ -126,6 +127,17 @@ def members(image):
 
 containers = {board: Path('build', board, 'uboot.boot').read_bytes() for board in ('fm1', 'smk37')}
 installers = {board: Path('build', board, 'installer.bin').read_bytes() for board in ('fm1', 'smk37')}
+# What the packages carry: the installer self-extracting (src/sfx.c), checked to unpack in place to it.
+self_extracting = {board: Path('build', board, 'installer-sfx.bin').read_bytes() for board in ('fm1', 'smk37')}
+for board in self_extracting:
+    assert self_extracting[board] != installers[board] and containers[board] not in self_extracting[board]
+    pack = sfx_symbols(str(Path(os.environ.get('TOOLCHAIN', 'toolchain'), 'bin', 'llvm-nm')), f'build/{board}/sfx.elf')
+    subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin', f'build/{board}/installer-sfx.bin',
+                    *pack], check=True, capture_output=True)
+    # Only the pack the unpacker reads counts: a pack anywhere else in the image does not.
+    for wrong in ([pack[0], hex(int(pack[1], 16) - 4)], [hex(int(pack[0], 16) + 4), pack[1]]):
+        assert subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin',
+                               f'build/{board}/installer-sfx.bin', *wrong], capture_output=True).returncode == 1
 rng = random.Random(1)
 for sample in (b'', b'x', bytes(12), bytes(13), bytes(4096), bytes(rng.randrange(4) for _ in range(4096)),
                bytes(rng.randrange(256) for _ in range(300)), b'abcd' * 1000 + b'tail!'):
@@ -190,13 +202,13 @@ for variant, (path, identity) in BUILT.items():
     if not PACKAGES:
         continue
     built = Path(path).read_bytes()
-    assert built == package(variant, containers[board], installers[board])
-    assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
+    assert built == package(variant, containers[board], installers[board], staged=self_extracting[board])
+    assert installed(built) == (identity, self_extracting[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)
     assert prefix == VARIANTS[variant][2] and weave(found, prefix, image) == built
     listed = members(image)
     assert list(listed) == ['ota.bin'] and listed['ota.bin'][0] == OTA_TYPE
-    assert host('decode', listed['ota.bin'][1]) == installers[board]
+    assert host('decode', listed['ota.bin'][1]) == self_extracting[board]
     assert unweave(package(variant, containers[board], installers[board], '042'))[0] == identity[:-3] + '042'
     refuses(package, variant, containers[other], installers[board])
     refuses(package, variant, containers[board], installers[other])
@@ -232,4 +244,4 @@ for name, variant in (('fm1-015.fwsc', 'fm1'), ('smk37-016.fwsc', 'smk37-pro'),
     assert host('decode', stream) == updater_code(stream)
     vendor += 1
 print('PASS: LZ4, installer stream through the C decoder, C boot-area rewrite equal to bankcb, '
-      f'flash request retirement, {len(BUILT)} packages, {vendor} M-VAVE package convention checks')
+      f'flash request retirement, {len(BUILT) if PACKAGES else 0} packages, {vendor} M-VAVE package convention checks')

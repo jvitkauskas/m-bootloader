@@ -7,6 +7,7 @@ export TOOLCHAIN ?= toolchain
 CLANG := $(TOOLCHAIN)/bin/clang
 LINK := $(TOOLCHAIN)/bin/ld.lld
 OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
+NM := $(TOOLCHAIN)/bin/llvm-nm
 # Upkr 0.2.3 (see README), at UPKR=<path> or on the PATH.
 export UPKR ?= upkr
 HOSTCC ?= cc
@@ -30,9 +31,9 @@ SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie
 LIFECYCLE_SOURCES := src/core.c src/loader.c src/platform.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
-# M-UPGRADE packages: only our installer, which writes the bootloader. A test build has none: its bootloader is
-# bigger, it doesn't fit where SMK-37 firmware stores an updater, and it goes on with M-Flasher anyway.
-INSTALLERS := build/fm1/installer.bin build/smk37/installer.bin
+# M-UPGRADE packages: only our installer, which writes the bootloader, carried self-extracting. A test build has
+# none, as it goes on with M-Flasher, but its installer images are still built and checked.
+INSTALLERS := build/fm1/installer.bin build/smk37/installer.bin build/fm1/installer-sfx.bin build/smk37/installer-sfx.bin
 ifdef TEST_REQUESTS
 C_PRODUCTS :=
 else
@@ -95,6 +96,22 @@ build/$(1)/installer.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(INSTALLER)
 build/$(1)/installer.bin: build/$(1)/installer.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
 	python3 tools/check_build.py $$< $$@ 0x1c0a800 0x1c16800 installer_entry > build/$(1)/installer-size.json
+# As packages carry it: packed like stage 1, behind an unpacker that unpacks it in place (src/sfx.c), so the stream
+# fits where firmware stores an updater with room to spare. sfx-layout places the pack and checks the image.
+build/$(1)/installer.pack: build/$(1)/installer.bin build/upkr-test tools/pack_stage1.py
+	python3 tools/pack_stage1.py $$< $$@
+	./build/upkr-test $$@ $$<
+build/$(1)/sfx.ld: tools/sfx.ld.S build/$(1)/installer.bin build/$(1)/installer.pack build/sfx-layout
+	$(CLANG) -E -P -x c -DSFX_PACK=$$$$(./build/sfx-layout place build/$(1)/installer.bin build/$(1)/installer.pack) $$< -o $$@
+build/$(1)/sfx_start.o: src/sfx_start.S build/$(1)/installer.pack Makefile
+	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild/$(1) $(2) -c $$< -o $$@
+build/$(1)/sfx.o: src/sfx.c $(HEADERS) Makefile
+	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
+build/$(1)/sfx.elf: build/$(1)/sfx_start.o build/$(1)/sfx.o build/$(1)/s0/upkr.o build/$(1)/sfx.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/sfx.ld -Map build/$(1)/sfx.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/installer-sfx.bin: build/$(1)/sfx.elf build/sfx-layout tools/sfx_symbols.py
+	$(OBJCOPY) -O binary -j .entry -j .pack -j .text $$< $$@
+	./build/sfx-layout check build/$(1)/installer.bin $$@ $$$$(python3 tools/sfx_symbols.py $(NM) $$<)
 # The RAM stage: linked for the updater's address, and for run-ram's slot.
 build/$(1)/st/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
@@ -122,10 +139,10 @@ build/$(1)/stage-ram.bin: build/$(1)/stage-ram.elf tools/check_build.py
 endef
 $(eval $(call BOARD_template,fm1,))
 $(eval $(call BOARD_template,smk37,-DBOARD_SMK))
-build/fm1/uboot.fwsc: build/fm1/uboot.boot build/fm1/installer.bin tools/fwsc.py tools/bankcb.py
-	python3 tools/fwsc.py build fm1 $< build/fm1/installer.bin $@
-build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin tools/fwsc.py tools/bankcb.py
-	python3 tools/fwsc.py build smk37-$* $< build/smk37/installer.bin $@
+build/fm1/uboot.fwsc: build/fm1/uboot.boot build/fm1/installer.bin build/fm1/installer-sfx.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py build --staged build/fm1/installer-sfx.bin fm1 $< build/fm1/installer.bin $@
+build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin build/smk37/installer-sfx.bin tools/fwsc.py tools/bankcb.py
+	python3 tools/fwsc.py build --staged build/smk37/installer-sfx.bin smk37-$* $< build/smk37/installer.bin $@
 
 define LOADER_template
 build/loader-$(1)/%.o: src/%.c $(HEADERS) Makefile
@@ -166,6 +183,9 @@ build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(
 build/midi-update-test-smk37: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DBOARD_SMK -DMU_TEST_APP_RAM -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o $@
+build/sfx-layout: src/upkr.c tools/sfx_layout.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tools/sfx_layout.c -o $@
 build/upkr-test: src/upkr.c tests/upkr_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tests/upkr_test.c -o $@
