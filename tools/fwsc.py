@@ -173,7 +173,9 @@ def updater_stream(code):
     """A staged updater as ota.bin carries it (§6.3): file record, compression
     header, then LZ4 blocks of 4 KiB output, or less where the data won't compress
     (the bootloader it carries is packed already), each at most 4 KiB compressed."""
-    if not code or len(code) > UPDATER_MAX:
+    if not code:
+        raise ValueError('updater is empty')
+    if len(code) > UPDATER_MAX:
         raise ValueError('installer exceeds the stock updater size')
     blocks, at = b'', 0
     while at < len(code):
@@ -218,7 +220,7 @@ def package(variant, container, installer, version='099', staged=None):
     board = VARIANTS[variant][0]
     if validate(container) != board or installer.count(container) != 1:
         raise ValueError('installer does not carry this board\'s bootloader')
-    return updater_package(variant, staged or installer, version)
+    return updater_package(variant, installer if staged is None else staged, version)
 
 
 def updater_package(variant, updater, version='099', listed_flash=False):
