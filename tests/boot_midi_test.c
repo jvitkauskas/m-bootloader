@@ -10,7 +10,8 @@
  *     it as a press; down before MIDI mode opens, PLAY included, it neither keeps MIDI mode from opening nor leaves
  *     it, until it has read as up for 50 scans in a row;
  *   - an install that fails with nothing written doesn't take MIDI mode opened by itself away: it answers again,
- *     the failure in view, and only a key leaves; chosen from the menu, it goes back to the menu as before;
+ *     the failure in view, and only a key leaves; chosen from the menu, it goes back to the menu as before; one that
+ *     fails after writing restarts the unit, never answering again over a half-written app;
  *   - a flash error (and on the SMK-37 a calibration guard error) opens MIDI mode with its reason in view, also after
  *     a RAM app has run and left the screen black;
  *   - an app that returns to the bootloader, the panel left off: MIDI mode, APP EXITED, and the menu after it;
@@ -31,9 +32,9 @@
 
 static unsigned t_midi_runs, t_usb_starts, t_usb_stops, t_ram_app_calls, t_ram_app_mhz;
 static unsigned long long t_usb_started_at;
-/* The stub's first run: an install that fails with nothing written, or a RAM app run (cmd 0x25), before it waits. */
+/* The stub's first run: a failed install (written if t_mu_written) or a RAM app run (cmd 0x25); then it waits. */
 static enum mu_result t_mu_first;
-static bool t_mu_ram_app;
+static bool t_mu_ram_app, t_mu_written;
 void usb_midi_start(void) { ++t_usb_starts; t_usb_started_at = sim.now; }
 void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
@@ -43,7 +44,7 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
     (void)key, (void)sector;
     *written = false;
     if (++t_midi_runs == 1 && t_mu_first != MU_CANCELLED)
-        return t_mu_first;
+        return *written = t_mu_written, t_mu_first;
     if (t_midi_runs == 1 && t_mu_ram_app)
         mu_start_app();
     for (; ; ) {
@@ -76,6 +77,7 @@ static void t_midi_prep(unsigned fixture)
     t_midi_runs = t_usb_starts = t_usb_stops = t_ram_app_calls = t_ram_app_mhz = 0;
     t_usb_started_at = 0;
     t_mu_first = MU_CANCELLED;
+    t_mu_written = false;
     t_mu_ram_app = false;
 }
 
@@ -240,6 +242,16 @@ static void t_midi_failures(void)
     sim.limit = 6000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_midi_runs == 1 && t_usb_stops == 1 && t_row_is(3, "APP NOT FOUND") && t_row_is(9, "> MIDI MODE"));
+    /* opened by itself, it fails after writing: never again over a half-written app, it restarts */
+    for (unsigned i = 0; i < sizeof(fails)/sizeof(fails[0]); ++i) {
+        t_midi_prep(4);
+        t_mu_first = fails[i];
+        t_mu_written = true;
+        sim.limit = 8000000;
+        CHECK(t_go() == END_RESET);
+        CHECK(t_resets == 1 && t_midi_runs == 1 && t_usb_stops == 1 && !t_usb_reset());
+        CHECK(t_row_is(13, texts[i]) && t_row_is(14, "RESTARTS: TRY AGAIN"));
+    }
 }
 
 /* The other ways the menu comes up by itself: their reason stays in view in MIDI mode. */
