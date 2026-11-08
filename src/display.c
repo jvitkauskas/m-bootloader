@@ -195,6 +195,21 @@ void display_rect(unsigned x, unsigned y, unsigned w, unsigned h, uint16_t color
     gpio_level(cs_port, cs_pin, true);
 }
 
+void display_pixels(unsigned x, unsigned y, unsigned w, unsigned h, const uint8_t *data) {
+    if (!active || !w || !h || x >= 240 || y >= 240 || w > 240-x || h > 240-y)
+        return;
+    window(x, y, w, h);
+    unsigned n = w*h*2;
+    while (n && active) {
+        unsigned k = n > sizeof(pixels) ? sizeof(pixels):n;
+        memcpy(pixels, data, k);
+        dma(k);
+        data += k;
+        n -= k;
+    }
+    gpio_level(cs_port, cs_pin, true);
+}
+
 bool display_init(unsigned board) {
     if (board != 1 && board != 2)
         return false;
