@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Check the M-UPGRADE packages and the installer's C against the Python tools,
 and (when present) our package conventions against M-VAVE's packages."""
+import os
 from pathlib import Path
 import random
 import struct
@@ -164,10 +165,13 @@ BUILT = {'fm1': ('build/fm1/uboot.fwsc', 'FM-1_099'),
          'smk37-pro': ('build/smk37/uboot-pro.fwsc', 'SMK-37 Pro_099'),
          'smk37-elite': ('build/smk37/uboot-elite.fwsc', 'SMK-37 Elite_099')}
 assert set(BUILT) == set(VARIANTS)
+# A test build (TEST_REQUESTS) makes no installer packages: the Makefile says so with NO_INSTALLER_PACKAGES.
+PACKAGES = not os.environ.get('NO_INSTALLER_PACKAGES')
+if not PACKAGES:
+    print('SKIP: a test build has no installer packages (M-UPGRADE)')
 for variant, (path, identity) in BUILT.items():
     board = VARIANTS[variant][0]
     other = 'smk37' if board == 'fm1' else 'fm1'
-    built = Path(path).read_bytes()
     # Only what fits where firmware stores it, whatever the updater holds.
     refuses(updater_package, variant, bytes(random.getrandbits(8) for _ in range(0x5000)))
     small = bytes(random.getrandbits(8) for _ in range(0x1800))
@@ -183,6 +187,9 @@ for variant, (path, identity) in BUILT.items():
             assert stage_files['flash.bin']['type'] == 0 and stage_files['flash.bin']['offset']
         stored = stage_image[stage_files['ota.bin']['offset']:]
         assert b'FELUCCA-LOADER-1' in stored[0x48:0x48+64+16]
+    if not PACKAGES:
+        continue
+    built = Path(path).read_bytes()
     assert built == package(variant, containers[board], installers[board])
     assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)

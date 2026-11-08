@@ -1130,7 +1130,7 @@ A RAM app is a program that runs from RAM and leaves the firmware in flash as it
 
 ### 11.9 Test builds
 
-`make TEST_REQUESTS=1`, after `make clean`, makes a bootloader that automated tests can drive with nobody at the keys. Its version ends in `-test`. A build without the option doesn't contain any of this, and releases are built without it.
+`make TEST_REQUESTS=1`, after `make clean`, makes a bootloader that automated tests can drive with nobody at the keys. Its version ends in `-test`. A build without the option doesn't contain any of this, and releases are built without it. It makes no M-UPGRADE packages (`uboot*.fwsc`): on the SMK-37 its installer doesn't fit where firmware stores an updater (§5.6), so a test build goes on with M-Flasher.
 
 A host leaves a one-shot request at the start of the retained area (§6), then resets: `MBTEST`, an action, and a zero. The bootloader consumes it as it starts, whatever it holds, and opens the menu as if the key were held. It then chooses that menu item:
 
