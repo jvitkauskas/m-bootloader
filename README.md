@@ -72,12 +72,15 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-This release, `2.2-64f7c9c`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher and through
-the firmware's update route, an official 016 update, the RAM stage, MIDI mode, RAM apps through
-MIDI mode and the stage, and a backup and a firmware write straight after an app. On the FM-1 also
-M-UPGRADE, for an official 016 update and for installing this version from the stock bootloader,
-from a Mac. Not tested on this version: 1.2 and 1.3 installed over it, as the configuration code
-hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
+This release, `2.3-6bc8f45`, on an SMK-37 Pro: installing its M-UPGRADE package from M-VAVE's stock
+bootloader through the firmware's update route, starting firmware, MIDI mode opening by itself on
+damaged firmware and a browser install from it, and installing with M-Flasher. On an FM-1, build
+`0c24142`, whose bootloader code is the same: the package from the stock bootloader and from
+m-bootloader, sent through the firmware's update route by Optimist's command-line installer, MIDI
+mode by itself with stopped and repeated installs, its keys, and the SD card item. Not tested on
+this version: M-VAVE's M-UPGRADE app on the FM-1, the FM-1's LEDs in MIDI mode, firmware that
+returns to the bootloader with USB running, and 1.2 and 1.3 installed over it, as the configuration
+code hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
