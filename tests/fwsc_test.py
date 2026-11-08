@@ -185,8 +185,8 @@ for variant, (path, identity) in BUILT.items():
     board = VARIANTS[variant][0]
     other = 'smk37' if board == 'fm1' else 'fm1'
     # Only what fits where firmware stores it, whatever the updater holds.
-    refuses(updater_package, variant, bytes(random.getrandbits(8) for _ in range(0x5000)))
-    small = bytes(random.getrandbits(8) for _ in range(0x1800))
+    refuses(updater_package, variant, bytes(rng.getrandbits(8) for _ in range(0x5000)))
+    small = bytes(rng.getrandbits(8) for _ in range(0x1800))
     assert installed(updater_package(variant, small)) == (identity, small)
     assert installed(updater_package(variant, small, listed_flash=True)) == (identity, small)
     # What Felucca-family firmware looks for, in the stage as it's stored.
