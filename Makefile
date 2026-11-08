@@ -260,6 +260,10 @@ sanitize:
 	./build/boot-test-fm1-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_test.c -o build/boot-test-smk37-sanitize
 	./build/boot-test-smk37-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_midi_test.c -o build/boot-midi-test-fm1-sanitize
+	./build/boot-midi-test-fm1-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_midi_test.c -o build/boot-midi-test-smk37-sanitize
+	./build/boot-midi-test-smk37-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c tests/loader_slot_test.c -o build/loader-slot-a-sanitize.o
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DLOADER_ADDRESS=0x01c28000 -c tests/loader_slot_test.c -o build/loader-slot-b-sanitize.o
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(LIFECYCLE_SOURCES) build/loader-slot-a-sanitize.o build/loader-slot-b-sanitize.o -o build/loader-lifecycle-test-sanitize
