@@ -30,9 +30,9 @@ SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie
 LIFECYCLE_SOURCES := src/core.c src/loader.c src/platform.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
-# M-UPGRADE packages: only our installer, which writes the bootloader. A test build has none: its bootloader is
-# bigger, it doesn't fit where SMK-37 firmware stores an updater, and it goes on with M-Flasher anyway.
-INSTALLERS := build/fm1/installer.bin build/smk37/installer.bin
+# M-UPGRADE packages: only our installer, which writes the bootloader, carried self-extracting. A test build has
+# none, as it goes on with M-Flasher, but its installer images are still built and checked.
+INSTALLERS := build/fm1/installer.bin build/smk37/installer.bin build/fm1/installer-sfx.bin build/smk37/installer-sfx.bin
 ifdef TEST_REQUESTS
 C_PRODUCTS :=
 else

@@ -238,4 +238,4 @@ for name, variant in (('fm1-015.fwsc', 'fm1'), ('smk37-016.fwsc', 'smk37-pro'),
     assert host('decode', stream) == updater_code(stream)
     vendor += 1
 print('PASS: LZ4, installer stream through the C decoder, C boot-area rewrite equal to bankcb, '
-      f'flash request retirement, {len(BUILT)} packages, {vendor} M-VAVE package convention checks')
+      f'flash request retirement, {len(BUILT) if PACKAGES else 0} packages, {vendor} M-VAVE package convention checks')
