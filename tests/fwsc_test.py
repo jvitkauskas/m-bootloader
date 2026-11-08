@@ -126,6 +126,12 @@ def members(image):
 
 containers = {board: Path('build', board, 'uboot.boot').read_bytes() for board in ('fm1', 'smk37')}
 installers = {board: Path('build', board, 'installer.bin').read_bytes() for board in ('fm1', 'smk37')}
+# What the packages carry: the installer self-extracting (src/sfx.c), checked to unpack in place to it.
+self_extracting = {board: Path('build', board, 'installer-sfx.bin').read_bytes() for board in ('fm1', 'smk37')}
+for board in self_extracting:
+    assert self_extracting[board] != installers[board] and containers[board] not in self_extracting[board]
+    subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin', f'build/{board}/installer-sfx.bin'],
+                   check=True, capture_output=True)
 rng = random.Random(1)
 for sample in (b'', b'x', bytes(12), bytes(13), bytes(4096), bytes(rng.randrange(4) for _ in range(4096)),
                bytes(rng.randrange(256) for _ in range(300)), b'abcd' * 1000 + b'tail!'):
@@ -190,13 +196,13 @@ for variant, (path, identity) in BUILT.items():
     if not PACKAGES:
         continue
     built = Path(path).read_bytes()
-    assert built == package(variant, containers[board], installers[board])
-    assert installed(built) == (identity, installers[board]) and len(built) < 0x6000
+    assert built == package(variant, containers[board], installers[board], staged=self_extracting[board])
+    assert installed(built) == (identity, self_extracting[board]) and len(built) < 0x6000
     found, prefix, image = unweave(built)
     assert prefix == VARIANTS[variant][2] and weave(found, prefix, image) == built
     listed = members(image)
     assert list(listed) == ['ota.bin'] and listed['ota.bin'][0] == OTA_TYPE
-    assert host('decode', listed['ota.bin'][1]) == installers[board]
+    assert host('decode', listed['ota.bin'][1]) == self_extracting[board]
     assert unweave(package(variant, containers[board], installers[board], '042'))[0] == identity[:-3] + '042'
     refuses(package, variant, containers[other], installers[board])
     refuses(package, variant, containers[board], installers[other])

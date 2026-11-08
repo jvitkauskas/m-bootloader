@@ -212,12 +212,13 @@ def updater_code(stream):
     return code
 
 
-def package(variant, container, installer, version='099'):
-    """The package for variant: identity, header, and ota.bin with the installer."""
+def package(variant, container, installer, version='099', staged=None):
+    """The package for variant: identity, header, and ota.bin with the installer, or with staged, the installer
+    self-extracting (src/sfx.c), which the build has checked unpacks to it."""
     board = VARIANTS[variant][0]
     if validate(container) != board or installer.count(container) != 1:
         raise ValueError('installer does not carry this board\'s bootloader')
-    return updater_package(variant, installer, version)
+    return updater_package(variant, staged or installer, version)
 
 
 def updater_package(variant, updater, version='099', listed_flash=False):
@@ -272,6 +273,7 @@ def main():
     sub = parser.add_subparsers(dest='op', required=True)
     build = sub.add_parser('build')
     build.add_argument('--version', default='099')
+    build.add_argument('--staged', type=Path, help='what ota.bin holds instead of the installer: it self-extracting')
     build.add_argument('variant', choices=sorted(VARIANTS))
     build.add_argument('container', type=Path)
     build.add_argument('installer', type=Path)
@@ -287,7 +289,7 @@ def main():
     args = parser.parse_args()
     if args.op == 'build':
         args.output.write_bytes(package(args.variant, args.container.read_bytes(), args.installer.read_bytes(),
-                                        args.version))
+                                        args.version, args.staged.read_bytes() if args.staged else None))
     elif args.op == 'stage':
         args.output.write_bytes(updater_package(args.variant, args.code.read_bytes(), args.version, args.listed_flash))
     else:
