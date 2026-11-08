@@ -3,8 +3,9 @@
  * built for the host:
  *   sfx-layout place installer.bin installer.pack   where the pack starts, as an address, so that unpacking it in place
  *                                                   at 0x01C0A800 never writes over what is still to be read
- *   sfx-layout check installer.bin sfx.bin           the image as the unit gets it, unpacked as the unit does: the
- *                                                   installer must come back byte for byte */
+ *   sfx-layout check installer.bin sfx.bin pack end  the image as the unit gets it, unpacked as src/sfx.c does it, from
+ *                                                   the linked sfx_pack to sfx_pack_end (addresses): the installer
+ *                                                   must come back byte for byte */
 #include "upkr.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,11 +46,18 @@ static int fits(size_t size, size_t packed, size_t gap) {
     return stage1_unpack(ram, (uint32_t)size, ram+end-packed, (uint32_t)packed, probs) && !memcmp(ram, installer, size);
 }
 
+/* An address in the image's RAM, as given ("0x..."): its offset from LOAD, or past WINDOW when it isn't one. */
+static size_t offset(const char *s) {
+    char *end;
+    unsigned long v = strtoul(s, &end, 0);
+    return *s && !*end && v >= LOAD && v-LOAD <= WINDOW ? (size_t)(v-LOAD):WINDOW+1;
+}
+
 int main(int argc, char **argv) {
-    if (argc != 4)
+    if (argc < 4)
         return 2;
     size_t size = load(argv[2], installer, sizeof(installer));
-    if (same(argv[1], "place")) {
+    if (same(argv[1], "place") && argc == 4) {
         size_t packed = load(argv[3], pack, sizeof(pack)), gap = 0;
         while (gap < 0x1000 && !fits(size, packed, gap))
             gap += 4;
@@ -62,21 +70,20 @@ int main(int argc, char **argv) {
         printf("0x%08x\n", (unsigned)(LOAD+start));
         return 0;
     }
-    if (same(argv[1], "check")) {
-        size_t n = load(argv[3], image, sizeof(image));
-        /* the pack is where the image's header says: found by its 8-byte header, which names the installer's size */
-        for (size_t at = 4; at+STAGE1_HEADER <= n; at += 4) {
-            uint32_t packed = image[at] | (uint32_t)image[at+1] << 8, out = image[at+2] | (uint32_t)image[at+3] << 8;
-            if (out != size || at+STAGE1_HEADER+packed > n)
-                continue;
-            memset(ram, 0, sizeof(ram));
-            memcpy(ram, image, n);
-            if (stage1_unpack(ram, (uint32_t)size, ram+at, (uint32_t)(STAGE1_HEADER+packed), probs)
-                    && !memcmp(ram, installer, size)) {
-                printf("%s: unpacks in place to %s (%zu bytes, the pack at +%zu, the image %zu bytes)\n", argv[3],
-                    argv[2], size, at, n);
-                return 0;
-            }
+    if (same(argv[1], "check") && argc == 6) {
+        size_t n = load(argv[3], image, sizeof(image)), at = offset(argv[4]), end = offset(argv[5]);
+        if (at > end || end > n) {
+            fprintf(stderr, "%s: the pack %s-%s is not in the image\n", argv[3], argv[4], argv[5]);
+            return 1;
+        }
+        /* as src/sfx.c calls it: room to the pack's end, the pack from sfx_pack to sfx_pack_end */
+        memset(ram, 0, sizeof(ram));
+        memcpy(ram, image, n);
+        if (at+STAGE1_HEADER <= end && (image[at+2] | (uint32_t)image[at+3] << 8) == size
+                && stage1_unpack(ram, (uint32_t)end, ram+at, (uint32_t)(end-at), probs) && !memcmp(ram, installer, size)) {
+            printf("%s: unpacks in place to %s (%zu bytes, the pack at +%zu, the image %zu bytes)\n", argv[3], argv[2],
+                size, at, n);
+            return 0;
         }
         fprintf(stderr, "%s: does not unpack to %s in place\n", argv[3], argv[2]);
         return 1;

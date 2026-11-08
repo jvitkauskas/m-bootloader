@@ -7,6 +7,7 @@ export TOOLCHAIN ?= toolchain
 CLANG := $(TOOLCHAIN)/bin/clang
 LINK := $(TOOLCHAIN)/bin/ld.lld
 OBJCOPY := $(TOOLCHAIN)/bin/llvm-objcopy
+NM := $(TOOLCHAIN)/bin/llvm-nm
 # Upkr 0.2.3 (see README), at UPKR=<path> or on the PATH.
 export UPKR ?= upkr
 HOSTCC ?= cc
@@ -108,9 +109,9 @@ build/$(1)/sfx.o: src/sfx.c $(HEADERS) Makefile
 	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
 build/$(1)/sfx.elf: build/$(1)/sfx_start.o build/$(1)/sfx.o build/$(1)/s0/upkr.o build/$(1)/sfx.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/sfx.ld -Map build/$(1)/sfx.map -o $$@ $$(filter %.o,$$^)
-build/$(1)/installer-sfx.bin: build/$(1)/sfx.elf build/sfx-layout
+build/$(1)/installer-sfx.bin: build/$(1)/sfx.elf build/sfx-layout tools/sfx_symbols.py
 	$(OBJCOPY) -O binary -j .entry -j .pack -j .text $$< $$@
-	./build/sfx-layout check build/$(1)/installer.bin $$@
+	./build/sfx-layout check build/$(1)/installer.bin $$@ $$$$(python3 tools/sfx_symbols.py $(NM) $$<)
 # The RAM stage: linked for the updater's address, and for run-ram's slot.
 build/$(1)/st/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)

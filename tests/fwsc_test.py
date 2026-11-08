@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from bankcb import crc16, enc, install
 from fwsc import (updater_package, CHIP, FIRST, HEAD, HEAD_FIELDS, OTA_TYPE, VARIANTS, entries, installed, lz4_block,
                   lz4_unblock, package, unweave, updater_code, updater_stream, weave)
+from sfx_symbols import symbols as sfx_symbols
 
 HOST = Path('build/installer-host')
 
@@ -130,8 +131,13 @@ installers = {board: Path('build', board, 'installer.bin').read_bytes() for boar
 self_extracting = {board: Path('build', board, 'installer-sfx.bin').read_bytes() for board in ('fm1', 'smk37')}
 for board in self_extracting:
     assert self_extracting[board] != installers[board] and containers[board] not in self_extracting[board]
-    subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin', f'build/{board}/installer-sfx.bin'],
-                   check=True, capture_output=True)
+    pack = sfx_symbols(str(Path(os.environ.get('TOOLCHAIN', 'toolchain'), 'bin', 'llvm-nm')), f'build/{board}/sfx.elf')
+    subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin', f'build/{board}/installer-sfx.bin',
+                    *pack], check=True, capture_output=True)
+    # Only the pack the unpacker reads counts: a pack anywhere else in the image does not.
+    for wrong in ([pack[0], hex(int(pack[1], 16) - 4)], [hex(int(pack[0], 16) + 4), pack[1]]):
+        assert subprocess.run(['build/sfx-layout', 'check', f'build/{board}/installer.bin',
+                               f'build/{board}/installer-sfx.bin', *wrong], capture_output=True).returncode == 1
 rng = random.Random(1)
 for sample in (b'', b'x', bytes(12), bytes(13), bytes(4096), bytes(rng.randrange(4) for _ in range(4096)),
                bytes(rng.randrange(256) for _ in range(300)), b'abcd' * 1000 + b'tail!'):

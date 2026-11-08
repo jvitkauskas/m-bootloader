@@ -275,7 +275,8 @@ def main():
     sub = parser.add_subparsers(dest='op', required=True)
     build = sub.add_parser('build')
     build.add_argument('--version', default='099')
-    build.add_argument('--staged', type=Path, help='what ota.bin holds instead of the installer: it self-extracting')
+    build.add_argument('--staged', type=Path, help='what ota.bin holds instead of the installer: it self-extracting, '
+                       'as the build has checked it unpacks to it (sfx-layout check)')
     build.add_argument('variant', choices=sorted(VARIANTS))
     build.add_argument('container', type=Path)
     build.add_argument('installer', type=Path)
