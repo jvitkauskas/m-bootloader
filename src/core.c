@@ -342,8 +342,6 @@ bool core_app_mount_header(const struct core_flash *f, uint16_t key, struct core
     }
     if (first_file < offset)
         goto invalid;
-    app->metadata_valid = 1;
-    app->table_base = app->base;
     if (!have_app || !app->entry) {
         app->base = app->entry = 0;
         return false;

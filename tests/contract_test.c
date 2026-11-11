@@ -91,8 +91,6 @@ static void test_updater(void)
     CHECK(!memcmp(out, expected, 24));
     CHECK(!memcmp(retained + 8, saved, 80));
     app.base = app.entry = 0;
-    app.table_base = 0x4000;
-    app.metadata_valid = 1;
     contract_updater(out, &app, 0x980f, 0x01c06000, 0x01c06100);
     CHECK(!core_le32(out) && !core_le32(out + 4));
     CHECK(core_le32(out + 20) == 0x01c06100);

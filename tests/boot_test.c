@@ -553,6 +553,19 @@ static void t_keys_and_menu(void)
     t_key(KEY_SELECT, 2000, 2100);
     CHECK(t_go() == END_RESET && t_usb_reset());
     CHECK(t_row_is(3, "DOWNLOAD MODE"));
+    /* Navigation wraps: up from the first item is the last. */
+    t_prep(t_own_fixture());
+    t_open_menu();
+    t_key(KEY_PREV, 1600, 1700);
+    sim.limit = 2300000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_row_is(8, "  BOOT APP") && t_row_is(9, "> DOWNLOAD MODE"));
+    t_prep(t_own_fixture());
+    t_open_menu();
+    t_key(KEY_PREV, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    CHECK(t_go() == END_RESET && t_usb_reset());
+    CHECK(t_row_is(3, "DOWNLOAD MODE"));
     t_prep(t_own_fixture());
     t_open_menu();
     t_key(KEY_NEXT, 1600, 1602);

@@ -56,9 +56,9 @@ enum core_app_state {
     CORE_APP_NOT_FOUND, CORE_APP_OK, CORE_APP_BAD_CRC, CORE_APP_INCOMPLETE
 };
 struct core_app {
-    uint32_t base, entry, extent, app_length, table_base;
+    uint32_t base, entry, extent, app_length;
     uint16_t key;
-    uint8_t file_count, metadata_valid;
+    uint8_t file_count;
     enum core_app_state state;
     struct core_record files[CORE_MAX_FILES];
 };

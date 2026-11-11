@@ -427,7 +427,7 @@ static void test_mount_header_refresh(void)
     image[0] ^= 1;
     CHECK(!core_app_mount_header(&flash, 0x980f, &app, &fresh));
     CHECK(fresh.alignment == 0);
-    CHECK(!app.base && !app.entry && !app.metadata_valid);
+    CHECK(!app.base && !app.entry);
     ++assertions;
 }
 
@@ -439,20 +439,23 @@ static void test_mount_without_app(void)
     memcpy(saved, image, sizeof(image));
     encode_record(0x4020, 32, true, 0x980f, "other.bin", 0x120, 619704, 0x82, 0xf0da);
     CHECK(!core_app_mount(&flash, 0x980f, &app));
-    CHECK(!app.base && !app.entry && app.metadata_valid);
-    CHECK(app.table_base == 0x4000 && app.state == CORE_APP_NOT_FOUND);
+    CHECK(!app.base && !app.entry && app.state == CORE_APP_NOT_FOUND);
     memcpy(image, saved, sizeof(image));
     encode_record(0x4020, 32, true, 0x980f, "app.bin", 0x120, 0, 0x82, 0);
     CHECK(!core_app_mount(&flash, 0x980f, &app));
-    CHECK(!app.base && app.metadata_valid && app.table_base == 0x4000);
+    CHECK(!app.base && !app.entry);
     memcpy(image, saved, sizeof(image));
     image[0x4000] ^= 1;
     CHECK(!core_app_mount(&flash, 0x980f, &app));
-    CHECK(!app.metadata_valid && !app.table_base);
+    CHECK(!app.base && !app.entry);
     memcpy(image, saved, sizeof(image));
     encode_record(0x4020, 32, true, 0x980f, "app.bin", UINT32_MAX, 32, 0x82, 0);
     CHECK(!core_app_mount(&flash, 0x980f, &app));
-    CHECK(!app.metadata_valid);
+    CHECK(!app.base && !app.entry);
+    memcpy(image, saved, sizeof(image));
+    /* A bad record CRC ends the table: the files before it still mount. */
+    image[0x4040] ^= 1;
+    CHECK(core_app_mount(&flash, 0x980f, &app) && app.file_count == 1);
     memcpy(image, saved, sizeof(image));
     ++assertions;
 }
