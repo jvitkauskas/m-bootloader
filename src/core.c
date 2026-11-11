@@ -338,8 +338,6 @@ bool core_app_mount_header(const struct core_flash *f, uint16_t key, struct core
                 have_app = true;
                 app->app_length = record.length;
             }
-        } else if (record.attribute == 0x12 || record.attribute == 0x92) {
-            app->regions[app->region_count++] = record;
         }
     }
     if (first_file < offset)
@@ -536,98 +534,6 @@ static bool overlaps(uint32_t a, uint32_t end, uint32_t b, uint32_t bend) {
     return a < bend && b < end;
 }
 
-static bool wipe_safe(uint32_t address, uint32_t size, uint32_t capacity, bool smk);
-bool core_wipe_plan(const struct core_flash *f, const struct core_app *app, bool smk, struct core_wipe *plan)
-{
-    unsigned i, j;
-    bytes_zero(plan, sizeof(*plan));
-    if (!app->metadata_valid || !app->table_base || app->table_base > f->capacity || app->region_count > CORE_MAX_REGIONS || app->file_count > CORE_MAX_FILES || f->capacity < 0x5000)
-        return false;
-    for (i = 0; i < app->region_count; ++i) {
-        const struct core_record *r = app->regions + i;
-        uint32_t end;
-        if (!text_equal(r->name, "VM") && !text_equal(r->name, "BTIF"))
-            continue;
-        if ((r->attribute != 0x12 && r->attribute != 0x92) || !r->length || ((r->address | r->length) & 4095) || !core_range(r->address, r->length, f->capacity))
-            continue;
-        end = r->address + r->length;
-        for (j = 0; j < app->file_count; ++j) {
-            const struct core_record *file = app->files + j;
-            uint32_t start;
-            if (!core_range(file->address, file->length, f->capacity - app->table_base))
-                return false;
-            start = app->table_base + file->address;
-            if (overlaps(r->address, end, start, start + file->length))
-                break;
-        }
-        if (j != app->file_count)
-            continue;
-        uint32_t start = r->address < 0x4000 ? 0x4000 : r->address;
-        if (end > f->capacity - 0x1000)
-            end = f->capacity - 0x1000;
-        if (smk && start >= 0xc1000 && start < 0xc2000)
-            start = 0xc2000;
-        if (smk && end > 0xc1000 && end <= 0xc2000)
-            end = 0xc1000;
-        if (start >= end)
-            continue;
-        /* Interior protected sectors are subtracted by core_wipe_next. */
-        if (plan->count == 2)
-            return false;
-        plan->start[plan->count] = start;
-        plan->end[plan->count++] = end;
-    }
-    if (plan->count == 2) {
-        if (plan->start[1] < plan->start[0]) {
-            uint32_t v = plan->start[0];
-            plan->start[0] = plan->start[1];
-            plan->start[1] = v;
-            v = plan->end[0];
-            plan->end[0] = plan->end[1];
-            plan->end[1] = v;
-        }
-        if (plan->start[1] < plan->end[0])
-            return false;
-    }
-    return plan->count != 0;
-}
-
-static bool wipe_safe(uint32_t address, uint32_t size, uint32_t capacity, bool smk)
-{
-    if (capacity < 0x5000 || !core_range(address, size, capacity) || address < 0x4000 || address + size > capacity - 0x1000)
-        return false;
-    return !smk || !overlaps(address, address + size, 0xc1000, 0xc2000);
-}
-
-bool core_wipe_next(const struct core_wipe *plan, uint32_t capacity, bool smk, uint32_t *cursor, uint32_t *address, uint32_t *size)
-{
-    unsigned i;
-    uint32_t p = *cursor;
-    if (plan->count > 2 || (p & 4095))
-        return false;
-    for (i = 0; i < plan->count; ++i) {
-        uint32_t start = plan->start[i], end = plan->end[i];
-        if (((start | end) & 4095) || start >= end || end > capacity)
-            return false;
-        if (p < start)
-            p = start;
-        while (p < end) {
-            uint32_t n = 4096;
-            if (!(p & 65535) && end - p >= 65536 && wipe_safe(p, 65536, capacity, smk))
-                n = 65536;
-            if (wipe_safe(p, n, capacity, smk)) {
-                *address = p;
-                *size = n;
-                *cursor = p + n;
-                return true;
-            }
-            p += 4096;
-        }
-    }
-    *cursor = p;
-    return false;
-}
-
 static bool program_pages(const struct core_nor *nor, uint32_t address, const uint8_t *src, uint32_t size)
 {
     while (size) {
@@ -693,33 +599,6 @@ enum core_guard_result core_guard(const struct core_nor *nor, bool smk, uint8_t 
     if (!program_pages(nor, base + 16, source, 0x22c) || !verify_bytes(f, base + 16, source, 0x22c) || !program_pages(nor, base, slot, 16) || !verify_bytes(f, base, slot, 16))
         return CORE_GUARD_ERROR;
     return CORE_GUARD_BACKED_UP;
-}
-
-bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan, bool smk, uint8_t work[CORE_WORK_SIZE])
-{
-    uint32_t cursor = 0, address, size;
-    unsigned i;
-    if (!plan->count || plan->count > 2)
-        return false;
-    for (i = 0; i < plan->count; ++i) {
-        if (((plan->start[i] | plan->end[i]) & 4095) || plan->start[i] >= plan->end[i] || plan->end[i] > nor->flash.capacity || (i && plan->start[i] < plan->end[i - 1]))
-            return false;
-    }
-    while (core_wipe_next(plan, nor->flash.capacity, smk, &cursor, &address, &size)) {
-        uint32_t pos;
-        /* Recheck at mutation time independently of UI and iterator. */
-        if (!wipe_safe(address, size, nor->flash.capacity, smk) || !nor->erase(nor->flash.ctx, address, size))
-            return false;
-        for (pos = 0; pos < size; pos += CORE_WORK_SIZE) {
-            unsigned i;
-            if (!core_read(&nor->flash, address + pos, work, CORE_WORK_SIZE))
-                return false;
-            for (i = 0; i < CORE_WORK_SIZE; ++i)
-                if (work[i] != 255)
-                    return false;
-        }
-    }
-    return true;
 }
 
 unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end)

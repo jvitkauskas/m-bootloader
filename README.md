@@ -41,10 +41,11 @@ run with it.
   It shows the firmware's state and size, pending updates and the flash chip,
   and offers:
   - **Boot app** and **Download mode**;
-  - **Boot anyway**: start firmware that fails its checksum, once;
-  - **Wipe user data**: erase the settings areas the firmware declares, and
-    nothing else. The menu lists the exact ranges, and you hold the key for
-    3 s to confirm.
+  - **Boot anyway**: start firmware that fails its checksum, once.
+
+  There's no wipe item: firmwares keep their settings in different places, so
+  erasing the areas a firmware declares could make things worse. Use the
+  firmware's own reset, or restore a backup.
 - **SD card.** With a card mod and a FAT32 card fitted, the menu gets an
   **SD card** item at the top. On the FM-1, that's an
   [m-card](https://github.com/jvitkauskas/m-card) board. On the SMK-37, it's
@@ -202,7 +203,7 @@ repository, and the tests skip them when absent.
 | `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
 | `src/boot.c` | stage 1: start-up decisions, menu |
 | `src/midi_update.c`, `src/usb_midi.c` | MIDI mode: the update protocol, and the USB-MIDI device |
-| `src/core.c` | flash formats, checksums, ciphers, updater decoding, wipe and calibration rules (portable C, also built for the tests) |
+| `src/core.c` | flash formats, checksums, ciphers, updater decoding and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
 | `src/loader.c`, `src/loader_target.c` | the flash loader |

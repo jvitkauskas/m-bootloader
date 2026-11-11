@@ -10,7 +10,7 @@ static uint8_t image[CAPACITY], saved[CAPACITY], workspace[CORE_WORK_SIZE], upda
 static unsigned assertions, fixture_groups;
 struct model {
     unsigned programs, erases, operations, fail_at, reads;
-    bool bad_read, bad_erase;
+    bool bad_read;
     uint32_t first_program, last_program, erase_address[256], erase_size[256];
 };
 static struct model model;
@@ -56,8 +56,7 @@ static bool model_erase(void *ctx, uint32_t address, uint32_t size)
     CHECK(m->erases < 256);
     m->erase_address[m->erases] = address;
     m->erase_size[m->erases++] = size;
-    if (!m->bad_erase)
-        memset(image + address, 255, size);
+    memset(image + address, 255, size);
     return true;
 }
 
@@ -270,19 +269,13 @@ static void test_lz4(void)
     ++assertions;
 }
 
-static bool wipe_expected(uint32_t address, uint32_t vm_start, uint32_t vm_end, uint32_t btif_start)
-{
-    return (address >= vm_start && address < vm_end) || (address >= btif_start && address < btif_start + 4096);
-}
-
-static void test_fixture(const char *name, uint32_t crc32, uint32_t app_length, uint16_t app_crc, uint32_t cfg_address, uint32_t vm_start, uint32_t vm_end, uint32_t btif, bool smk)
+static void test_fixture(const char *name, uint32_t crc32, uint32_t app_length, uint16_t app_crc, uint32_t cfg_address)
 {
     struct core_header h;
     struct core_record config;
     struct core_app app;
-    struct core_wipe plan;
     uint16_t key;
-    uint32_t i, cursor = 0, address, size, erased = 0;
+    uint32_t i;
     if (!load_fixture(name))
         return;
     memcpy(saved, image, sizeof(image));
@@ -309,36 +302,6 @@ static void test_fixture(const char *name, uint32_t crc32, uint32_t app_length, 
     memset(image + app.base + app.files[0].address + app_length - 32, 255, 32);
     CHECK(core_app_check(&flash, &app, workspace) == CORE_APP_INCOMPLETE);
     memcpy(image, saved, sizeof(image));
-    CHECK(core_app_mount(&flash, key, &app));
-    CHECK(core_wipe_plan(&flash, &app, smk, &plan));
-    CHECK(plan.count == 2);
-    CHECK(plan.start[0] == vm_start || plan.start[1] == vm_start);
-    while (core_wipe_next(&plan, CAPACITY, smk, &cursor, &address, &size)) {
-        CHECK(wipe_expected(address, vm_start, vm_end, btif));
-        for (i = 0; i < size; i += 4096)
-            CHECK(wipe_expected(address + i, vm_start, vm_end, btif));
-        erased += size;
-    }
-    CHECK(erased == vm_end - vm_start + 4096);
-    CHECK(core_wipe_execute(&nor, &plan, smk, workspace));
-    CHECK(!model.programs);
-    for (i = 0; i < CAPACITY; ++i)
-        CHECK(image[i] == (wipe_expected(i, vm_start, vm_end, btif) ? 255 : saved[i]));
-    memcpy(image, saved, sizeof(image));
-    reset_model();
-    model.bad_erase = true;
-    memset(image + plan.start[0], 0, 4096);
-    CHECK(!core_wipe_execute(&nor, &plan, smk, workspace));
-    memcpy(image, saved, sizeof(image));
-    reset_model();
-    model.fail_at = 2;
-    CHECK(!core_wipe_execute(&nor, &plan, smk, workspace));
-    reset_model();
-    CHECK(core_wipe_execute(&nor, &plan, smk, workspace));
-    for (i = 0; i < CAPACITY; ++i)
-        CHECK(image[i] == (wipe_expected(i, vm_start, vm_end, btif) ? 255 : saved[i]));
-    memcpy(image, saved, sizeof(image));
-    reset_model();
     ++assertions;
     ++fixture_groups;
 }
@@ -468,93 +431,9 @@ static void test_mount_header_refresh(void)
     ++assertions;
 }
 
-static void test_wipe_safety(void)
+static void test_mount_without_app(void)
 {
     struct core_app app;
-    struct core_wipe plan;
-    uint32_t cursor, address, size, i, total;
-    if (!load_fixture("smk37-stock.bin"))
-        return;
-    CHECK(core_app_mount(&flash, 0x980f, &app));
-    app.regions[0].address = 0;
-    app.regions[0].length = CAPACITY;
-    memcpy(app.regions[0].name, "VM", 3);
-    app.regions[0].attribute = 0x12;
-    app.region_count = 1;
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
-    app.file_count = 0;
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.start[0] == 0x4000 && plan.end[0] == 0xff000);
-    memset(&plan, 0, sizeof(plan));
-    plan.count = 1;
-    plan.end[0] = CAPACITY;
-    cursor = 0;
-    total = 0;
-    while (core_wipe_next(&plan, CAPACITY, true, &cursor, &address, &size)) {
-        for (i = 0; i < size; i += 4096)
-            CHECK(address + i >= 0x4000 && address + i < 0xff000 && address + i != 0xc1000);
-        total += size;
-    }
-    CHECK(total == CAPACITY - 0x6000);
-    app.regions[0].address = 0xc0000;
-    app.regions[0].length = 0x3000;
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    cursor = 0;
-    CHECK(core_wipe_next(&plan, CAPACITY, true, &cursor, &address, &size));
-    CHECK(address == 0xc0000 && size == 0x1000);
-    CHECK(core_wipe_next(&plan, CAPACITY, true, &cursor, &address, &size));
-    CHECK(address == 0xc2000 && size == 0x1000);
-    CHECK(!core_wipe_next(&plan, CAPACITY, true, &cursor, &address, &size));
-    memcpy(saved, image, sizeof(image));
-    CHECK(core_wipe_execute(&nor, &plan, true, workspace));
-    for (i = 0; i < CAPACITY; ++i)
-        CHECK(image[i] == ((i >= 0xc0000 && i < 0xc1000) || (i >= 0xc2000 && i < 0xc3000) ? 255 : saved[i]));
-    CHECK(!model.programs);
-    app.regions[0].address = 0xfe000;
-    app.regions[0].length = 0x2000;
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.end[0] == 0xff000);
-    app.regions[0].address = 0x1001;
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
-    app.regions[0].address = 0x1000;
-    app.regions[0].length = UINT32_MAX;
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
-    app.regions[0].address = 0x8000;
-    app.regions[0].length = 0x1000;
-    app.regions[0].attribute = 0x82;
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
-    app.regions[0].attribute = 0x12;
-    app.regions[1] = app.regions[0];
-    app.region_count = 2;
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
-    memcpy(app.regions[1].name, "BTIF", 5);
-    app.regions[1].address = 0xf0000;
-    app.regions[0].address = 0x8001;
-    /* Invalid VM must not hide valid BTIF. */
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.count == 1 && plan.start[0] == 0xf0000);
-    app.regions[0].address = CAPACITY;
-    app.regions[0].length = 0x1000;
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.count == 1);
-    app.regions[0].address = 0x8000;
-    app.regions[0].attribute = 0x82;
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.count == 1);
-    model.erases = 0;
-    memset(&plan, 0, sizeof(plan));
-    plan.count = 1;
-    plan.start[0] = 0x1234;
-    plan.end[0] = 0x4000;
-    CHECK(!core_wipe_execute(&nor, &plan, true, workspace));
-    CHECK(!model.erases);
-    ++assertions;
-}
-
-static void test_wipe_without_app(void)
-{
-    struct core_app app;
-    struct core_wipe plan;
     if (!load_fixture("smk37-stock.bin"))
         return;
     memcpy(saved, image, sizeof(image));
@@ -562,27 +441,19 @@ static void test_wipe_without_app(void)
     CHECK(!core_app_mount(&flash, 0x980f, &app));
     CHECK(!app.base && !app.entry && app.metadata_valid);
     CHECK(app.table_base == 0x4000 && app.state == CORE_APP_NOT_FOUND);
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
-    CHECK(plan.count == 2);
     memcpy(image, saved, sizeof(image));
     encode_record(0x4020, 32, true, 0x980f, "app.bin", 0x120, 0, 0x82, 0);
     CHECK(!core_app_mount(&flash, 0x980f, &app));
     CHECK(!app.base && app.metadata_valid && app.table_base == 0x4000);
-    CHECK(core_wipe_plan(&flash, &app, true, &plan));
     memcpy(image, saved, sizeof(image));
     image[0x4000] ^= 1;
     CHECK(!core_app_mount(&flash, 0x980f, &app));
     CHECK(!app.metadata_valid && !app.table_base);
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
     memcpy(image, saved, sizeof(image));
     encode_record(0x4020, 32, true, 0x980f, "app.bin", UINT32_MAX, 32, 0x82, 0);
     CHECK(!core_app_mount(&flash, 0x980f, &app));
     CHECK(!app.metadata_valid);
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
     memcpy(image, saved, sizeof(image));
-    image[0x4040] ^= 1;
-    CHECK(core_app_mount(&flash, 0x980f, &app));
-    CHECK(!core_wipe_plan(&flash, &app, true, &plan));
     ++assertions;
 }
 
@@ -661,15 +532,14 @@ int main(void)
     test_primitives();
     test_banks();
     test_lz4();
-    test_fixture("fm1-stock.bin", 0xf98496a0, 581564, 0x5d48, 0x8e0dc, 0x93000, 0xe9000, 0xe9000, false);
-    test_fixture("smk37-stock.bin", 0x8e57bc96, 619704, 0xf0da, 0x975d8, 0x9d000, 0xc0000, 0xc0000, true);
-    test_fixture("smk37-snoop37.bin", 0x6475373c, 619520, 0x6283, 0x97520, 0x9d000, 0xc0000, 0xc0000, true);
-    test_fixture("smk37-baudgirl.bin", 0x1eabfb0a, 748520, 0xfbdb, 0xb6d08, 0xd9000, 0xe9000, 0xc0000, true);
+    test_fixture("fm1-stock.bin", 0xf98496a0, 581564, 0x5d48, 0x8e0dc);
+    test_fixture("smk37-stock.bin", 0x8e57bc96, 619704, 0xf0da, 0x975d8);
+    test_fixture("smk37-snoop37.bin", 0x6475373c, 619520, 0x6283, 0x97520);
+    test_fixture("smk37-baudgirl.bin", 0x1eabfb0a, 748520, 0xfbdb, 0xb6d08);
     test_fixture_updater();
     test_requests();
     test_mount_header_refresh();
-    test_wipe_safety();
-    test_wipe_without_app();
+    test_mount_without_app();
     test_guard();
     printf("core: %u groups passed (%u private images checked, malformed inputs, NOR faults)\n", assertions, fixture_groups);
     return 0;

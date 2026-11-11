@@ -517,7 +517,7 @@ static void t_keys_and_menu(void)
     CHECK(t_row_is(3, "APP OK"));
     CHECK(t_row_is(8, "> BOOT APP"));
     CHECK(t_row_is(9, "  DOWNLOAD MODE"));
-    CHECK(t_row_is(10, "  WIPE USER DATA"));
+    CHECK(t_row_is(10, ""));
     CHECK(t_row_is(13, ""));
     CHECK(t_row_is(14, SMK ? "< > MOVE SEQ PLAY OK":"OCT-/+ MOVE PLAY OK"));
     t_prep(t_own_fixture());
@@ -540,7 +540,7 @@ static void t_keys_and_menu(void)
     CHECK(t_row_is(3, "APP OK"));
     CHECK(t_row_is(8, "> BOOT APP"));
     CHECK(t_row_is(9, "  DOWNLOAD MODE"));
-    CHECK(t_row_is(10, "  WIPE USER DATA"));
+    CHECK(t_row_is(10, ""));
     CHECK(sim.panel_on && sim.fb_pix >= 240*240);
     CHECK(sim.lit_us[0] && sim.lit_us[1] && sim.lit_us[2] && !sim.lit_us[3]);
     t_prep(t_own_fixture());
@@ -778,160 +778,66 @@ static void t_uart(void)
     CHECK(!memcmp(RET(0), "UARTUPDATE", 11));
 }
 
-static void t_change_region(const char *name, uint32_t address, uint32_t length)
-{
-    for (unsigned off = 32; off < 9*32; off += 32) {
-        uint8_t record[32];
-        memcpy(record, sim_nor+0x4000+off, 32);
-        core_enc((uint16_t)(0x980f ^ (off >> 2)), record, 32);
-        if (memcmp(record+16, name, strlen(name)+1))
-            continue;
-        core_put_le32(record+4, address);
-        core_put_le32(record+8, length);
-        core_put_le16(record, core_crc16(0, record+2, 30));
-        core_enc((uint16_t)(0x980f ^ (off >> 2)), record, 32);
-        memcpy(sim_nor+0x4000+off, record, 32);
-        return;
-    }
-    assert(!"region declaration not found");
-}
-
-static void t_wipe_confirmation(void)
-{
-    t_open_menu();
-    t_key(KEY_PREV, 1600, 1700);
-    t_key(KEY_SELECT, 2000, 2100);
-    t_key(KEY_SELECT, 2600, 6300);
-}
-
 static void t_confirmation_cosmetics(void)
 {
     const unsigned deadlines[] = {2400000, 3500000, 6000000};
-    for (unsigned wipe = 0; wipe < 2; ++wipe) {
-        for (unsigned phase = 0; phase < 3; ++phase) {
-            t_prep(t_own_fixture());
-            if (wipe)
-                t_wipe_confirmation();
-            else {
-                t_damage_app();
-                t_pick_bypass();
-            }
-            sim.limit = deadlines[phase];
-            CHECK(t_go() == END_TIMEOUT);
-            CHECK(!t_app_calls && !t_update_calls && !t_resets);
-            CHECK(t_row_is(8, wipe ? "WIPE USER DATA":"BOOT ANYWAY"));
-            const char *prompt = phase == 2 ?
-                (SMK ? "RELEASE SEQ PLAY":"RELEASE PLAY") :
-                (SMK ? "HOLD SEQ PLAY 3 S":"HOLD PLAY 3 S");
-            CHECK(t_row_is(14, prompt));
-            unsigned stale = 0, invalid = 0;
-            bool green = false, grey = false;
-            for (unsigned y = 208; y < 224; ++y) {
-                for (unsigned x = 0; x < 240; ++x) {
-                    uint16_t pixel = sim.fb[y*240+x];
-                    if (y < 210 || y >= 222)
-                        stale += pixel != 0;
-                    else {
-                        invalid += pixel != GREEN && pixel != GREY;
-                        green |= pixel == GREEN;
-                        grey |= pixel == GREY;
-                    }
+    for (unsigned phase = 0; phase < 3; ++phase) {
+        t_prep(t_own_fixture());
+        t_damage_app();
+        t_pick_bypass();
+        sim.limit = deadlines[phase];
+        CHECK(t_go() == END_TIMEOUT);
+        CHECK(!t_app_calls && !t_update_calls && !t_resets);
+        CHECK(t_row_is(8, "BOOT ANYWAY"));
+        const char *prompt = phase == 2 ?
+            (SMK ? "RELEASE SEQ PLAY":"RELEASE PLAY") :
+            (SMK ? "HOLD SEQ PLAY 3 S":"HOLD PLAY 3 S");
+        CHECK(t_row_is(14, prompt));
+        unsigned stale = 0, invalid = 0;
+        bool green = false, grey = false;
+        for (unsigned y = 208; y < 224; ++y) {
+            for (unsigned x = 0; x < 240; ++x) {
+                uint16_t pixel = sim.fb[y*240+x];
+                if (y < 210 || y >= 222)
+                    stale += pixel != 0;
+                else {
+                    invalid += pixel != GREEN && pixel != GREY;
+                    green |= pixel == GREEN;
+                    grey |= pixel == GREY;
                 }
             }
-            CHECK(!stale);
-            CHECK(!invalid);
-            CHECK(green == (phase != 0));
-            CHECK(grey == (phase != 2));
-            for (unsigned i = 0; i < nor_nlog; ++i)
-                CHECK(nor_log[i].kind != 'E');
         }
+        CHECK(!stale);
+        CHECK(!invalid);
+        CHECK(green == (phase != 0));
+        CHECK(grey == (phase != 2));
+        for (unsigned i = 0; i < nor_nlog; ++i)
+            CHECK(nor_log[i].kind != 'E');
     }
 }
 
-static void t_guard_and_wipe(void)
+static void t_guard(void)
 {
-    if (SMK) {
-        t_prep(1);
-        CHECK(t_go() == END_APP);
-        CHECK(!memcmp(sim_nor+0xff000, "TRIMCOPY", 8));
-        uint8_t copied[0x22c];
-        memcpy(copied, sim_nor+0xc1000, sizeof(copied));
-        memset(sim_nor+0xc1000, 0xff, 0x1000);
-        sim_nor[0x60] ^= 1;
-        t_no_scan_request();
-        t_reset_boot_state();
-        memset(RET(0), 0, 256);
-        memset(&sim.fb, 0, sizeof(sim.fb));
-        sim.now = 0;
-        sim.limit = 3000000;
-        sim.err = 0;
-        t_app_calls = t_update_calls = 0;
-        CHECK(t_go() == END_TIMEOUT);
-        CHECK(!memcmp(sim_nor+0xc1000, copied, sizeof(copied)));
-        CHECK(!t_app_calls && !t_update_calls);
-    }
-    t_prep(t_own_fixture());
-    t_open_menu();
-    t_key(KEY_PREV, 1600, 1700);
-    t_key(KEY_SELECT, 2000, 2100);
-    t_key(KEY_SELECT, 2600, 6300);
-    CHECK(t_go() == END_RESET && !t_usb_reset());
-    CHECK(t_row_is(13, "DONE"));
-    unsigned changed = 0;
-    for (unsigned i = 0; i < 0x100000; ++i) {
-        bool erase = SMK ? (i >= 0x9d000 && i < 0xc1000):(i >= 0x93000 && i < 0xea000);
-        if (SMK && i >= 0xff000 && i < 0xff23c)
-            continue;
-        if (sim_nor[i] != (erase ? 0xff:t_fixture_cache[t_own_fixture()][i]))
-            ++changed;
-    }
-    CHECK(!changed);
-    CHECK(!nor_touched(0xc1000, 0x1000) || !SMK);
-    CHECK(!nor_touched(0xfff00, 0x100));
-    if (SMK) {
-        t_prep(1);
-        t_change_region("VM", 0xc0000, 0x3000);
-        t_change_region("BTIF", 0, 0);
-        t_wipe_confirmation();
-        sim.limit = 3000000;
-        CHECK(t_go() == END_TIMEOUT && !t_resets);
-        CHECK(t_row_is(8, "WIPE USER DATA"));
-        CHECK(t_row_is(9, "ERASE C0000-C0FFF"));
-        CHECK(t_row_is(10, "ERASE C2000-C2FFF"));
-        CHECK(t_row_is(11, ""));
-        CHECK(!nor_touched(0xc0000, 0x3000));
-        t_prep(1);
-        t_change_region("VM", 0xc0000, 0x3000);
-        t_change_region("BTIF", 0, 0);
-        t_wipe_confirmation();
-        CHECK(t_go() == END_RESET && !t_usb_reset());
-        CHECK(nor_touched(0xc0000, 0x1000));
-        CHECK(nor_touched(0xc2000, 0x1000));
-        CHECK(!nor_touched(0xc1000, 0x1000));
-        for (unsigned i = 0; i < nor_nlog; ++i)
-            if (nor_log[i].kind == 'E')
-                CHECK(nor_log[i].len == 0x1000 && (nor_log[i].addr == 0xc0000 || nor_log[i].addr == 0xc2000));
-        t_prep(1);
-        t_change_region("VM", 1, 0x1000);
-        t_change_region("BTIF", 0xc0000, 0x1000);
-        t_wipe_confirmation();
-        CHECK(t_go() == END_RESET && !t_usb_reset());
-        CHECK(nor_touched(0xc0000, 0x1000));
-        CHECK(!nor_touched(0xc1000, 0x1000));
-        for (unsigned i = 0; i < nor_nlog; ++i)
-            if (nor_log[i].kind == 'E')
-                CHECK(nor_log[i].addr == 0xc0000 && nor_log[i].len == 0x1000);
-    }
-    t_prep(t_own_fixture());
-    t_open_menu();
-    t_key(KEY_PREV, 1600, 1700);
-    t_key(KEY_SELECT, 2000, 2100);
-    t_key(KEY_SELECT, 2600, 4300);
-    t_key(KEY_NEXT, 3500, 3600);
-    sim.limit = 5000000;
-    CHECK(t_go() == END_TIMEOUT && !t_resets);
-    for (unsigned i = 0; i < nor_nlog; ++i)
-        CHECK(nor_log[i].kind != 'E');
+    if (!SMK)
+        return;
+    t_prep(1);
+    CHECK(t_go() == END_APP);
+    CHECK(!memcmp(sim_nor+0xff000, "TRIMCOPY", 8));
+    uint8_t copied[0x22c];
+    memcpy(copied, sim_nor+0xc1000, sizeof(copied));
+    memset(sim_nor+0xc1000, 0xff, 0x1000);
+    sim_nor[0x60] ^= 1;
+    t_no_scan_request();
+    t_reset_boot_state();
+    memset(RET(0), 0, 256);
+    memset(&sim.fb, 0, sizeof(sim.fb));
+    sim.now = 0;
+    sim.limit = 3000000;
+    sim.err = 0;
+    t_app_calls = t_update_calls = 0;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(!memcmp(sim_nor+0xc1000, copied, sizeof(copied)));
+    CHECK(!t_app_calls && !t_update_calls);
 }
 
 static void t_put_config(const uint8_t *blob, unsigned size)
@@ -1200,7 +1106,7 @@ static void t_requests(void)
     sim.limit = 3000000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_sd_calls == 1 && !t_resets);
-    /* Anything else chooses nothing: this is the wipe's action number. */
+    /* Anything else chooses nothing, such as 3, which no item has. */
     t_prep(4);
     t_sd_card = true;
     memcpy(RET(0), "MBTEST\3", 8);
@@ -1255,7 +1161,7 @@ int main(void)
         t_bad_apps_and_bypass();
         t_uart();
         t_confirmation_cosmetics();
-        t_guard_and_wipe();
+        t_guard();
         t_config_and_flash();
         t_pin_restoration();
     }
