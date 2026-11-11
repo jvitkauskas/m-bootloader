@@ -23,15 +23,6 @@ void nor_clear_log(void)
     nor_reads = 0;
 }
 
-int nor_touched(u32 a, u32 n)
-{
-    u32 i;
-    for (i = 0; i < nor_nlog; i++)
-        if (nor_log[i].addr < a + n && a < nor_log[i].addr + nor_log[i].len)
-            return 1;
-    return 0;
-}
-
 static int spend(void)
 {
     if (nor_budget == 0)

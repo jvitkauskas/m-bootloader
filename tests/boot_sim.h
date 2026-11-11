@@ -29,7 +29,6 @@ int nor_page(u32 addr, const u8 *s, u32 n);
 int nor_erase(u32 addr, u32 n);
 void nor_load(const u8 *img, u32 n);
 void nor_clear_log(void);
-int nor_touched(u32 addr, u32 n);
 void sim_flush(void);
 u32 platform_dma_address(const void *p);
 u32 sim_rd(u32 a);
