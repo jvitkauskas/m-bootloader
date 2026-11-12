@@ -401,7 +401,7 @@ static void t_midi_by_default(void)
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_app_calls && t_midi_runs == 1);
     CHECK(t_row_is(3, "APP BAD CRC"));
-    CHECK(t_row_is(8, "> DOWNLOAD MODE") && t_row_is(9, "  MIDI MODE") && t_row_is(10, "  BOOT ANYWAY"));
+    CHECK(t_row_is(8, "> DOWNLOAD MODE") && t_row_is(9, "  MIDI MODE") && t_row_is(10, "  BOOT ANYWAY") && t_row_is(11, ""));
     /* then BOOT ANYWAY, as before: two steps down, PLAY, PLAY held for the confirmation */
     t_midi_prep(f);
     t_damage_app();

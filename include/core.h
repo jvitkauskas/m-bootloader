@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #define CORE_MAX_FILES 8
-#define CORE_MAX_REGIONS 8
 #define CORE_WORK_SIZE 4096
 #define CORE_UPDATE_LOAD UINT32_C(0x01c0a800)
 #define CORE_UPDATE_MAX UINT32_C(0x5b1c)
@@ -57,11 +56,11 @@ enum core_app_state {
     CORE_APP_NOT_FOUND, CORE_APP_OK, CORE_APP_BAD_CRC, CORE_APP_INCOMPLETE
 };
 struct core_app {
-    uint32_t base, entry, extent, app_length, table_base;
+    uint32_t base, entry, extent, app_length;
     uint16_t key;
-    uint8_t file_count, region_count, metadata_valid;
+    uint8_t file_count;
     enum core_app_state state;
-    struct core_record files[CORE_MAX_FILES], regions[CORE_MAX_REGIONS];
+    struct core_record files[CORE_MAX_FILES];
 };
 /* Mount validates metadata/ranges/entry, check validates every file's data. */
 bool core_app_mount(const struct core_flash *f, uint16_t key, struct core_app *app);
@@ -79,14 +78,6 @@ struct core_updater {
     uint16_t crc;
 };
 bool core_updater_decode(const struct core_flash *f, const uint8_t request[80], uint8_t *output, uint32_t capacity, uint8_t workspace[CORE_WORK_SIZE], struct core_updater *u);
-/* Declared extents with protected interior sectors excluded by the iterator. */
-struct core_wipe {
-    uint32_t start[2], end[2];
-    uint8_t count;
-};
-bool core_wipe_plan(const struct core_flash *f, const struct core_app *app, bool smk, struct core_wipe *plan);
-/* Returns the next safe transaction (4 KiB or 64 KiB), advancing cursor. */
-bool core_wipe_next(const struct core_wipe *plan, uint32_t capacity, bool smk, uint32_t *cursor, uint32_t *address, uint32_t *size);
 struct core_nor {
     struct core_flash flash;
     bool (*program)(void *ctx, uint32_t address, const void *src, uint32_t size);
@@ -97,7 +88,6 @@ enum core_guard_result {
     CORE_GUARD_RESTORED, CORE_GUARD_ERROR
 };
 enum core_guard_result core_guard(const struct core_nor *nor, bool smk, uint8_t workspace[CORE_WORK_SIZE]);
-bool core_wipe_execute(const struct core_nor *nor, const struct core_wipe *plan, bool smk, uint8_t workspace[CORE_WORK_SIZE]);
 /* Invalidates, by programming their CRC to zero, the flash requests (scanned
  * as core_request_scan) whose staged stream ends at stream_end. */
 unsigned core_request_retire(const struct core_nor *nor, uint8_t alignment, uint32_t stream_end);

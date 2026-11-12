@@ -295,30 +295,12 @@ static void midi_mode(void) {
 }
 #endif
 
-static bool confirm(bool wipe, const struct core_wipe *plan) {
+static bool confirm(void) {
     clear_rows(8, 14);
-    display_text(8, RED, wipe ? "WIPE USER DATA":"BOOT ANYWAY");
-    if (wipe) {
-        uint32_t cursor = 0, address, size;
-        unsigned row = 9;
-        bool have = core_wipe_next(plan, nor.flash.capacity, SMK, &cursor, &address, &size);
-        while (have) {
-            uint32_t start = address, end = address+size;
-            while ((have = core_wipe_next(plan, nor.flash.capacity, SMK, &cursor, &address, &size)) && address == end)
-                end = address+size;
-            char line[21];
-            unsigned n = append(line, 0, "ERASE ");
-            n = number(line, n, start, 16, 5);
-            n = append(line, n, "-");
-            number(line, n, end-1, 16, 5);
-            display_text(row++, WHITE, line);
-        }
-        display_text(12, GREY, "KEEP PROTECTED AREAS");
-    } else {
-        display_text(9, WHITE, "APP MAY CRASH");
-        display_text(10, WHITE, "OR MISBEHAVE");
-        display_text(11, WHITE, "CRC AT NEXT BOOT");
-    }
+    display_text(8, RED, "BOOT ANYWAY");
+    display_text(9, WHITE, "APP MAY CRASH");
+    display_text(10, WHITE, "OR MISBEHAVE");
+    display_text(11, WHITE, "CRC AT NEXT BOOT");
     release_select();
     display_text(13, GREY, "OTHER KEYS: CANCEL");
     display_text(14, YELLOW, HOLD);
@@ -342,30 +324,6 @@ static bool confirm(bool wipe, const struct core_wipe *plan) {
         }
         board_wait(20, true);
     }
-}
-
-__attribute__((noinline)) static bool wipe_user(const struct core_wipe *plan) {
-    uint32_t cur = 0, a, n, total = 0, done = 0;
-    while (core_wipe_next(plan, nor.flash.capacity, SMK, &cur, &a, &n))
-        total += n;
-    if (!total)
-        return false;
-    display_text(13, YELLOW, "ERASING");
-    cur = 0;
-    while (core_wipe_next(plan, nor.flash.capacity, SMK, &cur, &a, &n)) {
-        struct core_wipe one;
-        one.count = 1;
-        one.start[0] = a;
-        one.end[0] = a+n;
-        if (!core_wipe_execute(&nor, &one, SMK, work))
-            return false;
-        done += n;
-        display_rect(0, 210, 240, 12, GREY);
-        display_rect(0, 210, 240*done/total, 12, GREEN);
-    }
-    display_text(13, GREEN, "DONE");
-    board_wait(1000, true);
-    hal_reset();
 }
 
 #ifdef TEST_REQUESTS
@@ -394,8 +352,6 @@ __attribute__((noinline)) static bool menu(void) {
         core_app_check(&nor.flash, &app, work);
     uint32_t updates = 0;
     core_request_scan(&nor.flash, header.alignment, work, &updates);
-    struct core_wipe plan;
-    bool can_wipe = core_wipe_plan(&nor.flash, &app, SMK, &plan);
     bool card = sd_probe(60);
     unsigned selection = 0, last = 0, previous = 0, stable = 0;
     bool first_draw = true;
@@ -419,10 +375,6 @@ __attribute__((noinline)) static bool menu(void) {
         if (effective_width == config.width && app.base && (app.state == CORE_APP_BAD_CRC || app.state == CORE_APP_INCOMPLETE)) {
             actions[count] = "BOOT ANYWAY";
             types[count++] = 2;
-        }
-        if (can_wipe) {
-            actions[count] = "WIPE USER DATA";
-            types[count++] = 3;
         }
         if (selection >= count)
             selection = 0;
@@ -553,18 +505,9 @@ __attribute__((noinline)) static bool menu(void) {
             last = previous = stable = 0;
             continue;
         }
-        if (action == 2 || action == 3) {
-            if (!confirm(action == 3, &plan)) {
-                release_select();
-                last = previous = stable = 0;
-                continue;
-            }
-        }
-        if (action == 3) {
-            if (!wipe_user(&plan)) {
-                reason = "WIPE FAILED";
-                can_wipe = false;
-            }
+        if (action == 2 && !confirm()) {
+            release_select();
+            last = previous = stable = 0;
             continue;
         }
         if (xip_attempted) {

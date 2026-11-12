@@ -318,7 +318,7 @@ Encryption boundaries MUST be respected. The boot area is not uniformly encrypte
 | Configuration blob | **Plain bytes** on flash, including its encoded chip-key prefix. Do not apply ENC to the blob. |
 | Application area | For each 32-byte aligned relative offset `q`, ENC state = `unit key XOR ((q >> 2) modulo 65536)`, restart every 32 bytes. Offset is relative to the selected app area, not absolute flash. |
 | Staged update stream and flash update records | **Plain bytes**: outer and inner records, compression header, block length words and compressed data (§6.3), and update request records found by the flash scan (§6.2). No key, no address-dependent seed, no 32-byte restarts. |
-| VM, BTIF, calibration, presets and resource regions | Treat as raw bytes unless their own firmware format is explicitly being interpreted. The bootloader's wipe/guard and the flash loader need no generic decryption here. |
+| VM, BTIF, calibration, presets and resource regions | Treat as raw bytes unless their own firmware format is explicitly being interpreted. The bootloader's calibration guard and the flash loader need no generic decryption here. |
 
 For an unaligned application read, expand to surrounding 32-byte blocks, decrypt each with its own aligned seed, then select the requested bytes. The offset-dependent seed repeats every `0x40000` bytes; the data stream still restarts each line. The SFC hardware implements the matching XIP behavior.
 
@@ -447,7 +447,7 @@ Before parsing top-level metadata set both hardware ENC keys to `FFFF`. After ba
 
 ### 5.5 Device data regions
 
-These are reference layouts, half-open ranges; the bootloader MUST derive wipe targets from the installed table, not blindly use this table. The bootloader MUST protect the fixed ranges even when a corrupt/foreign table disagrees.
+These are reference layouts, half-open ranges. Which areas hold settings, projects or samples depends on the installed firmware: anything that acts on firmware-declared regions (VM, BTIF, USR and the like) MUST derive them from the installed table, not blindly use this table, and MUST protect the fixed ranges even when a corrupt/foreign table disagrees. The SMK calibration guard is the exception: it uses fixed addresses, never the table (§9.3).
 
 | Region | FM-1 stock | SMK-37 stock / Snoop37 | Baud Girl on SMK-37 |
 |---|---|---|---|
@@ -460,9 +460,9 @@ These are reference layouts, half-open ranges; the bootloader MUST derive wipe t
 | USR resources/sounds | `[EA000,FC000)` | `[F4000,FE000)` | `[EA000,FC000)` |
 | Final unit reservation | `[FF000,100000)` | same | same |
 
-PRCT describes a protection range starting at physical zero; it is not another file to checksum or erase. Unlisted gaps are not necessarily disposable: third-party firmware may use them. FM-1 Felucca/SLOOP can put projects/samples within declared VM while also keeping settings or sample data elsewhere. The bootloader's “wipe user data” is exactly a VM/BTIF wipe, not a promise to remove every third-party setting or sample.
+PRCT describes a protection range starting at physical zero; it is not another file to checksum or erase. Unlisted gaps are not necessarily disposable: third-party firmware may use them. FM-1 Felucca/SLOOP can put projects/samples within declared VM while also keeping settings or sample data elsewhere. Erasing the declared VM/BTIF is therefore not a reliable way to reset a firmware's settings, which is why the bootloader has no wipe action (§9.2).
 
-SMK-37's first `0x22C` calibration bytes start at `0xC1000`, with eight-byte marker `trimdat` plus NUL at +`0x224`. Unit wheel values also reside in the presets header around physical `0xC2060` and `0xC2080` and in presets themselves. Those values are unit-specific; never copy one unit's calibration into another unit or into a distributed image. Stock firmware has been observed to reset presets and erase USRTRIM/BTIF when USRFLASH is blank, and default presets do not recreate wheel calibration. Keeping USRTRIM during the wipe alone is insufficient to guarantee that the app will keep it later.
+SMK-37's first `0x22C` calibration bytes start at `0xC1000`, with eight-byte marker `trimdat` plus NUL at +`0x224`. Unit wheel values also reside in the presets header around physical `0xC2060` and `0xC2080` and in presets themselves. Those values are unit-specific; never copy one unit's calibration into another unit or into a distributed image. Stock firmware has been observed to reset presets and erase USRTRIM/BTIF when USRFLASH is blank, and default presets do not recreate wheel calibration. Keeping USRTRIM during an erase of other areas is insufficient to guarantee that the app will keep it later.
 
 ### 5.6 Package format context
 
@@ -635,7 +635,7 @@ The following decision order is externally significant; internal organization is
 5. Establish safe initial flash reads (the stock flow uses dual-output mode), discover JEDEC/capacity and MAC, read physical key and possible fallback, then mount selected app directory with configured bus mode. When width is the legacy probe value 3, try quad before dual and, within each, continuous I/O, I/O, output read. Optional modes must be validated; do not claim a successful mount on invalid CRC. On failure clear the selected app base.
 6. If the LSB flash source exceeds 66 MHz, the stock probe temporarily raises the SPI divider by one for mounting, then restores the configured divider for XIP. The 60 MHz LSB of the stock configuration does not need this. Preserve safe bus timing; the exact need outside the stock configuration is inferred.
 7. Run the SMK calibration guard after SPI setup and before app/menu activity, subject to safe capacity/address checks. It may run even when application mounting failed; damaged application metadata must not give it arbitrary write addresses.
-8. If menu was requested, show it. An accepted boot choice continues through normal update selection; it does not promise to ignore a valid pending updater. Recovery/download and wipe take their explicit actions.
+8. If menu was requested, show it. An accepted boot choice continues through normal update selection; it does not promise to ignore a valid pending updater. Recovery/download takes its explicit action.
 9. Check retained update request first. If valid, forward its private bytes and attempt the verified staged updater. Otherwise, only if mounting failed, look for saved flash requests. If mounted with no request, proceed to app. With no mount and no request, go to recovery.
 10. If no update request was found and the application mounted, handle retained UART requests (§6.2) without looping. If a staged updater fails/returns or is refused, reinitialise flash access, re-mount, make the request ineligible (§6.2), then attempt the supported app if it checks out, otherwise recovery. Record/show an intelligible reason for an invalid updater/address/CRC instead of executing it.
 11. Establish XIP, check file data CRCs unless one-shot bypass applies, populate the fixed app ABI, and call the app.
@@ -750,7 +750,7 @@ Required panel initialization transactions, in order. Each command byte and its 
 | Inversion on `21` | No data. |
 | Clear visible RAM, then display on `29` | Black RGB565 fill. |
 
-## 9. Bootloader: recovery menu, wiping and calibration guard
+## 9. Bootloader: recovery menu and calibration guard
 
 ### 9.1 Menu status and controls
 
@@ -769,11 +769,11 @@ row 5   UPDATE  NONE | RAM | <n> FLASH | RAM <n> FLASH   yellow if any, else whi
 row 6   FLASH   <JEDEC, 6 hex digits> <capacity>K        white
 row 7   --------------------                     grey
 rows 8-12  "> " + selected action (yellow), "  " + others (white)
-row 13  CHECKING / ERASING / DONE / progress bar
+row 13  CHECKING / progress bar
 row 14  OCT-/+ MOVE  PLAY OK  |  < > MOVE SEQ PLAY OK    grey
 ```
 
-Confirmation prompts: row 14 `HOLD PLAY 3 S` (`HOLD SEQ PLAY 3 S` on SMK-37, yellow); row 13 `OTHER KEYS: CANCEL` (grey) while waiting; a progress bar on row 13 (green growing over grey, 12 px high, 2 px below the row's top) while held; then `RELEASE PLAY` (green) until released. BOOT ANYWAY's screen on rows 8–11: `BOOT ANYWAY` (red), `THE APP MAY CRASH OR`, `MISBEHAVE. CHECKED`, `AGAIN AT NEXT START.`. WIPE USER DATA's screen: `WIPE USER DATA` (red), one line `ERASE <start>-<end−1>` (five hex digits each) per region, `KEEP  ALL ELSE` (grey); during the erase `ERASING` and a bar, then `DONE` (green) for a second before the reset. The download-mode screen clears rows 3–14 and shows (row 3 green, rest white): `DOWNLOAD MODE`, blank, `CONNECT USB TO A PC`, `TO WRITE THE FLASH.`, blank, `SWITCH OFF AND ON`, `TO LEAVE.`. Rewriting a row pads it to 20 characters so nothing of the previous text remains.
+Confirmation prompts: row 14 `HOLD PLAY 3 S` (`HOLD SEQ PLAY 3 S` on SMK-37, yellow); row 13 `OTHER KEYS: CANCEL` (grey) while waiting; a progress bar on row 13 (green growing over grey, 12 px high, 2 px below the row's top) while held; then `RELEASE PLAY` (green) until released. BOOT ANYWAY's screen on rows 8–11: `BOOT ANYWAY` (red), `THE APP MAY CRASH OR`, `MISBEHAVE. CHECKED`, `AGAIN AT NEXT START.`. The download-mode screen clears rows 3–14 and shows (row 3 green, rest white): `DOWNLOAD MODE`, blank, `CONNECT USB TO A PC`, `TO WRITE THE FLASH.`, blank, `SWITCH OFF AND ON`, `TO LEAVE.`. Rewriting a row pads it to 20 characters so nothing of the previous text remains.
 
 Required app classification:
 
@@ -786,7 +786,7 @@ Required app classification:
 
 The menu's erased-span heuristic examines the last 32 raw bytes before each 4 KiB boundary within a failed file, and the last 32 bytes of the file, ignoring a partial span shorter than 32. Thirty-two FF bytes at any sampled tail imply incompleteness. Encrypted data makes it unlikely for intact code to have such a span, but it is **not mathematically impossible** (this interpretation is probabilistic). Host inspection instead checks entire erased sectors and can classify a tail-only erase differently. The bootloader SHOULD use this heuristic; bootloader and host labels on such ambiguous corruption need not be identical.
 
-Update status counts flash records with magic/CRC at the same scan positions as §6.2; the retained request gets its own indication. Counting stale records does not mean a normal intact-app boot would run them. The stock SMK record is inside VM and is removed by wiping that VM. Separate “clear update” and “wipe all” actions are **not required** and SHOULD NOT be added.
+Update status counts flash records with magic/CRC at the same scan positions as §6.2; the retained request gets its own indication. Counting stale records does not mean a normal intact-app boot would run them. Separate “clear update”, “wipe user data” and “wipe all” actions are **not required** and SHOULD NOT be added (§9.2).
 
 Required actions, in this order among actions present:
 
@@ -795,27 +795,14 @@ Required actions, in this order among actions present:
 | BOOT APP | App OK | Continue normal update/app decisions; no confirmation. |
 | DOWNLOAD MODE | Always | Show USB/PC instructions and power-cycle exit instruction, then ROM-mode reset; no confirmation. |
 | BOOT ANYWAY | BAD CRC or INCOMPLETE with otherwise safe executable metadata | Warn that firmware may crash or misbehave; fresh 3-second select hold, act only after release. Bypass file data CRC once. |
-| WIPE USER DATA | At least one validated declared VM or BTIF range | Show exact ranges and that all other data is kept; fresh 3-second select hold, act only after release. Erase then restart. |
 
 Menu navigation wraps at each end. Entry-held PLAY must be released before it can select an action. Confirmation requires a fresh select press held alone, shows progress, resets progress on early release and lets another key cancel. After successful hold, prompt for release before acting so a restart does not reinterpret held PLAY as another menu request. Refresh status after cancellation.
 
 BOOT ANYWAY MUST be volatile, one boot only, never a flash write or permanent setting. From a menu reached after failed XIP, retain eight bytes `BOOTANY` plus NUL at R and reset; next startup recognizes and clears all eight before skipping the check. An implementation MAY use another private retained encoding only if it preserves one-shot consumption, does not conflict with ROM/update strings, and survives exactly the needed soft reset. A failed/returned app must not retain a bypass forever. From a power-on menu before XIP, continuing without reset is allowed after the release check.
 
-### 9.2 Wipe safety requirements
+### 9.2 No wipe action
 
-Only validated `VM` and `BTIF` **region** entries with attributes `12` or `92`, positive lengths, 4 KiB-aligned start/length and overflow-safe bounds within the chip are eligible. Do not erase a similarly named ordinary file. Duplicate/conflicting descriptors SHOULD be rejected or safely unioned with an intelligible display. No valid declarations means no wipe action; do not use guessed stock addresses as fallback.
-
-Policy: reject a proposed VM/BTIF range that overlaps any validated application file's physical allocation. A valid header CRC alone does not prove that a semantically contradictory region declaration is safe to erase. This check preserves all known layouts, including Baud Girl.
-
-Per erase transaction, independently protect:
-
-* `[0,0x4000)` for both boards: boot filesystem, bootloader and configuration.
-* `[capacity−0x1000,capacity)` for both: MAC, flash efuse and guard backup.
-* `[0xC1000,0xC2000)` on SMK, even if no USRTRIM descriptor exists.
-
-Subtract protected sectors from eligible ranges. Use aligned 64 KiB erases only when a whole block lies within the eligible range **and** contains no protected sector; otherwise 4 KiB erases. Recheck protection in the actual erase loop, not just the UI. No program operation is necessary for a wipe. Wait completion, show progress/done, and reset. The bootloader SHOULD read back erased sectors or report hardware failure; a blind wait does not prove erase success. The bootloader MUST never erase the last sector just to create room for its guard.
-
-Keep everything outside those declared regions, especially stock sounds/resources and SMK presets/wheel data. A wipe can erase third-party projects/samples residing inside VM; the user confirmation must not describe it as harmless metadata only. Baud Girl's VM overlaps the stock presets allocation, so while Baud Girl is installed that declared VM is eligible except fixed protected sectors. It is impossible to promise preservation of both arbitrary firmware-declared settings and all other firmware's historical layout simultaneously; a unit backup is the way to restore prior presets.
+Releases up to 2.3 had a WIPE USER DATA item that erased the `VM` and `BTIF` regions the installed firmware declares. It was removed: firmwares keep their settings, projects and samples in different places, often outside VM/BTIF or inside it next to data the user wants (§5.5), so erasing the declared regions could leave the problem in place or make things worse. Apart from the SMK calibration guard's first backup and its restore (§9.3), the bootloader changes the flash only for firmware updates (§6.2) and installs a host starts (§10, §11.6). To reset a firmware's settings, use that firmware's own reset, or restore a unit backup.
 
 ### 9.3 SMK calibration guard
 
@@ -1139,7 +1126,7 @@ A host leaves a one-shot request at the start of the retained area (§6), then r
 | 4 | `SD CARD` |
 | 5 | `MIDI MODE` |
 
-Any other action is ignored, and the unit starts normally, so a request can't wipe anything.
+Any other action is ignored, and the unit starts normally.
 
 Nobody is at the keys, so a request never ends in the menu. If the menu doesn't have the item, as with no card, the unit goes to download mode. It does the same when a requested `SD CARD` run returns or fails, so a host can read what the image left in RAM. The menu's error text isn't kept, so an image that should run has to leave its own record. A person choosing the item stays in the menu, as in a release.
 
@@ -1181,15 +1168,10 @@ The test vectors of §5.1 (CRC16, CRC32, ENC and USB CRC stream), the CDB and re
 | App returns / CRC failure after XIP | Menu; subsequent boot-anyway uses reset and one-shot marker consumed before retry. |
 | Menu opened by itself (no app, flash or guard error, app returned, a key stuck before or after, PLAY included, a failed install, a RAM app run) | MIDI mode first, the reason and app state shown, also after a RAM app; each of the four keys back to the menu without a menu step; a stuck key neither hangs the unit nor counts as a press, and counts again after 50 scans up; a failed install with nothing written answers again; menu key at power-on: no MIDI mode. USB is stubbed: the simulator has no USB controller. |
 
-### 12.3 Wipe and calibration guard tests
+### 12.3 Calibration guard tests
 
 With a NOR model enforcing 1→0 programming and 4 KiB/64 KiB erase units, record every write/erase address.
 
-* FM-1 stock wipe: erase exactly eligible VM `[93000,E9000)` and BTIF `[E9000,EA000)`, preserving boot, USR, gaps and FF000.
-* SMK stock/Snoop37 wipe: erase VM `[9D000,C0000)` and BTIF `[C0000,C1000)`; calibration, presets and resources unchanged.
-* Baud Girl wipe: erase declared VM `[D9000,E9000)` and BTIF C0000; preserve EA000 resources and fixed calibration. Do not erase stock VM at 9D000 just from the board type.
-* Malicious descriptors spanning protected areas: only safe allowed sectors erased (or request rejected); never a broad block erase spanning a protected sector. Descriptors not sector-aligned or outside capacity are ineligible. Ordinary files named VM/BTIF are ineligible.
-* Simulate power loss during wipe: app and protected sectors unchanged; repeating wipe completes.
 * Blank guard slot + valid source: record bytes written before header, no erase of FF000, page boundaries honored; exact slot layout/CRC.
 * Nonblank invalid slot: no writes anywhere. Simulate partial first-copy interruption and confirm no destructive “repair.”
 * Valid copy + valid differing source: no changes to source or copy. Valid copy + invalid source marker: restore exact copied bytes via C1000 sector erase only. Bad copy CRC/address/length: no restore.
@@ -1222,10 +1204,10 @@ Before testing on each physical unit: prove USB_KEY recovery works with its curr
 7. Recovery key held ≥1 s, early release, bounce and both menu+recovery held; recovery priority and normal ROM enumeration. Menu key opens menu; all menu LEDs and navigation work on **both** actual boards. FM-1 LED multiplexing is not verified and needs this test.
 8. Boot Felucca/SLOOP on FM-1, Snoop37 and Baud Girl where board-compatible, with their own calibration/USB-rescue shortcuts preserved. Snoop37 does not stand in for Felucca or FM-1 SLOOP.
 9. Controlled corrupted application with backup available: automatic recovery, displayed reason, three-second confirmation/release, one-shot boot-anyway, next power-on checks again; app-return recovery uses reset for retry. A hung app can still be recovered by key. With no key held, the menu opens in MIDI mode: a browser installer finds the unit and installs, after a bad app and after firmware that returns to the bootloader (so USB and clocks start from the state the firmware left), and each of the four keys reaches the menu.
-10. Menu wipe with full before/after raw images: changes restricted to declared VM/BTIF and protected exclusions, flash ID/capacity and addresses displayed correctly. Check that unlisted gaps and resources remain unchanged. Verify firmware-specific consequences rather than assume every erased VM is merely settings.
+10. Menu actions with full before/after raw images: no menu action other than an install changes the flash; flash ID/capacity displayed correctly.
 11. SMK guard: first backup exact, no last-sector erase, then controlled invalidation/restoration. Any experiment blanking USRFLASH can make stock firmware erase calibration and lose wheel/preset data; restore the **same unit's** full relevant regions afterward. Confirm wheel behavior, not just the trim marker. This guard must also be tested when the app cannot mount.
 12. Official updater compatibility on a backed-up SMK: valid app-created request, staged RAM updater runs, official install succeeds, stock bootloader replacement is understood, and reinstalling the bootloader only affects the boot area. Test FM-1 separately; SMK-37 Pro success does not prove FM-1 or Elite updates.
-13. Repeat recovery after controlled power interruption of app update, wipe and guard restore, while keeping USB_KEY recovery available. Record clock/register state and board revision for any failure, rather than assuming undocumented ROM state.
+13. Repeat recovery after controlled power interruption of app update and guard restore, while keeping USB_KEY recovery available. Record clock/register state and board revision for any failure, rather than assuming undocumented ROM state.
 
 Test reports SHOULD state device variant/revision, firmware versions, unit key/JEDEC without publishing private calibration, toolchain, artifact hashes, tests actually performed, measured timing/performance and remaining failures. Success on SMK-37 Pro MUST NOT be reported as Elite or FM-1 hardware success.
 
@@ -1245,7 +1227,7 @@ Test reports SHOULD state device variant/revision, firmware versions, unit key/J
 | Oscillator tag 1 instead of 0 | Proper bounded parsing is required; the impact of changed updater metadata needs an official-update hardware test. Clock frequencies must remain correct. |
 | Dual-bank update lifecycle | The selection algorithm is specified; no real dual-bank image or device has been tested. Versions, interrupted bank installation and info-record conventions beyond the decoded contract are not established. |
 | Arbitrary updater destinations/extended arguments | The stock destination and ABI are known. Extension payload semantics and all legal address ranges are not established. Preserve opaque fields and validate bounds. |
-| Full FM-1 hardware behavior | Startup, firmware hand-over, both startup keys, the menu with its keys and LEDs, menu download mode, BOOT ANYWAY (one-shot) and WIPE USER DATA (exactly `[93000,EA000)` erased for SLOOP's layout) work on FM-1 hardware; the PA2 requirement of §8.2 was found there. M-VAVE's official 014 → 015 update and SLOOP's USB MIDI web install both succeeded with the bootloader installed: the official update wrote the stock bootloader, SLOOP's kept this one. Neither left a flash update record. The running firmware cannot rewrite its own app area, so their staged updaters were started at the next startup, where this bootloader was the only one; the hand-over is therefore inferred to work on the FM-1, not observed directly. Baud Girl's FM-1 build (`FM-1_101`, VM at `D9000`) installs through its own USB MIDI installer, which writes the stock bootloader; reinstalled, this bootloader starts it and lists the wipe as one range `[D9000,EA000)`. |
+| Full FM-1 hardware behavior | Tested in October 2026 on builds just after 1.1: startup, firmware hand-over, both startup keys, the menu with its keys and LEDs, menu download mode, BOOT ANYWAY (one-shot) and WIPE USER DATA (exactly `[93000,EA000)` erased for SLOOP's layout; the item was removed after 2.3, and its removal is covered only by the simulator) work on FM-1 hardware; the PA2 requirement of §8.2 was found there. M-VAVE's official 014 → 015 update and SLOOP's USB MIDI web install both succeeded with the bootloader installed: the official update wrote the stock bootloader, SLOOP's kept this one. Neither left a flash update record. The running firmware cannot rewrite its own app area, so their staged updaters were started at the next startup, where this bootloader was the only one; the hand-over is therefore inferred to work on the FM-1, not observed directly. Baud Girl's FM-1 build (`FM-1_101`, VM at `D9000`) installs through its own USB MIDI installer, which writes the stock bootloader; reinstalled, the bootloader starts it and listed the wipe as one range `[D9000,EA000)`. |
 | Elite physical behavior | Shared pin/setup/boot/firmware behavior supports one SMK build; Elite hardware is not verified. |
 | Recalibration after guard backup | The guard leaves a valid newer source intact but retains the old backup. If the new source is later erased, the old calibration returns. Updating the backup safely requires a separately designed maintenance protocol. |
 | Guard interruption and backup corruption | Header-last writing helps identify validity, but no redundant slot or atomic recovery is guaranteed. A nonblank partial copy is intentionally left alone. |
