@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* A USB-MIDI device on USB0: only what MIDI mode needs, polled, with no interrupts. The register
- * sequences follow JieLi's AC79 SDK (Apache-2.0) and felucca-bsp's chip/fm1_usb.h (MPL-2.0).
+ * sequences were written from the facts in JieLi's AC79 SDK (Apache-2.0) and felucca-bsp's
+ * chip/fm1_usb.h (MPL-2.0); no code was taken from either (NOTICE.md).
  * The controller is a MUSB, whose registers are reached one at a time through USB_CON1. */
 #include "usb_midi.h"
 #include "midi_update.h"

@@ -212,12 +212,20 @@ repository, and the tests skip them when absent.
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
 
-## Clean room
+## Provenance
 
-m-bootloader was written from scratch, from a specification of the chip, the
-flash formats and the protocols ([docs/SPEC.md](docs/SPEC.md)). No code from
-JieLi's SDK or from the earlier open bootloader went into it. The people who
-studied the original wrote only the specification, and separate sessions that
-never saw the original wrote the code.
+m-bootloader is an independent reimplementation, written from a specification
+of the chip, the flash formats and the protocols ([docs/SPEC.md](docs/SPEC.md)).
+It contains no code from JieLi's SDK or bootloader. Compared with every SDK
+release's bootloader and the SDK's download-mode loader, built with the same
+compiler, it shares only the constants and procedures that the hardware and
+the formats fix.
+
+The specification was written by studying JieLi's bootloader, including the
+author's earlier C reconstruction of it (Apache-2.0, like JieLi's SDK), along
+with the public sources in its Appendix B and the hardware itself. It records
+facts, not code. [docs/PROVENANCE.md](docs/PROVENANCE.md) sets out how the
+specification and the code were kept apart, where that separation did not
+hold, and the comparisons behind the paragraph above.
 
 MIT licence: see [LICENSE](LICENSE).
