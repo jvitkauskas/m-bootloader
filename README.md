@@ -165,11 +165,11 @@ skips the model and version checks.
 
 You need Python 3, GNU Make, Rust and a C compiler, and the
 [pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release
-`pi32v2-23.1.5-2`. Nothing from JieLi is needed. On Linux x86-64:
+`pi32v2-23.1.5-5`. Nothing from JieLi is needed. On Linux x86-64:
 
 ```sh
-curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.5-2/pi32v2-llvm-23.1.5-2-linux-x64.tar.xz
-echo 'cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990  toolchain.tar.xz' | sha256sum -c
+curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.5-5/pi32v2-llvm-23.1.5-5-linux-x64.tar.xz
+echo 'a20e257b840eb6b212761bfa93a7f3804502940d0035d62790da3d42fefa31e3  toolchain.tar.xz' | sha256sum -c
 mkdir toolchain && tar -xJf toolchain.tar.xz -C toolchain --strip-components=1
 cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 upkr
 make
