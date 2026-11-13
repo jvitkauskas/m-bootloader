@@ -226,7 +226,7 @@ compiler, it shares only the constants and procedures that the hardware and
 the formats fix.
 
 The specification was written by studying JieLi's bootloader, including the
-author's earlier C reconstruction of it (Apache-2.0, like JieLi's SDK), along
+author's earlier C reconstruction of it (since withdrawn), along
 with the public sources in its Appendix B and the hardware itself. It records
 facts, not code. The code was written from it by separate sessions that were
 not given the original. [docs/SPEC.md](docs/SPEC.md) is a later standalone

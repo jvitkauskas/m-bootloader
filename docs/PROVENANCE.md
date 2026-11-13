@@ -11,15 +11,15 @@ were not given the original.
 
 - **A C reconstruction of JieLi's bootloader** (2026-10-10). This is a matching
   decompilation of `cpu/wl82/tools/uboot.boot` from JieLi's AC79 SDK 1.1.9.
-  Built with JieLi's compiler, it reproduces the original byte for byte. It is
-  Apache-2.0, like the SDK.
+  Built with JieLi's compiler, it reproduces the original byte for byte.
 - **An earlier FM-1 bootloader** (2026-10-10 to 2026-10-14), restructured from
-  that reconstruction and modified. It is Apache-2.0.
+  that reconstruction and modified.
 
-Both are derived from JieLi's code. m-bootloader is not: see the checks below.
-JieLi's bootloader is Apache-2.0, so derived code would have been usable with
-its notices. m-bootloader was written separately so that it could be MIT
-throughout.
+Both are derived from JieLi's code, and both have been withdrawn. JieLi ships
+its bootloader only as a binary in an SDK published under Apache-2.0, without
+source or terms of its own. Whether that licence covers the binary, and so
+code derived from it, is not certain. m-bootloader was written separately so
+that it does not depend on the answer; see the checks below.
 
 ## How 1.0 was written
 
