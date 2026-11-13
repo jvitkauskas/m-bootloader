@@ -55,6 +55,11 @@ run with it.
   when the menu is open. It's been tested on an FM-1 and on a hand-wired
   SMK-37 Pro, where an image ran from the card, returned to the menu and ran
   again.
+- **USB disk (FM-1).** With a card fitted, the FM-1's menu also gets a
+  **USB disk** item, which makes the card a USB drive on a computer until you
+  eject it there or press **PLAY**. It's m-apps' `usbdisk` built in, one sector
+  at a time, so it's slower than that app. The SMK-37's bootloader has no room
+  for it. Not yet tested on hardware.
 - **Checked start.** Every firmware file's checksum is verified before the
   firmware starts.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
@@ -202,12 +207,14 @@ repository, and the tests skip them when absent.
 |---|---|
 | `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
 | `src/boot.c` | stage 1: start-up decisions, menu |
+| `src/usb.c` | the USB device side, for MIDI mode and USB DISK |
 | `src/midi_update.c`, `src/usb_midi.c` | MIDI mode: the update protocol, and the USB-MIDI device |
+| `src/usb_disk.c` | USB DISK (FM-1): the card as a USB mass storage device |
 | `src/core.c` | flash formats, checksums, ciphers, updater decoding and calibration rules (portable C, also built for the tests) |
 | `src/contract.c` | what the firmware and updaters are handed at start |
 | `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
 | `src/loader.c`, `src/loader_target.c` | the flash loader |
-| `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
+| `src/sdboot.c` | finding a card, loading and running `/MBOOT/MENU.BIN` from it, and USB DISK's sectors |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
 | `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |

@@ -25,6 +25,10 @@ static jmp_buf t_escape;
 static unsigned t_app_calls, t_update_calls, t_resets, t_sd_calls;
 static bool t_sd_card, t_sd_leaves_spi_off;
 static const char *t_sd_result;
+static unsigned t_disk_opens, t_disk_runs, t_disk_closes, t_disk_mhz;
+static uint32_t t_disk_sectors, t_disk_served;
+static enum usb_disk_end t_disk_end;
+static bool t_disk_drawn, t_disk_screen, t_disk_left;
 
 /* The card is on the panel's bus, which the simulated chip doesn't model; these stand in for src/sdboot.c. */
 bool sd_probe(unsigned lsb_mhz)
@@ -33,9 +37,10 @@ bool sd_probe(unsigned lsb_mhz)
     return t_sd_card;
 }
 
-const char *sd_stage2(unsigned lsb_mhz)
+const char *sd_stage2(unsigned lsb_mhz, uint8_t scratch[512])
 {
     (void)lsb_mhz;
+    (void)scratch;
     ++t_sd_calls;
     if (t_sd_leaves_spi_off) {
         REG(0x11d00) = 0;
@@ -172,6 +177,10 @@ static void t_reset_boot_state(void)
     t_sd_calls = 0;
     t_sd_card = false;
     t_sd_result = NULL;
+    t_disk_opens = t_disk_runs = t_disk_closes = t_disk_mhz = 0;
+    t_disk_sectors = t_disk_served = 0;
+    t_disk_end = USB_DISK_EJECTED;
+    t_disk_drawn = t_disk_screen = t_disk_left = false;
 #ifdef TEST_REQUESTS
     test_sd = false;
 #endif
@@ -392,6 +401,44 @@ static bool t_row_is(unsigned row, const char *wanted)
         fprintf(stderr, "row %u: '%s', wanted '%s'\n", row, got, wanted);
     return equal;
 }
+
+#ifdef USB_DISK
+#define T_USB_DISK true
+#else
+#define T_USB_DISK false
+#endif
+#ifdef USB_DISK
+/* USB DISK's card and USB, likewise: what the menu opened, ran and closed, and what was on screen meanwhile. */
+static u32 t_disk_pixels;
+
+uint32_t sd_disk_open(unsigned lsb_mhz)
+{
+    ++t_disk_opens;
+    t_disk_mhz = lsb_mhz;
+    t_disk_pixels = sim.fb_pix;
+    t_disk_screen = t_row_is(3, "USB DISK") && t_row_is(5, "EJECT IT ON THE PC") && t_row_is(6, "OR PRESS PLAY")
+        && t_row_is(8, "ALWAYS EJECT FIRST");
+    return t_disk_sectors;
+}
+
+enum usb_disk_end usb_disk_run(uint32_t sectors)
+{
+    ++t_disk_runs;
+    t_disk_served = sectors;
+    /* Left with PLAY: it's down from now, for half a second. */
+    if (t_disk_end == USB_DISK_LEFT)
+        t_key(KEY_SELECT, (unsigned)(sim.now/1000), (unsigned)(sim.now/1000)+500);
+    t_disk_left = usb_disk_leave();
+    return t_disk_end;
+}
+
+void sd_disk_close(void)
+{
+    ++t_disk_closes;
+    /* The card shares SPI1 with the panel. */
+    t_disk_drawn = sim.fb_pix != t_disk_pixels;
+}
+#endif
 
 static void t_damage_app(void)
 {
@@ -1041,13 +1088,15 @@ static void t_sd_menu(void)
     CHECK(t_go() == END_TIMEOUT);
     CHECK(!t_sd_calls);
     CHECK(t_row_is(8, "> DOWNLOAD MODE"));
-    /* A card puts it on top, selected. */
+    CHECK(t_row_is(9, ""));
+    /* A card puts it on top, selected, with USB DISK under it on the FM-1. */
     t_prep(4);
     t_sd_card = true;
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
     CHECK(t_row_is(8, "> SD CARD"));
-    CHECK(t_row_is(9, "  DOWNLOAD MODE"));
+    CHECK(t_row_is(9, T_USB_DISK ? "  USB DISK":"  DOWNLOAD MODE"));
+    CHECK(t_row_is(10, T_USB_DISK ? "  DOWNLOAD MODE":""));
     /* A failure shows in the menu, which stays usable. */
     t_prep(4);
     t_sd_card = true;
@@ -1082,9 +1131,69 @@ static void t_sd_menu(void)
     t_prep(4);
     t_sd_card = true;
     t_key(KEY_NEXT, 1600, 1700);
+    if (T_USB_DISK)
+        t_key(KEY_NEXT, 1800, 1900);
     t_key(KEY_SELECT, 2000, 2100);
     CHECK(t_go() == END_RESET && t_usb_reset());
-    CHECK(!t_sd_calls);
+    CHECK(!t_sd_calls && !t_disk_opens);
+}
+
+/* USB DISK, on the FM-1 (not in a test build): the card opened at the LSB the card item uses, served at its size, closed, and the menu back
+ * with the item still selected. */
+static void t_usb_disk(void)
+{
+#ifndef USB_DISK
+    /* No room for it: on the SMK-37, and in a test build. */
+#ifndef TEST_REQUESTS
+    CHECK(SMK);
+#endif
+#else
+    t_prep(4);
+    t_sd_card = true;
+    t_disk_sectors = 123456;
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_disk_opens == 1 && t_disk_runs == 1 && t_disk_closes == 1 && t_disk_mhz == 60);
+    CHECK(t_disk_served == 123456);
+    /* Its screen first, then nothing drawn until the card is closed, and the PLAY that chose it doesn't leave it. */
+    CHECK(t_disk_screen && !t_disk_drawn && !t_disk_left);
+    CHECK(!t_sd_calls && !t_resets && !t_app_calls);
+    CHECK(t_row_is(2, ""));
+    CHECK(t_row_is(8, "  SD CARD") && t_row_is(9, "> USB DISK"));
+    /* No card after all: nothing served, the card still closed, and the menu says so. */
+    t_prep(4);
+    t_sd_card = true;
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_disk_opens == 1 && !t_disk_runs && t_disk_closes == 1);
+    CHECK(t_row_is(2, "SD CARD ERROR") && t_row_is(9, "> USB DISK"));
+    /* No computer came. */
+    t_prep(4);
+    t_sd_card = true;
+    t_disk_sectors = 8;
+    t_disk_end = USB_DISK_NO_HOST;
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3000000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_disk_runs == 1 && t_disk_closes == 1);
+    CHECK(t_row_is(2, "NO USB HOST"));
+    /* Left with PLAY, which the menu doesn't then take as choosing USB DISK again. */
+    t_prep(4);
+    t_sd_card = true;
+    t_disk_sectors = 8;
+    t_disk_end = USB_DISK_LEFT;
+    t_key(KEY_NEXT, 1600, 1700);
+    t_key(KEY_SELECT, 2000, 2100);
+    sim.limit = 3500000;
+    CHECK(t_go() == END_TIMEOUT);
+    CHECK(t_disk_left && t_disk_runs == 1 && t_disk_closes == 1 && !t_sd_calls && !t_resets);
+    CHECK(t_row_is(2, "") && t_row_is(9, "> USB DISK"));
+#endif
 }
 
 #ifdef TEST_REQUESTS
@@ -1165,6 +1274,7 @@ int main(void)
     t_fm1_matrix_enable();
     t_public_recovery();
     t_sd_menu();
+    t_usb_disk();
 #ifdef TEST_REQUESTS
     t_requests();
 #endif

@@ -993,9 +993,9 @@ Neither unit has a card slot. A mod puts a microSD card on the panel's SPI1, in 
 
 The card is selected while the panel's CS is high, and the panel while it's low. D/C is the pin that can be SPI1's data input in the panel's pin group on each board. There is no card-detect line. On a unit without a mod, nothing answers, so the menu doesn't get the item.
 
-The bootloader touches the card only while the menu is open, never on a normal start. Opening the menu tries to start the card, and if it answers the menu shows `SD CARD` as its first item, selected. A session first sends the panel a NOP, so that what is clocked afterwards with the card deselected is ignored, then makes D/C SPI1's DI, at about 400 kHz until the card has started and LSB/4 afterwards. Choosing the item starts the card again and loads the image; a failure is shown in the menu, which stays usable.
+The bootloader touches the card only while the menu is open, never on a normal start. Opening the menu tries to start the card, and if it answers the menu shows `SD CARD` as its first item, selected, and on the FM-1 `USB DISK` under it (§11.5.1). A session first sends the panel a NOP, so that what is clocked afterwards with the card deselected is ignored, then makes D/C SPI1's DI, at about 400 kHz until the card has started and LSB/4 afterwards. Choosing the item starts the card again and loads the image; a failure is shown in the menu, which stays usable.
 
-The image is `/MBOOT/MENU.BIN` on a FAT32 volume with 512-byte sectors, either in the MBR's first partition or with no partition table. Both names are matched as 8.3 names, so the folder and file are found whichever case the host wrote them in. The bootloader doesn't write to the card.
+The image is `/MBOOT/MENU.BIN` on a FAT32 volume with 512-byte sectors, either in the MBR's first partition or with no partition table. Both names are matched as 8.3 names, so the folder and file are found whichever case the host wrote them in. Loading it doesn't write to the card.
 
 The image is a flat binary:
 
@@ -1016,6 +1016,24 @@ The retained area from `0x01C7FD80` isn't free, as a reset and the menu both rea
 
 * **return,** which means "carry on": the bootloader sets up the flash interface and the panel again and returns to the menu, so the image can leave SPI1 and the panel in any state. For this, it must leave the bootloader's RAM below `0x01C0A800` alone;
 * **reset,** after which the unit starts normally. It must do this after changing what the bootloader mounted, such as the firmware in flash.
+
+#### 11.5.1 USB DISK (FM-1)
+
+`USB DISK` makes the card a USB disk, so a computer can read and write it with nobody needing to take it out. It's ported from m-apps' `usbdisk`, one sector at a time where that streams with DMA, as the FM-1's boot area has room for no more. The SMK-37's bootloader is about 640 bytes bigger to begin with, and it had no room at all: it doesn't have the item. Nor do test builds (§11.9), whose requests take the room it would.
+
+The screen shows `USB DISK`, `EJECT IT ON THE PC`, `OR PRESS PLAY` and `ALWAYS EJECT FIRST` before the card is opened, and nothing is drawn until it's closed, as the card shares SPI1 with the panel. The PLAY that chose it has to come up first. It ends, back in the menu with the item selected, when:
+
+* the host ejects the disk (START STOP UNIT with LoEj), which is the safe way;
+* PLAY is pressed. It's read about every 0.1 s between commands and every few milliseconds while one is waiting for the host, so a host that has stopped reading can't keep the unit there. A command left that way gets no status. A write the host had already been told of is on the card;
+* no host has configured it after about two minutes: the menu then shows `NO USB HOST`.
+
+If the card doesn't start or its size can't be read, nothing is served and the menu shows `SD CARD ERROR`.
+
+**The card** is started as for stage 2, at about 400 kHz, then run at 4 MHz (SPI1's divider `LSB/4−1` at LSB 60 MHz), the clock stage 2's loading has always used, which has worked on every wiring tried. CRCs are on both ways (CMD59): a command's CRC7 and a data block's CRC16 (`core_crc16` from 0) are sent and checked, so a misread or miswritten sector is caught rather than served. A card addressed by byte gets CMD16 for 512-byte blocks. The size comes from the CSD, version 1 or 2. A sector is read with CMD17, or written with CMD24 then CMD13, as a card can only report some write failures afterwards. A failed read or write restarts the card and tries again, three times in all, as some cards refuse everything after an error until restarted (m-apps' AGENTS.md). Closing turns CRCs off again (CMD59 0), as a card keeps its state through a soft reset and other programs may expect it without them.
+
+**USB** is a bulk-only mass storage device, `FM-1 USB DISK`, 1209:0003, serial `000000000001`, with one logical unit, SCSI vendor `M-BOOT`, and endpoint 1 bulk in and out with 64-byte packets, on usb.c's polled device (§11.6). It answers TEST UNIT READY, REQUEST SENSE, INQUIRY (not vital product data), MODE SENSE (6) (not write-protected), START STOP UNIT, PREVENT ALLOW MEDIUM REMOVAL, VERIFY (10), SYNCHRONIZE CACHE (10), READ CAPACITY (10), READ (10) and WRITE (10); anything else is ILLEGAL REQUEST, which hosts fall back from. A write's status goes to the host only once the card has confirmed it. A bad command block stalls both endpoints until the host's bulk-only reset, as bulk-only transport requires. Its buffers are at `0x01C0A800`, which nothing else uses while the menu runs.
+
+Its number in `src/boot.c` is 6, which isn't a test request's (§11.9).
 
 ### 11.6 MIDI mode
 

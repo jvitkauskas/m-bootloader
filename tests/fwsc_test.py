@@ -209,7 +209,8 @@ for variant, (path, identity) in BUILT.items():
     listed = members(image)
     assert list(listed) == ['ota.bin'] and listed['ota.bin'][0] == OTA_TYPE
     assert host('decode', listed['ota.bin'][1]) == self_extracting[board]
-    assert unweave(package(variant, containers[board], installers[board], '042'))[0] == identity[:-3] + '042'
+    assert unweave(package(variant, containers[board], installers[board], '042', staged=self_extracting[board]))[0] \
+        == identity[:-3] + '042'
     refuses(package, variant, containers[other], installers[board])
     refuses(package, variant, containers[board], installers[other])
     for version in ('99', '0999', '09a', ''):

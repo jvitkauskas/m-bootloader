@@ -19,7 +19,7 @@
  * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
  * bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached. A missing dump is a SKIP of the extra only;
  * with REQUIRE_FIXTURES set in the environment it fails.
- * Not here: USB and the clocks. The simulator has no USB controller, and src/usb_midi.c doesn't build for the host,
+ * Not here: USB and the clocks. The simulator has no USB controller (tests/usb_test.c has the USB side on its own),
  * so what an exiting app leaves in them is for hardware (docs/SPEC.md §12.5). */
 #define MIDI_MODE 1
 /* The RAM app mu_start_app() calls is t_ram_app (below), under the name MU_APP_RAM has here. */

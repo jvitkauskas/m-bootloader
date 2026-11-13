@@ -25,8 +25,11 @@
 #define DO_PORT 2
 #define DO_PIN 8
 #endif
-static uint8_t sb[512] __attribute__((aligned(4)));
-static bool hc;
+/* The caller's, while loading. */
+static uint8_t *sb;
+/* crc: the card checks CRCs both ways (USB DISK); without, data's CRCs are ignored, as stage 2's loading always has. */
+static bool hc, crc;
+static unsigned disk_mhz;
 static uint32_t fat_lba, data_lba;
 static unsigned spc;
 
@@ -44,35 +47,43 @@ static void card(bool on) {
 }
 
 static uint8_t cmd(unsigned c, uint32_t a) {
+    uint8_t frame[5] = {(uint8_t)(0x40 | c), (uint8_t)(a >> 24), (uint8_t)(a >> 16), (uint8_t)(a >> 8), (uint8_t)a}, crc7 = 0;
     card(false);
     x(0xff);
     card(true);
     x(0xff);
-    x((uint8_t)(0x40 | c));
-    for (int s = 24; s >= 0; s -= 8)
-        x((uint8_t)(a >> s));
-    x(c == 0 ? 0x95:c == 8 ? 0x87:1);
+    for (unsigned i = 0; i < 5; ++i) {
+        x(frame[i]);
+        for (unsigned b = 0; b < 8; ++b) {
+            crc7 = (uint8_t)(crc7 << 1);
+            if ((frame[i] << b ^ crc7)&0x80)
+                crc7 ^= 0x09;
+        }
+    }
+    x((uint8_t)(crc7 << 1 | 1));
     uint8_t r = 0xff;
     for (unsigned i = 0; i < 16 && ((r = x(0xff))&0x80); ++i)
         ;
     return r;
 }
 
+/* A data block after a command's answer. */
+static bool block(uint8_t *p, unsigned n) {
+    uint8_t r;
+    unsigned i = 0;
+    while ((r = x(0xff)) == 0xff && ++i < 100000)
+        ;
+    if (r != 0xfe)
+        return false;
+    for (i = 0; i < n; ++i)
+        p[i] = x(0xff);
+    unsigned check = x(0xff) << 8;
+    check |= x(0xff);
+    return !crc || check == core_crc16(0, p, n);
+}
+
 static bool rd(uint32_t lba, uint8_t *p) {
-    bool ok = false;
-    if (!cmd(17, hc ? lba:lba << 9)) {
-        uint8_t r;
-        unsigned i = 0;
-        while ((r = x(0xff)) == 0xff && ++i < 100000)
-            ;
-        if (r == 0xfe) {
-            for (i = 0; i < 512; ++i)
-                p[i] = x(0xff);
-            x(0xff);
-            x(0xff);
-            ok = true;
-        }
-    }
+    bool ok = !cmd(17, hc ? lba:lba << 9) && block(p, 512);
     card(false);
     return ok;
 }
@@ -199,7 +210,75 @@ bool sd_probe(unsigned lsb_mhz) {
     return found;
 }
 
-const char *sd_stage2(unsigned lsb_mhz) {
+/* USB DISK's card: started at about 400 kHz, then run at 4 MHz as for stage 2, which has worked on every wiring tried.
+ * CRCs catch a bad transfer, and a failure restarts the card, as some get stuck after an error (m-apps' AGENTS.md). */
+static bool disk_start(void) {
+    crc = false;
+    REG(SPI1+4) = disk_mhz*5/2-1;
+    bool ok = init() && !cmd(59, 1) && (hc || !cmd(16, 512));
+    card(false);
+    REG(SPI1+4) = disk_mhz/4-1;
+    crc = ok;
+    return ok;
+}
+
+uint32_t sd_disk_open(unsigned lsb_mhz) {
+    uint8_t csd[16];
+    disk_mhz = lsb_mhz;
+    session_open(lsb_mhz);
+    bool ok = disk_start() && !cmd(9, 0) && block(csd, 16);
+    card(false);
+    if (!ok)
+        return 0;
+    if (csd[0] >> 6 == 1)
+        return (((uint32_t)(csd[7]&0x3f) << 16 | (uint32_t)csd[8] << 8 | csd[9])+1)*1024;
+    uint32_t size = ((uint32_t)(csd[6]&3) << 10 | (uint32_t)csd[7] << 2 | csd[8] >> 6)+1;
+    unsigned multiply = ((csd[9]&3u) << 1 | csd[10] >> 7)+2, length = csd[5]&15u;
+    return size << multiply << length >> 9;
+}
+
+static bool ready(void) {
+    for (unsigned i = 0; i < 2000000; ++i)
+        if (x(0xff) == 0xff)
+            return true;
+    return false;
+}
+
+/* The card can only report a failed write after it, so this asks. */
+static bool wr(uint32_t lba, const uint8_t *p) {
+    bool ok = false;
+    if (!cmd(24, hc ? lba:lba << 9)) {
+        unsigned check = core_crc16(0, p, 512);
+        x(0xff);
+        x(0xfe);
+        for (unsigned i = 0; i < 512; ++i)
+            x(p[i]);
+        x((uint8_t)(check >> 8));
+        x((uint8_t)check);
+        ok = (x(0xff)&0x1f) == 5 && ready() && !cmd(13, 0) && !x(0xff);
+    }
+    card(false);
+    return ok;
+}
+
+bool sd_disk(uint32_t lba, uint8_t *p, bool write) {
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        if (write ? wr(lba, p):rd(lba, p))
+            return true;
+        disk_start();
+    }
+    return false;
+}
+
+void sd_disk_close(void) {
+    /* A card keeps its state through a soft reset, and other programs may expect it without CRCs. */
+    cmd(59, 0);
+    crc = false;
+    session_close();
+}
+
+const char *sd_stage2(unsigned lsb_mhz, uint8_t scratch[512]) {
+    sb = scratch;
     session_open(lsb_mhz);
     const char *error = "NO SD CARD";
     if (init()) {

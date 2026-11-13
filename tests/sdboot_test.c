@@ -19,18 +19,83 @@ static unsigned bus_state;
 static bool selected, present, read_fails;
 static uint8_t command[6], reply[600];
 static unsigned command_len, reply_pos, reply_len;
+/* USB DISK's side: CRC mode, the card's CSD, an old byte-addressed card, and faults to inject. The CRCs here are
+ * worked out by long division, as the SD specification states them, not as the driver does. */
+static bool crc_mode, sdsc, status_fails, stuck;
+static uint8_t csd[16];
+/* sticking_reads: reads that fail and leave the card refusing everything until it's restarted, as m-apps' AGENTS.md
+ * tells of one card. */
+static unsigned bad_command_crcs, corrupt_reads, rejected_writes, sticking_reads, writing, write_len;
+static uint32_t write_at, writes;
+static uint8_t write_buffer[514];
+
+static unsigned crc_divide(const uint8_t *p, unsigned bytes, unsigned width, unsigned poly) {
+    unsigned r = 0, top = 1u << width;
+    for (unsigned i = 0; i < bytes*8+width; ++i) {
+        r = r << 1 | (i < bytes*8 ? (unsigned)(p[i/8] >> (7-i%8)&1):0);
+        if (r&top)
+            r ^= poly;
+    }
+    return r;
+}
+
+static unsigned crc7_of(const uint8_t *p, unsigned n) {
+    return crc_divide(p, n, 7, 0x89);
+}
+
+static unsigned crc16_of(const uint8_t *p, unsigned n) {
+    return crc_divide(p, n, 16, 0x11021);
+}
+
+/* A field of the CSD, by its bit positions in the specification (bit 127 first). */
+static void csd_field(unsigned high, unsigned low, uint32_t value) {
+    for (unsigned bit = low; bit <= high; ++bit) {
+        uint8_t mask = (uint8_t)(1u << (bit%8));
+        if (value >> (bit-low)&1)
+            csd[15-bit/8] |= mask;
+        else
+            csd[15-bit/8] &= (uint8_t)~mask;
+    }
+}
 
 static void answer(uint8_t b) {
     reply[reply_len++] = b;
+}
+
+static void answer_block(const uint8_t *p, unsigned n, bool corrupt) {
+    unsigned check = crc16_of(p, n);
+    answer(0xfe);
+    memcpy(reply+reply_len, p, n);
+    if (corrupt)
+        reply[reply_len+n/2] ^= 0x10;
+    reply_len += n;
+    answer((uint8_t)(check >> 8));
+    answer((uint8_t)check);
 }
 
 static void card_command(void) {
     unsigned c = command[0]&0x3f;
     uint32_t arg = (uint32_t)command[1] << 24 | (uint32_t)command[2] << 16 | (uint32_t)command[3] << 8 | command[4];
     reply_pos = reply_len = 0;
-    if (c == 0 || c == 55)
+    if (command[5] != (crc7_of(command, 5) << 1 | 1)) {
+        ++bad_command_crcs;
+        if (crc_mode || c == 0 || c == 8) {
+            answer(0x08);
+            return;
+        }
+    }
+    if (c == 0) {
+        crc_mode = stuck = false;
+        answer(1);
+    } else if (stuck)
+        answer(4);
+    else if (c == 55)
         answer(1);
     else if (c == 8) {
+        if (sdsc) {
+            answer(5); /* an old card, for which it's illegal */
+            return;
+        }
         answer(1);
         for (unsigned i = 0; i < 4; ++i)
             answer(i == 2 ? 1:i == 3 ? 0xaa:0);
@@ -38,30 +103,80 @@ static void card_command(void) {
         answer(0);
     else if (c == 58) {
         answer(0);
-        answer(0x40); /* high capacity: addressed by sector */
+        answer(sdsc ? 0:0x40); /* high capacity: addressed by sector */
         for (unsigned i = 0; i < 3; ++i)
             answer(0);
-    } else if (c == 17) {
+    } else if (c == 59) {
+        crc_mode = arg&1;
+        answer(0);
+    } else if (c == 16)
+        answer(arg == 512 ? 0:0x40);
+    else if (c == 9) {
+        answer(0);
+        answer_block(csd, 16, false);
+    } else if (c == 13) {
+        answer(0);
+        answer(status_fails ? 0x40:0);
+    } else if (c == 17 || c == 24) {
+        if (sdsc) {
+            assert(!(arg&511));
+            arg >>= 9;
+        }
         /* Keeps one far cluster of a big card in the image. */
         if (high_lba && arg >= high_lba)
             arg = arg-high_lba+SECTORS-SPC;
-        if (read_fails || arg >= SECTORS) {
+        if (read_fails || arg >= SECTORS || (c == 17 && sticking_reads && sticking_reads--)) {
+            stuck = c == 17 && !read_fails && arg < SECTORS;
             answer(4);
             return;
         }
         answer(0);
-        answer(0xfe);
-        memcpy(reply+reply_len, disk+arg*512, 512);
-        reply_len += 512;
-        answer(0);
-        answer(0);
+        if (c == 24) {
+            writing = 1;
+            write_at = arg;
+            return;
+        }
+        answer_block(disk+arg*512, 512, corrupt_reads && corrupt_reads--);
     } else
         answer(4);
+}
+
+/* A written block: a token, the data and its CRC, then the card's verdict and a busy while it programs. */
+static void write_byte(uint8_t in) {
+    if (writing == 1) {
+        if (in == 0xfe)
+            writing = 2, write_len = 0;
+        return;
+    }
+    write_buffer[write_len++] = in;
+    if (write_len < sizeof(write_buffer))
+        return;
+    writing = 0;
+    bool good = crc16_of(write_buffer, 512) == ((unsigned)write_buffer[512] << 8 | write_buffer[513]);
+    if (good && rejected_writes) {
+        --rejected_writes;
+        good = false;
+    }
+    if (good) {
+        memcpy(disk+write_at*512, write_buffer, 512);
+        ++writes;
+    }
+    reply_pos = reply_len = 0;
+    answer(good ? 0x05:0x0b);
+    for (unsigned i = 0; i < 3; ++i)
+        answer(0);
 }
 
 static uint8_t card_byte(uint8_t in) {
     if (!present || !selected)
         return 0xff;
+    /* The command's answer goes out before the data comes in. */
+    if (writing == 1 && reply_pos < reply_len)
+        return reply[reply_pos++];
+    if (writing) {
+        write_byte(in);
+        return 0xff;
+    }
     if (command_len || (in&0xc0) == 0x40) {
         command[command_len++] = in;
         if (command_len == 6) {
@@ -106,6 +221,7 @@ void gpio_level(unsigned port, unsigned pin, bool high) {
         selected = high;
         reply_pos = reply_len = 0;
         command_len = 0;
+        writing = 0;
     }
 }
 
@@ -210,7 +326,10 @@ static void file(uint32_t dir, unsigned index, const char *name, const uint8_t *
     entry(dir, index, name, 0x20, first, (uint32_t)size);
 }
 
+static uint8_t scratch[512];
+
 static const char *run(void) {
+    sb = scratch;
     memset((void *)(uintptr_t)SD_STAGE2_ADDRESS, 0, SD_STAGE2_MAX);
     present = true;
     assert(init());
@@ -235,6 +354,83 @@ static void good_card(uint32_t base) {
     format(base);
     uint32_t mboot = folder(2, 0, "MBOOT      ");
     file(mboot, 0, "MENU    BIN", menu, sizeof(menu), false);
+}
+
+/* USB DISK's access: the size from the CSD, sectors read and written with CRCs both ways, faults retried, and the card
+ * left without CRCs, as the card item and other programs expect it. */
+static void disk_tests(void) {
+    static const uint8_t check[9] = "123456789";
+    uint8_t got[512], put[512];
+    /* The specification's own values, so the long division above is what it says. */
+    static const uint8_t cmd0[5] = {0x40, 0, 0, 0, 0}, cmd8[5] = {0x48, 0, 0, 1, 0xaa};
+    assert((crc7_of(cmd0, 5) << 1 | 1) == 0x95 && (crc7_of(cmd8, 5) << 1 | 1) == 0x87);
+    assert(crc16_of(check, 9) == 0x31c3);
+    good_card(PARTITION);
+    present = true;
+    bad_command_crcs = 0;
+    /* A high-capacity card: CSD version 2, C_SIZE 3 is 4 x 512 KiB. */
+    memset(csd, 0, sizeof(csd));
+    csd_field(127, 126, 1);
+    csd_field(69, 48, 3);
+    assert(sd_disk_open(60) == 4096 && crc_mode);
+    assert(sd_disk(PARTITION, got, false) && !memcmp(got, disk+PARTITION*512, 512));
+    for (unsigned i = 0; i < 512; ++i)
+        put[i] = (uint8_t)(i*7+3);
+    writes = 0;
+    assert(sd_disk(100, put, true) && writes == 1 && !memcmp(disk+100*512, put, 512));
+    assert(sd_disk(100, got, false) && !memcmp(got, put, 512));
+    /* A read that arrives damaged, or a write the card turns down, is tried again, after restarting the card. */
+    corrupt_reads = 1;
+    assert(sd_disk(100, got, false) && !memcmp(got, put, 512) && !corrupt_reads && crc_mode);
+    put[0] ^= 0xff;
+    rejected_writes = 1;
+    writes = 0;
+    assert(sd_disk(101, put, true) && writes == 1 && !memcmp(disk+101*512, put, 512) && crc_mode);
+    /* A card left refusing everything after a failed read needs restarting, which the retry does. */
+    sticking_reads = 1;
+    assert(sd_disk(100, got, false) && !memcmp(got, disk+100*512, 512) && !stuck && crc_mode);
+    /* One that keeps failing is reported, not taken as done. */
+    corrupt_reads = 3;
+    assert(!sd_disk(100, got, false));
+    corrupt_reads = 0;
+    rejected_writes = 3;
+    writes = 0;
+    assert(!sd_disk(102, put, true) && !writes);
+    rejected_writes = 0;
+    /* A card that only says after the write that it failed. */
+    status_fails = true;
+    assert(!sd_disk(103, put, true));
+    status_fails = false;
+    /* Past the end of the card. */
+    assert(!sd_disk(SECTORS, got, false));
+    assert(!bad_command_crcs);
+    sd_disk_close();
+    assert(!crc_mode && !selected);
+    /* A big card's size, from all 22 bits of C_SIZE: 0x3b37ff+1 x 512 KiB. */
+    csd_field(69, 48, 0x3b37ff);
+    assert(sd_disk_open(60) == 0x3b3800u*1024 && crc_mode);
+    sd_disk_close();
+    /* The card item still reads it afterwards. */
+    assert(!run() && loaded(menu, sizeof(menu)));
+    /* An old card, addressed by byte, and its version 1 CSD: 4096 x 2^(7+2) blocks of 2^9 bytes is 1 GiB. */
+    sdsc = true;
+    memset(csd, 0, sizeof(csd));
+    csd_field(83, 80, 9);
+    csd_field(73, 62, 4095);
+    csd_field(49, 47, 7);
+    assert(sd_disk_open(60) == 2097152 && crc_mode);
+    assert(sd_disk(PARTITION, got, false) && !memcmp(got, disk+PARTITION*512, 512));
+    writes = 0;
+    assert(sd_disk(104, put, true) && writes == 1 && !memcmp(disk+104*512, put, 512));
+    assert(!bad_command_crcs);
+    sd_disk_close();
+    sdsc = false;
+    /* No card, and one whose CSD arrives damaged: nothing to serve. */
+    present = false;
+    assert(!sd_disk_open(60));
+    sd_disk_close();
+    present = true;
+    corrupt_reads = 0;
 }
 
 int main(void) {
@@ -355,6 +551,9 @@ int main(void) {
     assert(same(load(), "NO SD CARD"));
     read_fails = false;
 
-    puts("PASS: card probe, /MBOOT/MENU.BIN lookup and load, and refusals on generated FAT32 images");
+    disk_tests();
+
+    puts("PASS: card probe, /MBOOT/MENU.BIN lookup and load, and refusals on generated FAT32 images; USB DISK's sectors "
+         "with CRCs both ways, faults retried, an old card");
     return 0;
 }

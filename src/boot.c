@@ -6,6 +6,7 @@
 #include "display.h"
 #include "sdboot.h"
 #include "stage0.h"
+#include "usb_disk.h"
 #ifndef BOOT_SIM
 #define MIDI_MODE 1
 #include "midi_update.h"
@@ -39,6 +40,10 @@ void boot_sim_call_updater(uint32_t entry, void *context, uint32_t end);
 #define BACK "PLAY: BACK"
 #define RELEASE "RELEASE PLAY"
 #define MENU_KEYS "OCT- OCT+ PLAY REC"
+/* The SMK-37's bootloader has no room for it, and nor has a test build's, with its requests. */
+#ifndef TEST_REQUESTS
+#define USB_DISK 1
+#endif
 #endif
 extern uint8_t __bss_start[], __bss_end[];
 static uint8_t work[CORE_WORK_SIZE] __attribute__((aligned(4)));
@@ -295,6 +300,36 @@ static void midi_mode(void) {
 }
 #endif
 
+#ifdef USB_DISK
+bool usb_disk_leave(void) {
+    return board_keys()&KEY_SELECT;
+}
+
+/* The card as a USB disk, until the computer ejects it or PLAY is pressed. The card shares SPI1 with the panel, so
+ * nothing is drawn while it's open. */
+static void usb_disk(void) {
+    clear_rows(3, 14);
+    display_text(3, GREEN, "USB DISK");
+    display_text(5, WHITE, "EJECT IT ON THE PC");
+    display_text(6, WHITE, "OR PRESS PLAY");
+    display_text(8, YELLOW, "ALWAYS EJECT FIRST");
+    release_select();
+    /* The keys without the menu's LEDs, as for MIDI mode. */
+    board_restore();
+    board_init(SMK);
+    uint32_t sectors = sd_disk_open(60);
+    enum usb_disk_end end = USB_DISK_EJECTED;
+    if (sectors)
+        end = usb_disk_run(sectors);
+    sd_disk_close();
+    if (!sectors)
+        reason = "SD CARD ERROR";
+    else if (end == USB_DISK_NO_HOST)
+        reason = "NO USB HOST";
+    release_select();
+}
+#endif
+
 static bool confirm(void) {
     clear_rows(8, 14);
     display_text(8, RED, "BOOT ANYWAY");
@@ -361,6 +396,10 @@ __attribute__((noinline)) static bool menu(void) {
         if (card) {
             actions[count] = "SD CARD";
             types[count++] = 4;
+#ifdef USB_DISK
+            actions[count] = "USB DISK";
+            types[count++] = 6;
+#endif
         }
         if (app.state == CORE_APP_OK) {
             actions[count] = "BOOT APP";
@@ -484,12 +523,19 @@ __attribute__((noinline)) static bool menu(void) {
             continue;
         }
 #endif
+#ifdef USB_DISK
+        if (action == 6) {
+            usb_disk();
+            last = previous = stable = 0;
+            continue;
+        }
+#endif
         if (action == 4) {
             /* The menu's LEDs drive the SMK-37's high-speed PHY, and stage 2 may want USB: give it back first. */
             if (SMK)
                 board_restore();
             /* Stage 2 (/MBOOT/MENU.BIN) does what it likes, and resets or returns here. */
-            reason = sd_stage2(60);
+            reason = sd_stage2(60, work);
 #ifdef TEST_REQUESTS
             /* And after this run, for the same reason. */
             if (test_sd)

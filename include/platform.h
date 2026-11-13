@@ -18,8 +18,12 @@ uint32_t platform_dma_address(const void *pointer);
 #endif
 #define GPIO(p,o) REG(0x50000u + 0x40u*(p)+(o))
 #define BIT(n) (1u << (n))
+/* sync_dma: after a peripheral's DMA has written RAM, before reading it. */
 #ifdef PLATFORM_SIM
 static inline void sync_cpu(void) {
+}
+
+static inline void sync_dma(void) {
 }
 
 static inline void irq_off(void) {
@@ -28,6 +32,10 @@ static inline void irq_off(void) {
 #else
 static inline void sync_cpu(void) {
     __asm__ volatile("csync" ::: "memory");
+}
+
+static inline void sync_dma(void) {
+    __asm__ volatile("ssync" ::: "memory");
 }
 
 static inline void irq_off(void) {
