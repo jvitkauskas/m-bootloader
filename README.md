@@ -7,8 +7,9 @@ and write its flash.
 
 It replaces the bootloader M-VAVE ships, adding a way back into USB download
 mode and a recovery menu, so a unit with broken or unwanted firmware can be
-reflashed without opening it. M-VAVE's stock firmware, Snoop37 and Baud Girl
-run with it.
+reflashed without opening it. It also checks the firmware before starting it;
+the stock bootloader starts it unchecked. M-VAVE's stock firmware, Snoop37 and
+Baud Girl run with it.
 
 ## Features
 
@@ -56,7 +57,9 @@ run with it.
   SMK-37 Pro, where an image ran from the card, returned to the menu and ran
   again.
 - **Checked start.** Every firmware file's checksum is verified before the
-  firmware starts.
+  firmware starts. A damaged firmware, from an interrupted install for
+  example, opens the recovery menu instead of being started. The stock
+  bootloader checks only the file table, not the firmware itself.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
   as they do with the stock bootloader.
 - **Calibration guard (SMK-37).** Keeps a copy of the factory calibration and
