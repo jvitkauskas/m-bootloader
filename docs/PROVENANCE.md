@@ -1,12 +1,11 @@
 # Provenance
 
 This records where m-bootloader comes from: what was studied, what the code was
-written from, where the separation between the two did not hold, and the checks
-made against JieLi's code. In short, it is an independent reimplementation that
-contains no code from JieLi's SDK or bootloader. It is written from a
-specification that was made by studying the original. The separation between
-studying and writing is the author's account and was not recorded at the time;
-see [Records](#records).
+written from, how the two were kept apart, where the separation was not strict,
+and the checks made against JieLi's code. In short, it is an independent
+reimplementation that contains no code from JieLi's SDK or bootloader. It was
+written from a specification made by studying the original, by sessions that
+were not given the original.
 
 ## What came before
 
@@ -15,54 +14,104 @@ see [Records](#records).
   Built with JieLi's compiler, it reproduces the original byte for byte. It is
   Apache-2.0, like the SDK.
 - **An earlier FM-1 bootloader** (2026-10-10 to 2026-10-14), restructured from
-  that reconstruction and modified. It is Apache-2.0. Its recovery menu on the
-  display (2026-10-12) is the author's own addition.
+  that reconstruction and modified. It is Apache-2.0.
 
 Both are derived from JieLi's code. m-bootloader is not: see the checks below.
 JieLi's bootloader is Apache-2.0, so derived code would have been usable with
-its notices. m-bootloader is a separate implementation so that it can be MIT
+its notices. m-bootloader was written separately so that it could be MIT
 throughout.
 
 ## How 1.0 was written
 
-1. The specification ([SPEC.md](SPEC.md), version 1.0, 2026-10-16) was written
-   by studying JieLi's bootloader and the reconstruction above, the public
-   sources in its Appendix B, JieLi's SDK headers (for register facts) and the
-   hardware. It records interfaces, formats, hardware transactions and
-   observable behaviour. It contains no code, disassembly or text from JieLi.
-2. The code was written from the specification in separate sessions that did not
-   have the original or the reconstruction. Two such implementations were
-   written and merged ([NOTICE.md](../NOTICE.md)).
+All of this happened on 2026-10-16.
+
+1. **Specification.** Two sessions with access to the original each wrote a
+   draft from the same brief:
+   - Claude Opus 5.5;
+   - OpenAI Codex (GPT-6.1 Sol), in its own folder and told not to read the
+     other draft.
+
+   The sources they could use were the reconstruction and its annotations, the
+   earlier bootloader, JieLi's SDK headers and documentation, public notes on
+   the chip, M-Flasher, and stock flash images and packages. The brief allowed
+   hardware facts, formats, interfaces and behaviour, including the order of
+   operations and the delays the hardware needs. It forbade code and anything
+   that copies it: "no C or assembly copied or paraphrased line by line, no
+   function names, variable names, comments or module structure". The drafts
+   were merged, with Codex's as the base, and the merged text was checked for
+   code fragments and for names from the sources. The result is
+   specification 1.0.
+2. **Two implementations, in two folders.** Each folder held:
+   - specification 1.0, the instructions and a file for questions;
+   - JieLi's toolchain, to run, not to link its libraries;
+   - four flash images with the stock bootloader's bytes blanked.
+
+   M-VAVE's packages were held back because they contain the stock
+   bootloader. Implementation A was written with Claude Code (Claude Sonnet
+   5.5), implementation B with Codex (GPT-6.1 Sol). The instructions told each
+   to work only inside its folder. They named the folders holding the sources
+   and forbade opening them, the other implementation's folder, any `.boot` or
+   `.fwsc` file, and the SDK's C sources that do the same jobs. SDK header
+   files were allowed, for register names and structure layouts.
+3. **Questions.** Each implementation wrote its questions to its questions
+   file. The specification side answered them from the original, as facts only.
+   Each answer became a numbered amendment in both folders:
+   - D1–D3 answer B's questions;
+   - D4–D10 answer A's;
+   - D11–D13 came from the review;
+   - D14 came from hardware tests of the start-up clock.
+
+   The last version handed over was 1.4.
+4. **Review and merge.** The specification side reviewed both implementations,
+   against the specification and against the original. The overlap with the
+   original was under 1%, none of it code. B was chosen as the base. B's agent
+   then ported A's simulator and tests. It worked from a list of the required
+   behaviour, with A's code allowed and the reviews not.
 
 ### Records
 
-The repository starts at the 1.0 commit, which holds the specification and the
-code together. The following was not recorded when 1.0 was written. It is to be
-completed from the author's records where they exist:
+The specification as handed over, the instructions, the questions and the
+session logs are kept privately. SHA-256 of the specification-side documents:
 
-- who or which sessions studied the original and wrote the specification;
-- which sessions wrote each of the two implementations, and what each was given
-  (the specification revision, any other files);
-- how questions from the implementing side were answered.
+| Document | SHA-256 |
+|---|---|
+| Brief | `efba379bf030e2768e692fd4185fa9d69ddf9ee72cf06bfcfaa1db19c5006e04` |
+| Claude draft | `a24dfa5a06ec40a62125d536c1a996d6052cad27123ac5690e6bacd025bae9ed` |
+| Codex draft | `90d6d7ef9e67e683b6313a0514e0f123b257d6284a09b5881cfc4d7556b5e702` |
+| Specification 1.0, as handed over | `7ae492f34c82bf273bdf9d406f1d64e34883ab6440f9ab6a4c1c3520b5e40b85` |
+| Specification 1.4, the last handed over | `59614e2087c1c83f8ebfe7e9655aa4c15876f3ef139d81e5cdbafce32c934925` |
 
-## Where the separation did not hold
+[SPEC.md](SPEC.md) is not the text that was handed over. After the code was
+written, it was rewritten as a standalone document that can be read from start
+to finish. That rewrite folded in or removed the clean-room rules, the source
+tags, the amendments and the mentions of models, and lost no technical value.
 
-- **Names from the earlier bootloader.** `board_wait(ms, leds)` and
-  `KEY_SELECT`, with the order of the menu keys, appear in m-bootloader 1.0 and
-  in the earlier bootloader's recovery menu, but not in the specification. That
-  menu is the author's own code, not JieLi's.
-- **The specification and the code changed together after 1.0.** 18 of the 44
-  commits that change the specification also change `src/` or `include/`. The
-  facts added in them came from hardware tests and from the behaviour of
-  firmware packages and updates. From now on, the rule below applies.
-- **The tests use stock material.** Some tests read M-VAVE's firmware packages
-  and flash images from `testdata/`, which is not in the repository. The chip
-  simulator in `tests/boot_sim.c` names registers as JieLi's SDK headers do
-  (`PWR_CON`, `CLK_CON0`, `SPI_CON`, `CACHE_CON`). None of this is part of the
+## Where the separation was not strict
+
+- **The separation rested on instructions.** Both implementations ran on the
+  machine that held the sources. Their logs show no access to them. B's log
+  records one search for file names outside its folder, and no file it found
+  was opened.
+- **Some facts describe the original's internals.** Examples are loop counts,
+  a trim mask, a parsing defect and the registers saved at entry. They came
+  from the reconstruction's annotations and reached the implementations through
+  the specification and amendments D2 and D5. They are facts, but more than an
+  interface needs. SPEC.md now states them as requirements and observed
+  effects.
+- **The specification side edited code once.** When 1.0 was published, it
+  replaced amendment numbers with section numbers in 20 comments and test
+  messages. No code changed.
+- **After 1.0, the record is thinner.** 1.1 followed the process: the fact went
+  into the specification in its own commit, and the clean implementation fixed
+  the code. Later work was done by sessions whose exposure was not recorded,
+  and 18 of the 44 commits up to 2.4 that change the specification also change `src/` or
+  `include/`. The package tests added after 1.0 read M-VAVE's `.fwsc`
+  packages, which contain the stock bootloader. Those tests are not part of the
   bootloader that is built.
-- **`src/usb_midi.c`** was written from the register facts in JieLi's SDK and in
-  felucca-bsp (MPL-2.0), with no code taken from either. The stock bootloader has
-  no USB code, so this part does not reimplement it.
+- **`src/usb_midi.c`** was added after 1.0 for MIDI mode. It was written from
+  the register facts in JieLi's SDK and in felucca-bsp (MPL-2.0), with no code
+  taken from either. The stock bootloader has no USB code, so this part does
+  not reimplement it.
 
 ## Changing the specification
 
@@ -117,3 +166,7 @@ and `395e6cc`.
   at 1.0 and 0.01% at `395e6cc`, and no shared comment text.
 - **The specification against the SDK files it cites:** no shared run of six or
   more words.
+- **Against the earlier bootloader:** two names, `board_wait` and `KEY_SELECT`,
+  appear in both. They were introduced by implementation B with a different
+  signature and key set. The specification's description of the menu (select,
+  previous/next keys, LEDs during waits) accounts for them.

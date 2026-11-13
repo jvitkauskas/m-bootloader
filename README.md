@@ -224,8 +224,11 @@ the formats fix.
 The specification was written by studying JieLi's bootloader, including the
 author's earlier C reconstruction of it (Apache-2.0, like JieLi's SDK), along
 with the public sources in its Appendix B and the hardware itself. It records
-facts, not code. [docs/PROVENANCE.md](docs/PROVENANCE.md) sets out how the
-specification and the code were kept apart, where that separation did not
-hold, and the comparisons behind the paragraph above.
+facts, not code. The code was written from it by separate sessions that were
+not given the original. [docs/SPEC.md](docs/SPEC.md) is a later standalone
+rewrite of the specification as it was handed over.
+[docs/PROVENANCE.md](docs/PROVENANCE.md) sets out how the two sides were kept
+apart, where that separation was not strict, and the comparisons behind the
+paragraph above.
 
 MIT licence: see [LICENSE](LICENSE).

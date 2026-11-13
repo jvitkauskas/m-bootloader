@@ -15,7 +15,3 @@ specification's author in [docs/SPEC.md](docs/SPEC.md) Appendix A.
 meanings and the order the controller needs them in) found in JieLi's AC79 SDK
 (Apache-2.0) and in felucca-bsp's `chip/fm1_usb.h` (MPL-2.0). No code was taken
 from either. Its descriptors follow the USB-MIDI 1.0 specification.
-
-The names `board_wait` and `KEY_SELECT` and the order of the menu keys come
-from the author's own recovery-menu code in an earlier bootloader. That code was
-written by the author, not taken from JieLi's.
