@@ -78,10 +78,11 @@ firmware, the menu without its removed wipe item, and MIDI mode opening by itsel
 firmware, showing `APP BAD CRC` for a flipped bit, `APP INCOMPLETE` for an erased sector and
 `APP NOT FOUND` for an erased app. **Boot anyway** started the firmware with a flipped bit, once:
 the next start caught it again. Download mode was asked for over MIDI from MIDI mode. Its test build,
-`2.4-395e6cc-test`, on both: MIDI mode and the SD card item by request, the SMK-37's running the
-m-apps launcher from its card. Not tested on this version, which is built with pi32v2 LLVM 23.1.5-5
-where 2.3 was built with 23.1.5-2: M-UPGRADE, official updates, the RAM stage and RAM apps, the SD
-card item on the FM-1, and 1.2 and 1.3 installed over it, whose configuration code hasn't changed
+`2.4-395e6cc-test`, on both: MIDI mode by request. The SD card item by request on the SMK-37 ran the
+m-apps launcher from its card; the FM-1, with no card, had no such item and went to download mode.
+Not tested on this version, which is built with pi32v2 LLVM 23.1.5-5 where 2.3 was built with
+23.1.5-2: M-UPGRADE, official updates, the RAM stage and RAM apps, the SD card item with a card on
+the FM-1, and 1.2 and 1.3 installed over it, whose configuration code hasn't changed
 since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
