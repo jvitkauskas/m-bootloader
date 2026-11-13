@@ -73,15 +73,17 @@ run with it.
 | SMK-37 Elite | same build as the Pro, with the same flash layout; installation with M-UPGRADE tested with the Elite firmware on an SMK-37 |
 | FM-1 | tested on hardware: start-up, both keys, every menu action, an official M-VAVE update, SLOOP, all loader operations, installation with M-UPGRADE |
 
-This release, `2.3-6bc8f45`, on an SMK-37 Pro: installing its M-UPGRADE package from M-VAVE's stock
-bootloader through the firmware's update route, starting firmware, MIDI mode opening by itself on
-damaged firmware and a browser install from it, and installing with M-Flasher. On an FM-1, build
-`0c24142`, whose bootloader code is the same: the package from the stock bootloader and from
-m-bootloader, sent through the firmware's update route by Optimist's command-line installer, MIDI
-mode by itself with stopped and repeated installs, its keys, and the SD card item. Not tested on
-this version: M-VAVE's M-UPGRADE app on the FM-1, the FM-1's LEDs in MIDI mode, firmware that
-returns to the bootloader with USB running, and 1.2 and 1.3 installed over it, as the configuration
-code hasn't changed since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
+This release, `2.4-395e6cc`, on an FM-1 and an SMK-37 Pro: installing with M-Flasher, starting
+firmware, the menu without its removed wipe item, and MIDI mode opening by itself on damaged
+firmware, showing `APP BAD CRC` for a flipped bit, `APP INCOMPLETE` for an erased sector and
+`APP NOT FOUND` for an erased app. **Boot anyway** started the firmware with a flipped bit, once:
+the next start caught it again. Download mode was asked for over MIDI from MIDI mode. Its test build,
+`2.4-395e6cc-test`, on both: MIDI mode by request. The SD card item by request on the SMK-37 ran the
+m-apps launcher from its card; the FM-1, with no card, had no such item and went to download mode.
+Not tested on this version, which is built with pi32v2 LLVM 23.1.5-5 where 2.3 was built with
+23.1.5-2: M-UPGRADE, official updates, the RAM stage and RAM apps, the SD card item with a card on
+the FM-1, and 1.2 and 1.3 installed over it, whose configuration code hasn't changed
+since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
