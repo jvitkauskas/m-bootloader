@@ -2,7 +2,7 @@
 /* Full boot/menu integration: this translation unit includes the production
  * boot.c so tests can reset its private BSS between simulated power cycles.
  * The register/NOR model and scenario approach are adapted from the other
- * clean-room implementation (a), under MIT; no original implementation is used.
+ * independent implementation (a), under MIT; no original implementation is used.
  */
 #define _GNU_SOURCE
 #include <assert.h>

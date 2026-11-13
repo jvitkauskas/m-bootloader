@@ -33,7 +33,7 @@ void sim_flush(void);
 u32 platform_dma_address(const void *p);
 u32 sim_rd(u32 a);
 void sim_wr(u32 a, u32 v);
-/* Adapted from the other clean-room implementation (a), under MIT.
+/* Adapted from the other independent implementation (a), under MIT.
  * See NOTICE.md. */
 struct sim {
     /* flash chip model (storage is sim_nor[]) */

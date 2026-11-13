@@ -7,8 +7,9 @@ and write its flash.
 
 It replaces the bootloader M-VAVE ships, adding a way back into USB download
 mode and a recovery menu, so a unit with broken or unwanted firmware can be
-reflashed without opening it. M-VAVE's stock firmware, Snoop37 and Baud Girl
-run with it.
+reflashed without opening it. It also checks the firmware before starting it;
+the stock bootloader starts it unchecked. M-VAVE's stock firmware, Snoop37 and
+Baud Girl run with it.
 
 ## Features
 
@@ -56,7 +57,9 @@ run with it.
   SMK-37 Pro, where an image ran from the card, returned to the menu and ran
   again.
 - **Checked start.** Every firmware file's checksum is verified before the
-  firmware starts.
+  firmware starts. A damaged firmware, from an interrupted install for
+  example, opens the recovery menu instead of being started. The stock
+  bootloader checks only the file table, not the firmware itself.
 - **Firmware updates.** M-VAVE's own updater and other firmwares' updaters run
   as they do with the stock bootloader.
 - **Calibration guard (SMK-37).** Keeps a copy of the factory calibration and
@@ -212,14 +215,28 @@ repository, and the tests skip them when absent.
 | `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
-| `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
+| `docs/SPEC.md` | the specification: hardware, formats and protocols |
+| `docs/PROVENANCE.md`, `docs/handover/` | how it was written, and the specification and instructions as handed over |
 
-## Clean room
+## Provenance
 
-m-bootloader was written from scratch, from a specification of the chip, the
-flash formats and the protocols ([docs/SPEC.md](docs/SPEC.md)). No code from
-JieLi's SDK or from the earlier open bootloader went into it. The people who
-studied the original wrote only the specification, and separate sessions that
-never saw the original wrote the code.
+m-bootloader is an independent reimplementation, written from a specification
+of the chip, the flash formats and the protocols ([docs/SPEC.md](docs/SPEC.md)).
+It contains no code from JieLi's SDK or bootloader. Compared with every SDK
+release's bootloader and the SDK's download-mode loader, built with the same
+compiler, it shares only the constants and procedures that the hardware and
+the formats fix.
+
+The specification was written by studying JieLi's bootloader, including the
+author's earlier C reconstruction of it (since withdrawn), along
+with the public sources in its Appendix B and the hardware itself. It records
+facts, not code. The code was written from it by separate sessions that were
+not given the original. [docs/SPEC.md](docs/SPEC.md) is a later standalone
+rewrite of the specification as it was handed over, which is kept verbatim in
+[docs/handover/](docs/handover/) with the implementations' instructions and
+questions.
+[docs/PROVENANCE.md](docs/PROVENANCE.md) sets out how the two sides were kept
+apart, where that separation was not strict, and the comparisons behind the
+paragraph above.
 
 MIT licence: see [LICENSE](LICENSE).
