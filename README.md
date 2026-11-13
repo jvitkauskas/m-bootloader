@@ -210,7 +210,8 @@ repository, and the tests skip them when absent.
 | `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
 | `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
-| `docs/SPEC.md` | the specification it was written from: hardware, formats and protocols |
+| `docs/SPEC.md` | the specification: hardware, formats and protocols |
+| `docs/PROVENANCE.md`, `docs/handover/` | how it was written, and the specification and instructions as handed over |
 
 ## Provenance
 
@@ -226,7 +227,9 @@ author's earlier C reconstruction of it (Apache-2.0, like JieLi's SDK), along
 with the public sources in its Appendix B and the hardware itself. It records
 facts, not code. The code was written from it by separate sessions that were
 not given the original. [docs/SPEC.md](docs/SPEC.md) is a later standalone
-rewrite of the specification as it was handed over.
+rewrite of the specification as it was handed over, which is kept verbatim in
+[docs/handover/](docs/handover/) with the implementations' instructions and
+questions.
 [docs/PROVENANCE.md](docs/PROVENANCE.md) sets out how the two sides were kept
 apart, where that separation was not strict, and the comparisons behind the
 paragraph above.

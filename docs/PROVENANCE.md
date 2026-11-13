@@ -70,16 +70,24 @@ All of this happened on 2026-10-16.
 
 ### Records
 
-The specification as handed over, the instructions, the questions and the
-session logs are kept privately. SHA-256 of the specification-side documents:
+[handover/](handover/) holds these documents verbatim, with their hashes:
+- the specification as handed over (1.0) and the last version handed over
+  (1.4);
+- the procedure;
+- each implementation's instructions and questions;
+- the merge instructions.
+
+The brief, the two drafts, the reviews and the session logs quote or describe
+JieLi's bootloader, so they are kept privately. SHA-256 of the
+specification-side documents:
 
 | Document | SHA-256 |
 |---|---|
 | Brief | `efba379bf030e2768e692fd4185fa9d69ddf9ee72cf06bfcfaa1db19c5006e04` |
 | Claude draft | `a24dfa5a06ec40a62125d536c1a996d6052cad27123ac5690e6bacd025bae9ed` |
 | Codex draft | `90d6d7ef9e67e683b6313a0514e0f123b257d6284a09b5881cfc4d7556b5e702` |
-| Specification 1.0, as handed over | `7ae492f34c82bf273bdf9d406f1d64e34883ab6440f9ab6a4c1c3520b5e40b85` |
-| Specification 1.4, the last handed over | `59614e2087c1c83f8ebfe7e9655aa4c15876f3ef139d81e5cdbafce32c934925` |
+| Specification 1.0, as handed over ([handover/SPEC-1.0.md](handover/SPEC-1.0.md)) | `7ae492f34c82bf273bdf9d406f1d64e34883ab6440f9ab6a4c1c3520b5e40b85` |
+| Specification 1.4, the last handed over ([handover/SPEC-1.4.md](handover/SPEC-1.4.md)) | `59614e2087c1c83f8ebfe7e9655aa4c15876f3ef139d81e5cdbafce32c934925` |
 
 [SPEC.md](SPEC.md) is not the text that was handed over. After the code was
 written, it was rewritten as a standalone document that can be read from start
