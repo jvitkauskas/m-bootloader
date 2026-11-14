@@ -240,3 +240,5 @@ apart, where that separation was not strict, and the comparisons behind the
 paragraph above.
 
 MIT licence: see [LICENSE](LICENSE).
+
+Related: try FM-1 firmwares in the browser with the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
