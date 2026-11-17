@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+#include "mirror.h"
 #include "display.h"
 #include "platform.h"
 #include <string.h>
@@ -193,6 +194,9 @@ void display_rect(unsigned x, unsigned y, unsigned w, unsigned h, uint16_t color
         n -= k;
     }
     gpio_level(cs_port, cs_pin, true);
+#ifdef MIRROR
+    mirror_rect(x, y, w, h, color);
+#endif
 }
 
 void display_pixels(unsigned x, unsigned y, unsigned w, unsigned h, const uint8_t *data) {
@@ -286,6 +290,9 @@ void display_row(unsigned row, uint16_t fg, uint16_t bg, const char *text, unsig
         return;
     if (n > 20)
         n = 20;
+#ifdef MIRROR
+    mirror_row_begin(row, fg, bg, text, n);
+#endif
     for (unsigned c = 0; c < 20 && active; ++c) {
         unsigned char ch = c < n ? (unsigned char)text[c]:' ';
         if (ch >= 'a' && ch <= 'z')
@@ -305,7 +312,13 @@ void display_row(unsigned row, uint16_t fg, uint16_t bg, const char *text, unsig
         window(c*12, row*16, 12, 16);
         dma(sizeof(pixels));
         gpio_level(cs_port, cs_pin, true);
+#ifdef MIRROR
+        mirror_cell(c, pixels);
+#endif
     }
+#ifdef MIRROR
+    mirror_row_end();
+#endif
 }
 
 void display_text(unsigned row, uint16_t fg, const char *text) {

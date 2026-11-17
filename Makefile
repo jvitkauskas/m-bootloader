@@ -20,11 +20,11 @@ endif
 COMMON := core platform display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 := stage0 upkr board platform runtime
-STAGE1 := core platform display runtime contract boot sdboot midi_update usb_midi
+STAGE1 := core platform display runtime contract boot sdboot midi_update usb_midi mirror
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
-STAGE := $(COMMON) midi_update usb_midi
+STAGE := $(COMMON) midi_update usb_midi mirror
 HEADERS := $(wildcard include/*.h)
 SIM_SOURCES := src/core.c src/contract.c src/platform.c src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude

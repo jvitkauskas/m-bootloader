@@ -4,6 +4,7 @@
  * the package. The whole package is read and checked before anything is erased. */
 #include "midi_update.h"
 #include "core.h"
+#include "mirror.h"
 #define FRAME_MAX 640u
 #define PACKET_MAX 512u
 #define TRIES 5u
@@ -95,6 +96,11 @@ static unsigned take(uint32_t *size) {
     if (!frame_ready)
         return NOTHING;
     unsigned kind = NOTHING;
+#ifdef MIRROR
+    if (frame_size == 4 && frame[0] == 0x7d && frame[1] == 'F' && frame[2] == 'S')
+        mirror_hello(frame[3]);                    /* FM-1 Big Screen: an app is watching (src/mirror.c) */
+    else
+#endif
     if (frame_size == 4 && frame[0] == 0x22 && frame[1] == 0x24 && frame[2] == 0x35) {
         if (frame[3] == 0x7f)
             kind = ASK_UPGRADE;
@@ -361,6 +367,9 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
     for (; ; ) {
         uint32_t n;
         mu_idle();
+#ifdef MIRROR
+        mirror_poll();
+#endif
         unsigned kind = take(&n);
         if (kind == ASK_UPGRADE) {
             enum mu_result r = install(key, sector, written);
