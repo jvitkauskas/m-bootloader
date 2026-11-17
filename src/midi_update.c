@@ -38,6 +38,14 @@ void mu_rx(uint8_t b) {
     }
 }
 
+/* A wait: USB, and the Big Screen mirror's clock */
+static void idle(void) {
+    mu_idle();
+#ifdef MIRROR
+    mirror_tick();
+#endif
+}
+
 static uint32_t le32(const uint8_t *p) {
     return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
@@ -132,7 +140,7 @@ static bool ask(uint32_t address, uint32_t size, uint8_t *out) {
         send_message(0x30, request, sizeof(request));
         for (unsigned ms = 0; ms < TRY_MS; ++ms) {
             uint32_t n;
-            mu_idle();
+            idle();
             unsigned kind = take(&n);
             /* Until something is erased, the key and the soft key still get out. */
             if (kind == ASK_DOWNLOAD) {
@@ -324,7 +332,7 @@ static void serve_read(uint8_t cmd, uint8_t *sector, uint32_t n) {
             return;
         }
         crc = core_crc32(crc, sector, part);
-        mu_idle();
+        idle();
     }
     put_le32(decoded+8, crc^UINT32_MAX);
     send_message(cmd, decoded, 12);
@@ -366,7 +374,7 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
     *written = false;
     for (; ; ) {
         uint32_t n;
-        mu_idle();
+        idle();
 #ifdef MIRROR
         mirror_poll();
 #endif

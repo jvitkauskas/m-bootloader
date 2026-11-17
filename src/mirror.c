@@ -50,14 +50,14 @@ static uint16_t text_at(unsigned i) {
 }
 
 void mirror_rect(unsigned x, unsigned y, unsigned w, unsigned h, uint16_t color) {
+    if (x == 0 && y == 0 && w == 240 && h == 240 && !replaying)
+        for (unsigned r = 0; r < ROWS; ++r)
+            drawn[r] = 0;                          /* the panel was cleared, watched or not */
     if (!on)
         return;
     solid = color;
     for (unsigned r = 0; r < h; ++r)
         line(y+r, x, w, solid_at);
-    if (x == 0 && y == 0 && w == 240 && h == 240 && !replaying)
-        for (unsigned r = 0; r < ROWS; ++r)
-            drawn[r] = 0;                          /* the panel was cleared */
 }
 
 void mirror_row_begin(unsigned row, uint16_t fg, uint16_t bg, const char *t, unsigned n) {
@@ -96,14 +96,19 @@ void mirror_hello(uint8_t all) {
 
 void display_row(unsigned row, uint16_t fg, uint16_t bg, const char *text, unsigned n);
 
-/* MIDI mode's loop: a new viewer (or one asking again) gets the whole screen, from the text kept here */
-void mirror_poll(void) {
+/* Every wait in MIDI mode, about a millisecond each, installs included: a hello keeps the mirror on, and three
+ * seconds without one stop it. */
+void mirror_tick(void) {
     if (asked) {
         if (!on)
             full = 1;
         on = 1; asked = 0; quiet = 0;
     } else if (on && ++quiet > QUIET_MS)
         on = 0;
+}
+
+/* MIDI mode's loop: a new viewer (or one asking again) gets the whole screen, from the text kept here */
+void mirror_poll(void) {
     if (on && full) {
         full = 0; replaying = 1;
         mirror_rect(0, 0, 240, 240, 0);
