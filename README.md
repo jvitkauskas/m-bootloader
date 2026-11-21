@@ -86,7 +86,8 @@ m-apps launcher from its card; the FM-1, with no card, had no such item and went
 Not tested on this version, which is built with pi32v2 LLVM 23.1.5-5 where 2.3 was built with
 23.1.5-2: M-UPGRADE, official updates, the RAM stage and RAM apps, the SD card item with a card on
 the FM-1, and 1.2 and 1.3 installed over it, whose configuration code hasn't changed
-since `2.1-861e43d`, where they were. `VDDIO` has not been measured.
+since `2.1-861e43d`, where they were. On an FM-1, 2.4 lowers the I/O voltage from the chip's 3.5 V at power-on
+to 3.2 V, until firmware that sets its own (V15 sets 3.5 V) starts; later versions leave it at 3.5 V, as stock V15 does.
 
 **Official M-VAVE updates and Baud Girl's installer put the stock bootloader
 back,** with its full configuration. Reinstall m-bootloader afterwards, with
