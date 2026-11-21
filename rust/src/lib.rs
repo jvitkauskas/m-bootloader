@@ -2,16 +2,18 @@
 //! m-bootloader in Rust: one crate, built once for each image with the `--cfg`s the Makefile gives it.
 #![no_std]
 #![cfg_attr(target_arch = "pi32v2", feature(asm_experimental_arch))]
+// Stage 0 is linked whole, so it is built with only what it has: docs/SPEC.md §4.4.
+#[cfg(not(stage0))]
 pub mod contract;
+#[cfg(not(stage0))]
 pub mod formats;
 pub mod hw;
-pub mod platform;
-// The simulated chip doesn't model the card's bus: its tests stand in for this.
-#[cfg(not(boot_sim))]
-pub mod sdboot;
-// The simulated chip's tests have their own MIDI mode.
-#[cfg(not(boot_sim))]
+// The simulated chip's tests have their own MIDI mode, and stand in for the card, whose bus that chip doesn't model.
+#[cfg(not(any(stage0, boot_sim)))]
 pub mod midi_update;
+pub mod platform;
+#[cfg(not(any(stage0, boot_sim)))]
+pub mod sdboot;
 
 /// A global of this program, which has one thread and no interrupts.
 #[repr(transparent)]

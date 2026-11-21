@@ -19,14 +19,15 @@ CARGO ?= cargo
 RUST_SRC := $(wildcard rust/src/*.rs)
 RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=s -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
-# What the linker needs of Rust's core library: its bitcode where C is bitcode, its archive where C is native code.
-RUST_CORE_lto := build/rust/lto/core.o
-RUST_CORE_native := build/rust/native/libcore.rlib
+# What the linker needs of Rust's core library, where it optimises Rust and C together.
+RUST_CORE_lto := build/rust/core.o
 HOST_RUST := build/host/host/libmboot.a
 # For the simulated chip's tests, which have their own MIDI mode.
-HOST_RUST_SIM := build/host/boot_sim/libmboot.a
+HOST_RUST_SIM := build/host/boot_sim-platform_sim/libmboot.a
 HOST_RUST_PSIM := build/host/platform_sim/libmboot.a
-HOST_RUST_PSIM_SMK := build/host/smk-platform_sim/libmboot.a
+# For the card's test, which stands in for the pins and the timer.
+HOST_RUST_SD := build/host/platform_sim-import_early/libmboot.a
+HOST_RUST_SD_SMK := build/host/smk-platform_sim-import_early/libmboot.a
 HOST_RUST_MU := build/host/mu_test_app_ram/libmboot.a
 HOST_RUST_MU_SMK := build/host/smk-mu_test_app_ram/libmboot.a
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
@@ -35,18 +36,18 @@ ifdef TEST_REQUESTS
 CFLAGS += -DTEST_REQUESTS
 export BOOT_VERSION_SUFFIX := -test
 endif
-COMMON := platform display runtime
+COMMON := display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
-STAGE0 := stage0 upkr board platform runtime
-STAGE1 := platform display runtime boot usb_midi
+STAGE0 := stage0 upkr board runtime
+STAGE1 := display runtime boot usb_midi
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
 STAGE := $(COMMON) usb_midi
 HEADERS := $(wildcard include/*.h)
-SIM_SOURCES := src/platform.c src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
+SIM_SOURCES := src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
-LIFECYCLE_SOURCES := src/loader.c src/platform.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
+LIFECYCLE_SOURCES := src/loader.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
 # M-UPGRADE packages: only our installer, which writes the bootloader, carried self-extracting. A test build has
@@ -70,30 +71,34 @@ build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
 
-# Rust's core library for pi32v2, built once from the compiler's sources: as native code, and as bitcode.
-RUST_SYSROOT_lto := -Clinker-plugin-lto
-RUST_SYSROOT_native :=
-build/rust/%/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile
-	@mkdir -p build/rust/$*/sysroot/$(RUST_LIB)
-	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/$*/target
-	CARGO_TARGET_DIR=build/rust/$*/target RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort --remap-path-prefix=$(CURDIR)=. $(RUST_SYSROOT_$*)" \
+# Rust's core library for pi32v2, built once from the compiler's sources, as bitcode.
+build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile
+	@mkdir -p build/rust/sysroot/$(RUST_LIB)
+	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
+	CARGO_TARGET_DIR=build/rust/target RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort --remap-path-prefix=$(CURDIR)=. -Clinker-plugin-lto" \
 		$(CARGO) build --quiet --release --manifest-path rust/sysroot/Cargo.toml --target pi32v2-unknown-none -Zbuild-std=core
-	for f in core compiler_builtins; do cp build/rust/$*/target/pi32v2-unknown-none/release/deps/lib$$f-*.rlib build/rust/$*/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
+	for f in core compiler_builtins; do cp build/rust/target/pi32v2-unknown-none/release/deps/lib$$f-*.rlib build/rust/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
 	touch $@
-build/rust/native/libcore.rlib: build/rust/native/sysroot.stamp
-	cp build/rust/native/sysroot/$(RUST_LIB)/libcore.rlib $@
 # rustc's bitcode is for ThinLTO, which the linker keeps apart from C's: clang rewrites it as C's kind, so that they are
 # optimised as one program.
-build/rust/lto/core.o: build/rust/lto/sysroot.stamp
-	@mkdir -p build/rust/lto/core
-	cd build/rust/lto/core && $(abspath $(TOOLCHAIN))/bin/llvm-ar x ../sysroot/$(RUST_LIB)/libcore.rlib
-	$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c build/rust/lto/core/core-*.o -o $@
-# The crate for one image: $(1) its object, $(2) lto or native, $(3) the --cfg names that image has.
+build/rust/core.o: build/rust/sysroot.stamp
+	@mkdir -p build/rust/core
+	cd build/rust/core && $(abspath $(TOOLCHAIN))/bin/llvm-ar x ../sysroot/$(RUST_LIB)/libcore.rlib
+	$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c build/rust/core/core-*.o -o $@
+# The crate for one image, with the --cfg names that image has ($(2)). Where the image's C is bitcode, $(1) is an object
+# of bitcode for the linker to optimise with it.
 define RUST_template
-$(1): $$(RUST_SRC) build/rust/$(2)/sysroot.stamp Makefile
+$(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
 	@mkdir -p $$(@D)
-	$$(RUSTC) $$(RUST_FLAGS) $$(RUST_SYSROOT_$(2)) $$(addprefix --cfg ,$(3)) --sysroot build/rust/$(2)/sysroot --crate-type lib --emit=obj -o $$(if $$(filter lto,$(2)),$$(@:.o=.bc),$$@) rust/src/lib.rs
-	$$(if $$(filter lto,$(2)),$$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c $$(@:.o=.bc) -o $$@)
+	$$(RUSTC) $$(RUST_FLAGS) -Clinker-plugin-lto $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type lib --emit=obj -o $$(@:.o=.bc) rust/src/lib.rs
+	$$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c $$(@:.o=.bc) -o $$@
+endef
+# Where it is native code, $(1) is an archive of native code, which rustc has optimised as a whole and cut down to what
+# its C names reach.
+define RUST_whole_template
+$(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
+	@mkdir -p $$(@D)
+	$$(RUSTC) $$(RUST_FLAGS) -C lto=fat $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type staticlib -o $$@ rust/src/lib.rs
 endef
 # For the tests: the same crate for this computer, with the C interface the tests call.
 # build/host/<its --cfg names, with - between them>/libmboot.a
@@ -103,9 +108,10 @@ build/host/%/libmboot.a: $(RUST_SRC) Makefile
 
 # A uses only our own freestanding objects with LTO, and an independent entry.
 define BOARD_template
-$$(eval $$(call RUST_template,build/$(1)/mboot.o,lto,$(3)))
-$$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,lto,$(3) stage1))
-$$(eval $$(call RUST_template,build/$(1)/st/mboot.o,lto,$(3) ram_stage))
+$$(eval $$(call RUST_template,build/$(1)/mboot.o,$(3)))
+$$(eval $$(call RUST_whole_template,build/$(1)/s0/libmboot.a,$(3) stage0))
+$$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,$(3) stage1))
+$$(eval $$(call RUST_template,build/$(1)/st/mboot.o,$(3) ram_stage))
 build/$(1)/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
@@ -121,14 +127,17 @@ build/$(1)/s1/%.o: src/%.c $(HEADERS) Makefile
 build/$(1)/stage0.ld: tools/stage0.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c $$< -o $$@
-build/$(1)/stage0.elf: $$(addprefix build/$(1)/s0/,$$(addsuffix .o,$$(STAGE0))) build/$(1)/startup.o build/$(1)/stage0.ld
-	$(LINK) --relax -T build/$(1)/stage0.ld -Map build/$(1)/stage0.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage0.elf: $$(addprefix build/$(1)/s0/,$$(addsuffix .o,$$(STAGE0))) build/$(1)/startup.o build/$(1)/s0/libmboot.a build/$(1)/stage0.ld
+	$(LINK) --relax -T build/$(1)/stage0.ld -Map build/$(1)/stage0.map -o $$@ $$(filter %.o %.a,$$^)
 build/$(1)/stage0.bin: build/$(1)/stage0.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
+# What stage 1 may call: stage 0's C names. Rust's own names stay inside stage 0, as stage 1 has its own of each.
+build/$(1)/stage0.syms: build/$(1)/stage0.elf
+	$(OBJCOPY) --wildcard --localize-symbol='_R*' $$< $$@
 build/$(1)/stage1.ld: tools/stage1.ld.S build/$(1)/stage0.bin
 	$(CLANG) -E -P -x c -DSTAGE1_ORIGIN=$$$$((0x1c02000+$$$$(stat -c%s build/$(1)/stage0.bin))) $$< -o $$@
-build/$(1)/stage1.elf: $$(addprefix build/$(1)/s1/,$$(addsuffix .o,$$(STAGE1))) build/$(1)/s1/mboot.o $$(RUST_CORE_lto) build/$(1)/stage0.elf build/$(1)/stage1.ld
-	$(LINK) --plugin-opt=O3 --relax --gc-sections --just-symbols=build/$(1)/stage0.elf -T build/$(1)/stage1.ld -Map build/$(1)/stage1.map -o $$@ $$(filter %.o,$$^)
+build/$(1)/stage1.elf: $$(addprefix build/$(1)/s1/,$$(addsuffix .o,$$(STAGE1))) build/$(1)/s1/mboot.o $$(RUST_CORE_lto) build/$(1)/stage0.syms build/$(1)/stage1.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections --just-symbols=build/$(1)/stage0.syms -T build/$(1)/stage1.ld -Map build/$(1)/stage1.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage1.bin: build/$(1)/stage1.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
 build/$(1)/stage1.pack: build/$(1)/stage1.bin build/upkr-test tools/pack_stage1.py
@@ -197,15 +206,15 @@ build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin build
 	python3 tools/fwsc.py build --staged build/smk37/installer-sfx.bin smk37-$* $< build/smk37/installer.bin $@
 
 define LOADER_template
-$$(eval $$(call RUST_template,build/loader-$(1)/mboot.o,native,loader_$(1)))
+$$(eval $$(call RUST_whole_template,build/loader-$(1)/libmboot.a,loader_$(1)))
 build/loader-$(1)/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) $(CFLAGS) -DLOADER_ADDRESS=$(2) -c $$< -o $$@
 build/loader-$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=loader_entry -DRAM_ORIGIN=$(2) -DRAM_LENGTH=0x8000 -DLOADER_BUILD $$< -o $$@
-build/loader-$(1)/loader.elf: $$(addprefix build/loader-$(1)/,$$(addsuffix .o,$$(LOADER))) build/loader-$(1)/mboot.o $$(RUST_CORE_native) build/loader-$(1)/target.ld
-	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o %.rlib,$$^)
+build/loader-$(1)/loader.elf: $$(addprefix build/loader-$(1)/,$$(addsuffix .o,$$(LOADER))) build/loader-$(1)/libmboot.a build/loader-$(1)/target.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o %.a,$$^)
 build/loader/mflr-loader-$(1).bin: build/loader-$(1)/loader.elf tools/check_build.py
 	@mkdir -p $$(@D)
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -257,15 +266,15 @@ build/contract-test: $(HOST_RUST) tests/contract_test.c $(HEADERS)
 build/panel-board-test: src/board.c src/display.c tests/panel_board_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/board.c src/display.c tests/panel_board_test.c -o $@
-build/platform-test: src/platform.c tests/platform_test.c $(HEADERS)
+build/platform-test: $(HOST_RUST_PSIM) tests/platform_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o $@
-build/sdboot-test: $(HOST_RUST_PSIM) tests/sdboot_test.c $(HEADERS)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/platform_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o $@
+build/sdboot-test: $(HOST_RUST_SD) tests/sdboot_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o $@
-build/sdboot-test-smk37: $(HOST_RUST_PSIM_SMK) tests/sdboot_test.c $(HEADERS)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_SD) -Wl,--gc-sections -o $@
+build/sdboot-test-smk37: $(HOST_RUST_SD_SMK) tests/sdboot_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOARD_SMK -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM_SMK) -Wl,--gc-sections -o $@
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOARD_SMK -Iinclude tests/sdboot_test.c $(HOST_RUST_SD_SMK) -Wl,--gc-sections -o $@
 build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS) $(HOST_RUST_SIM)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
@@ -314,7 +323,7 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	python3 tests/container_test.py
 	$(if $(TEST_REQUESTS),NO_INSTALLER_PACKAGES=1 )python3 tests/fwsc_test.py
 	python3 tests/stage2_test.py
-sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_PSIM_SMK) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
+sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
 	@mkdir -p build
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/core_test.c $(HOST_RUST) -Wl,--gc-sections -o build/core-test-sanitize
 	./build/core-test-sanitize
@@ -324,9 +333,9 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_PSIM_SMK) $(HOST_RUST_SIM) 
 	./build/contract-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/board.c src/display.c tests/panel_board_test.c -o build/panel-board-test-sanitize
 	./build/panel-board-test-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o build/platform-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/platform_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o build/platform-test-sanitize
 	./build/platform-test-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o build/sdboot-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_SD) -Wl,--gc-sections -o build/sdboot-test-sanitize
 	./build/sdboot-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DMU_TEST_APP_RAM -Iinclude tests/midi_update_test.c $(HOST_RUST_MU) -Wl,--gc-sections -o build/midi-update-test-sanitize
 	./build/midi-update-test-sanitize

@@ -18,6 +18,10 @@ impl Reg {
         Reg(address)
     }
 
+    pub const fn address(self) -> u32 {
+        self.0
+    }
+
     /// The register `offset` bytes on, of the same peripheral.
     pub const fn add(self, offset: u32) -> Reg {
         Reg(self.0 + offset)
@@ -57,6 +61,12 @@ impl Reg {
     pub fn clear(self, bits: u32) {
         self.modify(|v| v & !bits)
     }
+}
+
+/// A register of a port: A is 0, and so on.
+#[inline(always)]
+pub fn gpio(port: u32, offset: u32) -> Reg {
+    Reg(0x50000 + 0x40 * port + offset)
 }
 
 pub const fn bit(n: u32) -> u32 {
