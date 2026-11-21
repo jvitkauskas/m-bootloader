@@ -248,7 +248,15 @@ static void ep1_receive(void) {
     sie_write(RX_CSR2, csr >> 8);
 }
 
+static uint32_t polls;
+/* Polls so far: each is followed by a 0.5 ms wait (mu_idle, ep1_wait), so twice the milliseconds spent in MIDI mode,
+ * time inside sends included. The Big Screen mirror's clock. */
+uint32_t usb_midi_polls(void) {
+    return polls;
+}
+
 void usb_midi_poll(void) {
+    ++polls;
     if (!running)
         return;
     if (REG(CON0)&BIT(13))                      /* a frame's start is pending: acknowledge it */

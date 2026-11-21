@@ -137,6 +137,10 @@ static bool ask(uint32_t address, uint32_t size, uint8_t *out) {
     uint8_t request[8] = { 0, (uint8_t)address, (uint8_t)(address >> 8), (uint8_t)(address >> 16),
         (uint8_t)(address >> 24), (uint8_t)size, (uint8_t)(size >> 8), 0 };
     for (unsigned tries = 0; tries < TRIES; ++tries) {
+#ifdef MIRROR
+        mirror_poll();                             /* a viewer who came during the install: before the request, so
+                                                    * its reply can't arrive during the screen (one frame is held) */
+#endif
         send_message(0x30, request, sizeof(request));
         for (unsigned ms = 0; ms < TRY_MS; ++ms) {
             uint32_t n;

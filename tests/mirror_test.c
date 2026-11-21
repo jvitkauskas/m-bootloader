@@ -10,12 +10,16 @@
 #include "midi_update.h"
 
 /* The transport: counts what goes out, and can refuse (a host that stopped reading). */
-static unsigned sent, attempts, refuse_after = ~0u;
+static unsigned sent, attempts, refuse_after = ~0u, send_polls;
+/* The clock: USB polls, two a millisecond (src/usb_midi.c). A send can take time too (a slow reader). */
+static uint32_t polls;
+uint32_t usb_midi_polls(void) { return polls; }
 static unsigned first_y[4096], first_colour[4096];
 bool mu_send(const uint8_t *data, uint32_t size) {
     assert(size >= 14 && data[0] == 0xf0 && data[1] == 0x7d && data[2] == 'F' && data[3] == 'S' && data[4] == 1);
     assert(data[size-1] == 0xf7 && (size-10) % 4 == 0 && data[9] >= 1 && data[9] <= 127);
     ++attempts;
+    polls += send_polls;
     if (sent >= refuse_after)
         return false;
     if (sent < 4096) {
@@ -42,8 +46,10 @@ unsigned display_glyph(char c) { return c != ' '; }
 bool display_lit(unsigned g, unsigned x, unsigned y) { return g && (x+y) % 3 == 0; }
 
 static void wait_ms(unsigned ms) {
-    while (ms--)
+    while (ms--) {
+        polls += 2;
         mirror_tick();
+    }
 }
 
 /* What a hello and a wait do, as MIDI mode's loop (src/midi_update.c mu_run) does them. */
@@ -120,6 +126,15 @@ int main(void) {
     before = sent; rects_before = panel_rects;
     hello(1);
     assert(panel_rects-rects_before <= 16);
+    /* A slow reader, 100 ms a message: the replay stops 3 s after the hello, not when the whole screen is out. */
+    wait_ms(3500);                                 /* (off) */
+    send_polls = 200;
+    tried = attempts;
+    hello(1);
+    assert(attempts-tried >= 29 && attempts-tried <= 31);
+    display_row(7, 0xffff, 0, "LATE", 4);
+    assert(attempts-tried <= 31);
+    send_polls = 0;
     printf("mirror test: %u messages, all checks passed\n", sent);
     return 0;
 }

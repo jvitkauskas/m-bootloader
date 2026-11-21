@@ -9,6 +9,7 @@
 #include "mirror.h"
 #include "display.h"
 #include "midi_update.h"
+#include "usb_midi.h"
 #define ROWS 15u
 #define COLS 20u
 #define RUNS 16u                                   /* runs per message: 10 + 4*16 + 1 = 75 bytes */
@@ -21,7 +22,7 @@ static uint8_t drawn[ROWS];
 static uint8_t glyph[COLS];                        /* the row being sent: each cell's glyph (display_glyph) */
 static unsigned cur_row;
 static uint8_t on, asked, full, replaying;
-static uint32_t quiet;
+static uint32_t heard;                             /* usb_midi_polls() at the last hello taken */
 static uint8_t msg[10+4*RUNS+1];
 
 /* What's on the panel since the last full clear, in the order it was drawn: the text rows, and the rectangles
@@ -37,6 +38,10 @@ static unsigned nrects;
 static void line(unsigned y, unsigned x, unsigned w, uint16_t (*colour)(unsigned)) {
     unsigned i = 0;
     while (on && i < w) {
+        if (usb_midi_polls()-heard > 2*QUIET_MS) { /* 3 s since the last hello, time inside sends included */
+            on = full = 0;
+            break;
+        }
         unsigned k = 9, runs = 0;
         msg[0] = 0xf0; msg[1] = 0x7d; msg[2] = 'F'; msg[3] = 'S'; msg[4] = 1;
         msg[5] = y&0x7f; msg[6] = (uint8_t)(y >> 7); msg[7] = (x+i)&0x7f; msg[8] = (uint8_t)((x+i) >> 7);
@@ -123,14 +128,14 @@ void mirror_hello(uint8_t all) {
         full = 1;
 }
 
-/* Every wait in MIDI mode, about a millisecond each, installs included: a hello keeps the mirror on, and three
- * seconds without one stop it. */
+/* Every wait in MIDI mode, installs included: a hello keeps the mirror on, and three seconds without one (by the
+ * USB poll clock, which counts time inside sends too) stop it. */
 void mirror_tick(void) {
     if (asked) {
         if (!on)
             full = 1;
-        on = 1; asked = 0; quiet = 0;
-    } else if (on && ++quiet > QUIET_MS)
+        on = 1; asked = 0; heard = usb_midi_polls();
+    } else if (on && usb_midi_polls()-heard > 2*QUIET_MS)
         on = 0;
 }
 

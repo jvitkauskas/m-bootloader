@@ -11,4 +11,5 @@ bool usb_midi_configured(void);
  * or a host that stopped reading for about 200 ms). */
 bool usb_midi_send(const uint8_t *data, uint32_t size);
 void usb_midi_stop(void);
+uint32_t usb_midi_polls(void);                       /* polls so far, about two a millisecond (src/usb_midi.c) */
 #endif
