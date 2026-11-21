@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! m-bootloader in Rust: one crate, built once for each image with the `--cfg`s the Makefile gives it.
 #![no_std]
+#![cfg_attr(target_arch = "pi32v2", feature(asm_experimental_arch))]
 pub mod contract;
 pub mod formats;
+pub mod hw;
+pub mod platform;
+// The simulated chip doesn't model the card's bus: its tests stand in for this.
+#[cfg(not(boot_sim))]
+pub mod sdboot;
 // The simulated chip's tests have their own MIDI mode.
 #[cfg(not(boot_sim))]
 pub mod midi_update;

@@ -25,6 +25,8 @@ RUST_CORE_native := build/rust/native/libcore.rlib
 HOST_RUST := build/host/host/libmboot.a
 # For the simulated chip's tests, which have their own MIDI mode.
 HOST_RUST_SIM := build/host/boot_sim/libmboot.a
+HOST_RUST_PSIM := build/host/platform_sim/libmboot.a
+HOST_RUST_PSIM_SMK := build/host/smk-platform_sim/libmboot.a
 HOST_RUST_MU := build/host/mu_test_app_ram/libmboot.a
 HOST_RUST_MU_SMK := build/host/smk-mu_test_app_ram/libmboot.a
 CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
@@ -36,7 +38,7 @@ endif
 COMMON := platform display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 := stage0 upkr board platform runtime
-STAGE1 := platform display runtime boot sdboot usb_midi
+STAGE1 := platform display runtime boot usb_midi
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
@@ -258,12 +260,12 @@ build/panel-board-test: src/board.c src/display.c tests/panel_board_test.c $(HEA
 build/platform-test: src/platform.c tests/platform_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o $@
-build/sdboot-test: $(HOST_RUST) src/sdboot.c tests/sdboot_test.c $(HEADERS)
+build/sdboot-test: $(HOST_RUST_PSIM) tests/sdboot_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
-build/sdboot-test-smk37: $(HOST_RUST) src/sdboot.c tests/sdboot_test.c $(HEADERS)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o $@
+build/sdboot-test-smk37: $(HOST_RUST_PSIM_SMK) tests/sdboot_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOARD_SMK -Iinclude tests/sdboot_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOARD_SMK -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM_SMK) -Wl,--gc-sections -o $@
 build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS) $(HOST_RUST_SIM)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
@@ -312,7 +314,7 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	python3 tests/container_test.py
 	$(if $(TEST_REQUESTS),NO_INSTALLER_PACKAGES=1 )python3 tests/fwsc_test.py
 	python3 tests/stage2_test.py
-sanitize: $(HOST_RUST) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
+sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_PSIM_SMK) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
 	@mkdir -p build
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/core_test.c $(HOST_RUST) -Wl,--gc-sections -o build/core-test-sanitize
 	./build/core-test-sanitize
@@ -324,7 +326,7 @@ sanitize: $(HOST_RUST) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
 	./build/panel-board-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/platform.c tests/platform_test.c -o build/platform-test-sanitize
 	./build/platform-test-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST) -Wl,--gc-sections -o build/sdboot-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/sdboot_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o build/sdboot-test-sanitize
 	./build/sdboot-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DMU_TEST_APP_RAM -Iinclude tests/midi_update_test.c $(HOST_RUST_MU) -Wl,--gc-sections -o build/midi-update-test-sanitize
 	./build/midi-update-test-sanitize
