@@ -42,7 +42,7 @@ Every other test is as it was, and links the Rust through `include/*.h`.
 One crate, `rust/src/lib.rs`, compiled once for each image with the `--cfg` names the Makefile gives it (`stage0`,
 `stage1`, `smk`, `ram_stage`, ...). It needs:
 
-- **pi32v2 LLVM `23.1.6-1`** (`TOOLCHAIN=`). `main` uses 23.1.5-5.
+- **pi32v2 LLVM `23.1.6-1`** (`TOOLCHAIN=`). `main` uses 23.1.5-5. `RUST_OPT=z` needs a later one (below).
 - **A rustc for pi32v2** (`RUSTC=`), built from [pi32v2-rust](https://github.com/jvitkauskas/pi32v2-rust) on the same
   LLVM. **There is no release of one**, so CI cannot build this branch yet, and `.github/workflows/build.yml` is not
   changed.
@@ -99,7 +99,7 @@ Each line is a measurement on this code.
 
 | Choice | Effect | Used |
 |---|---|---|
-| `opt-level="s"`, not `"z"` | at `z`, FM-1 stage 1 is 17,304 against 15,944 and stage 0 is 3,256 against 2,892; the SMK-37 does not link | `s` |
+| `opt-level="s"`, not plain `"z"` | at `z`, FM-1 stage 1 is 17,304 against 15,944 and stage 0 is 3,256 against 2,892; the SMK-37 does not link | `s`, or `z` with the compiler change below |
 | The linker's whole-program optimisation, not rustc's (`-C lto` on a staticlib) | stage 1: 16,744 against 18,104. Stage 0: 2,780 against 2,892. Loader: 5,316 against 6,100 | the linker's |
 | Full LTO bitcode (`-Clto=fat`), not rustc's default ThinLTO bitcode | with half of `core.c` ported, stage 1 was 16,320 against 16,912: the linker does not optimise across the two kinds, so nothing inlined between C and Rust | full |
 | A global that isn't all zeros | the USB state held an empty slice (a non-null pointer), which put its 216 bytes in the image | all zeros |
@@ -115,23 +115,40 @@ functions: `Range::next`, `<[u8]>::get`, `Index::index` for each array size, `Ch
 bytes, each call site pays for a call, and nothing folds through them. C has no such helpers, so `-Oz` costs it
 nothing.
 
-## Compiler work this points to
+## Compiler work
 
-None of these is done. The first two need no compiler change, and are what a toolchain release should make the
-default.
+Done on local branches named `pi32v2-size`, of pi32v2-llvm (four commits on `7fdd65490`) and of pi32v2-rust (a
+documentation commit on `7d22990cc`). Neither is pushed, and no toolchain release has them.
+
+| Change | Effect here (SMK-37) | Used here |
+|---|---|---|
+| `-inline-minsize-hint-threshold=50`: in size-minimum code, callees that ask to be inlined get a threshold of their own | At `z`: payload 14,704 against 14,878 at `s`, RAM 27,504 against 27,712, package 18,992 against 19,167. Stage 0 is 2,724, under the C's 2,752 | `make RUST_OPT=z`, with that LLVM |
+| The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878: the packer does better with repeats than with calls to them | no |
+| Variadic prologues pass the machine verifier | none: found while verifying outlined code | |
+
+- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`, which the released
+  toolchain builds. Asking for `z` with a linker that lacks the option fails at once.
+- **How the two were checked.** pi32v2-isa's `tools/llvm/ctest.py`, which runs 3,328 calls in the simulator and
+  compares them with JieLi's compiler, agrees on all of them at `-Oz`, `-Os` and `-O2`, with the outliner, and
+  with both options. The machine verifier passes on this crate with the outliner on. The pi32v2 and inliner lit
+  tests pass (336), three of them new. m-apps' C apps come out byte-identical with the changed compiler, as
+  neither option is on by default.
+- **The `z` build here:** `make RUST_OPT=z test`, `sanitize` and `reproducible` pass. Its unpacker returned both
+  boards' stage 1 in the simulator. Its clock set-up calls `settle` as the C does, where the `s` build inlines the
+  loops. It has not run on a unit either.
+- **The outliner on unpacked code:** the flash loader 5,272 against 5,316, pi32v2-isa's `ctest.c` 3,318 against
+  3,520.
+
+Not done:
 
 1. **A released rustc for pi32v2, with `core` built for it.** Today the build compiles `core` itself with nightly
    flags (`-Zbuild-std`, `-Cpanic=immediate-abort`).
-2. **`-Clto=fat` with `-Clinker-plugin-lto` is the only way to optimise with C.** rustc already has it; nothing says
-   so. Without it the build works and is quietly 3 to 4% bigger.
-3. **The machine outliner.** `-enable-machine-outliner` changes nothing: the pi32v2 backend has no support for it.
-   It would serve C as well. Its passes after it (`PI32V2IfBlocks`, `PI32V2Packetize`, `PI32V2DecBranch`) make this
-   real work, and I did not try it.
-4. **Loading addresses.** Stage 1 has 351 six-byte constant loads, 2.1 KB of its 16.7 KB, and 234 of them are
-   addresses in the bootloader's own RAM. The backend already has `PI32V2AnchorBase` for this; I did not measure
-   how much more there is to get.
-5. **Inlining at `z`.** LLVM ignores `inlinehint` when the caller is `minsize`. Honouring it for callees a few
-   instructions long would let Rust use `z`. Not tried: `s` gives the result today.
+2. **Loading addresses.** Stage 1 has 351 six-byte constant loads, 2.1 KB of it: 109 addresses of its data, 104 of
+   strings and tables, 63 plain constants, 39 registers, 36 others. Merging globals differently moved it by 50
+   bytes either way (above). Getting more needs addresses the compiler can relate, which it can't across separately
+   placed globals, or a table of strings in the source.
+3. **Making the inlining option the target's default** in rustc or LLVM. It would change C built at `-Oz` wherever
+   that has `inline` functions, so I left it a switch.
 
 ## What is not known
 

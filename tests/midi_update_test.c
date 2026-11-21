@@ -434,7 +434,9 @@ static enum mu_result host_asks(uint8_t cmd, const uint8_t *body, uint32_t size)
     uint32_t sum = 0;
     uint8_t head[6] = { 0, 0x59, cmd, (uint8_t)size };
     memcpy(plain, head, 6);
-    memcpy(plain+6, body, size);
+    /* (A request with no body has none to copy: memcpy may not be given a null pointer.) */
+    if (size)
+        memcpy(plain+6, body, size);
     for (uint32_t i = 0; i < size; ++i)
         sum += body[i];
     plain[6+size] = (uint8_t)~sum;

@@ -186,6 +186,9 @@ cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d
 make RUSTC=<the pi32v2 rustc>
 ```
 
+`make RUST_OPT=z` builds it about 1% smaller, with an LLVM that the 23.1.6-1 release is not yet
+([rust/PORT.md](rust/PORT.md)).
+
 Upkr is the packer that stores stage 1. `make UPKR=<path>` uses one installed elsewhere. The release also has packages for Linux arm64 and macOS, with their checksums in
 `SHA256SUMS`. `make TOOLCHAIN=<directory>` uses a toolchain unpacked elsewhere.
 

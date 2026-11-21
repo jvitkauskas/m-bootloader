@@ -19,7 +19,15 @@ CARGO ?= cargo
 RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs) VERSION
 # What the RAM stage tells a host its version is.
 export STAGE_VERSION := $(shell cat VERSION)
-RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=s -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort --remap-path-prefix=$(CURDIR)=.
+# Rust's optimisation level. s works with any toolchain. z is smaller (rust/PORT.md), but only with an LLVM that has
+# -inline-minsize-hint-threshold, in the linker and in rustc: pi32v2-llvm 23.1.6-1 has not. Without it z is far
+# bigger, and does not fit.
+RUST_OPT ?= s
+ifeq ($(RUST_OPT),z)
+LINK += -mllvm -inline-minsize-hint-threshold=50
+RUST_HINT := -C llvm-args=-inline-minsize-hint-threshold=50
+endif
+RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=$(RUST_OPT) -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
 # Rust's core library, as the linker takes it.
 RUST_CORE_lto := build/rust/core.o
@@ -75,7 +83,7 @@ FORCE:
 build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile
 	@mkdir -p build/rust/sysroot/$(RUST_LIB)
 	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
-	CARGO_TARGET_DIR=build/rust/target RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
+	CARGO_TARGET_DIR=build/rust/target CARGO_PROFILE_RELEASE_OPT_LEVEL=$(RUST_OPT) RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
 		$(CARGO) build --quiet --release --manifest-path rust/sysroot/Cargo.toml --target pi32v2-unknown-none -Zbuild-std=core
 	for f in core compiler_builtins; do cp build/rust/target/pi32v2-unknown-none/release/deps/lib$$f-*.rlib build/rust/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
 	touch $@
