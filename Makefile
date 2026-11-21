@@ -91,18 +91,12 @@ build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefi
 # The library's one object, for the linker.
 build/rust/core.o: build/rust/sysroot.stamp
 	$(TOOLCHAIN)/bin/llvm-ar p build/rust/sysroot/$(RUST_LIB)/libcore.rlib $$($(TOOLCHAIN)/bin/llvm-ar t build/rust/sysroot/$(RUST_LIB)/libcore.rlib | grep '\.o$$') > $@
-# The crate for one image, with the --cfg names that image has ($(2)). Where the linker optimises the image as a
-# whole, $(1) is an object of bitcode for it.
+# The crate for one image, with the --cfg names that image has ($(2)): an object of bitcode, for the linker to optimise
+# the image as a whole. (rustc can do that itself, but it keeps every C name, and stage 1 came out 1.4 KB bigger.)
 define RUST_template
 $(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
 	@mkdir -p $$(@D)
 	$$(RUSTC) $$(RUST_FLAGS) -Clinker-plugin-lto -Clto=fat $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type lib --emit=obj -o $$@ rust/src/lib.rs
-endef
-# Where rustc does, $(1) is an archive of native code, cut down to what its C names reach.
-define RUST_whole_template
-$(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
-	@mkdir -p $$(@D)
-	$$(RUSTC) $$(RUST_FLAGS) -C lto=fat $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type staticlib -o $$@ rust/src/lib.rs
 endef
 # For the tests: the same crate for this computer, with the C interface the tests call.
 # build/host/<its --cfg names, with - between them>/libmboot.a
@@ -113,7 +107,7 @@ build/host/%/libmboot.a: $(RUST_SRC) Makefile
 # A uses only our own freestanding objects with LTO, and an independent entry.
 define BOARD_template
 $$(eval $$(call RUST_template,build/$(1)/mboot.o,$(3)))
-$$(eval $$(call RUST_whole_template,build/$(1)/s0/libmboot.a,$(3) stage0))
+$$(eval $$(call RUST_template,build/$(1)/s0/mboot.o,$(3) stage0))
 $$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,$(3) stage1))
 $$(eval $$(call RUST_template,build/$(1)/st/ota/mboot.o,$(3) ram_stage stage_ota))
 $$(eval $$(call RUST_template,build/$(1)/st/ram/mboot.o,$(3) ram_stage))
@@ -132,8 +126,12 @@ build/$(1)/s1/%.o: src/%.c $(HEADERS) Makefile
 build/$(1)/stage0.ld: tools/stage0.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c $$< -o $$@
-build/$(1)/stage0.elf: $$(addprefix build/$(1)/s0/,$$(addsuffix .o,$$(STAGE0))) build/$(1)/startup.o build/$(1)/s0/libmboot.a build/$(1)/stage0.ld
-	$(LINK) --relax -T build/$(1)/stage0.ld -Map build/$(1)/stage0.map -o $$@ $$(filter %.o %.a,$$^)
+# What stage 0 has to keep for stage 1: every C name that stage 1 doesn't define itself (docs/SPEC.md §4.4), and
+# the four that the compiler calls without the object saying so.
+build/$(1)/stage0.keep: build/$(1)/s1/mboot.o
+	{ echo -u memcpy -u memset -u __udivsi3 -u __umodsi3; $(NM) -u $$< | sed -n '/ U _R/!s/^ *U /-u /p'; } > $$@
+build/$(1)/stage0.elf: build/$(1)/startup.o build/$(1)/s0/mboot.o $$(RUST_CORE_lto) build/$(1)/stage0.keep build/$(1)/stage0.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections @build/$(1)/stage0.keep -T build/$(1)/stage0.ld -Map build/$(1)/stage0.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage0.bin: build/$(1)/stage0.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
 # What stage 1 may call: stage 0's C names. Rust's own names stay inside stage 0, as stage 1 has its own of each.
@@ -205,15 +203,15 @@ build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin build
 	python3 tools/fwsc.py build --staged build/smk37/installer-sfx.bin smk37-$* $< build/smk37/installer.bin $@
 
 define LOADER_template
-$$(eval $$(call RUST_whole_template,build/loader-$(1)/libmboot.a,loader_$(1)))
+$$(eval $$(call RUST_template,build/loader-$(1)/mboot.o,loader_$(1)))
 build/loader-$(1)/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) $(CFLAGS) -DLOADER_ADDRESS=$(2) -c $$< -o $$@
 build/loader-$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=loader_entry -DRAM_ORIGIN=$(2) -DRAM_LENGTH=0x8000 -DLOADER_BUILD $$< -o $$@
-build/loader-$(1)/loader.elf: $$(addprefix build/loader-$(1)/,$$(addsuffix .o,$$(LOADER))) build/loader-$(1)/libmboot.a build/loader-$(1)/target.ld
-	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o %.a,$$^)
+build/loader-$(1)/loader.elf: build/loader-$(1)/mboot.o $$(RUST_CORE_lto) build/loader-$(1)/target.ld
+	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/loader-$(1)/target.ld -Map build/loader-$(1)/loader.map -o $$@ $$(filter %.o,$$^)
 build/loader/mflr-loader-$(1).bin: build/loader-$(1)/loader.elf tools/check_build.py
 	@mkdir -p $$(@D)
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -285,10 +283,10 @@ build/boot-test-requests: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h $(HE
 build/test-request.ld: tools/target.ld.S
 	@mkdir -p build
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=test_request_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DLOADER_BUILD $< -o $@
-$(eval $(call RUST_whole_template,build/test-request-midi/libmboot.a,test_request_midi))
-$(eval $(call RUST_whole_template,build/test-request-sd/libmboot.a,test_request_sd))
-build/test-request-%.bin: build/test-request-%/libmboot.a build/test-request.ld
-	$(LINK) --gc-sections -T build/test-request.ld -u test_request_entry -o build/test-request-$*.elf $<
+$(eval $(call RUST_template,build/test-request-midi/mboot.o,test_request_midi))
+$(eval $(call RUST_template,build/test-request-sd/mboot.o,test_request_sd))
+build/test-request-%.bin: build/test-request-%/mboot.o $(RUST_CORE_lto) build/test-request.ld
+	$(LINK) --plugin-opt=O3 --gc-sections -T build/test-request.ld -o build/test-request-$*.elf $(filter %.o,$^)
 	$(OBJCOPY) -O binary -j .text build/test-request-$*.elf $@
 test-requests: build/test-request-midi.bin build/test-request-sd.bin
 build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h $(HEADERS) $$(call sim_rust,$$*,_MIDI)
