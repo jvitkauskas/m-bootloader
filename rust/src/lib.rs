@@ -1,7 +1,40 @@
 // SPDX-License-Identifier: MIT
 //! m-bootloader in Rust: one crate, built once for each image with the `--cfg`s the Makefile gives it.
 #![no_std]
+pub mod contract;
 pub mod formats;
+// The simulated chip's tests have their own MIDI mode.
+#[cfg(not(boot_sim))]
+pub mod midi_update;
+
+/// A global of this program, which has one thread and no interrupts.
+#[repr(transparent)]
+pub struct Global<T>(core::cell::UnsafeCell<T>);
+
+unsafe impl<T> Sync for Global<T> {}
+
+impl<T> Global<T> {
+    pub const fn new(value: T) -> Self {
+        Global(core::cell::UnsafeCell::new(value))
+    }
+
+    /// # Safety
+    /// Nothing else may use the global while the reference lives.
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn get(&self) -> &mut T {
+        unsafe { &mut *self.0.get() }
+    }
+}
+
+impl<T: Copy> Global<T> {
+    pub fn read(&self) -> T {
+        unsafe { *self.0.get() }
+    }
+
+    pub fn set(&self, value: T) {
+        unsafe { *self.0.get() = value }
+    }
+}
 
 #[cfg(target_arch = "pi32v2")]
 #[panic_handler]
