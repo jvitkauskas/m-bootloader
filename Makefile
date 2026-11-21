@@ -79,30 +79,26 @@ build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
 
-# Rust's core library for pi32v2, built once from the compiler's sources, as bitcode.
+# Rust's core library for pi32v2, built once from the compiler's sources, as bitcode. -Clto=fat makes that the kind of
+# bitcode C's is: the linker keeps rustc's usual kind (for ThinLTO) apart from C's, and couldn't optimise across them.
 build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile
 	@mkdir -p build/rust/sysroot/$(RUST_LIB)
 	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
-	CARGO_TARGET_DIR=build/rust/target RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort --remap-path-prefix=$(CURDIR)=. -Clinker-plugin-lto" \
+	CARGO_TARGET_DIR=build/rust/target RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
 		$(CARGO) build --quiet --release --manifest-path rust/sysroot/Cargo.toml --target pi32v2-unknown-none -Zbuild-std=core
 	for f in core compiler_builtins; do cp build/rust/target/pi32v2-unknown-none/release/deps/lib$$f-*.rlib build/rust/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
 	touch $@
-# rustc's bitcode is for ThinLTO, which the linker keeps apart from C's: clang rewrites it as C's kind, so that they are
-# optimised as one program.
+# The library's one object, for the linker.
 build/rust/core.o: build/rust/sysroot.stamp
-	@mkdir -p build/rust/core
-	cd build/rust/core && $(abspath $(TOOLCHAIN))/bin/llvm-ar x ../sysroot/$(RUST_LIB)/libcore.rlib
-	$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c build/rust/core/core-*.o -o $@
-# The crate for one image, with the --cfg names that image has ($(2)). Where the image's C is bitcode, $(1) is an object
-# of bitcode for the linker to optimise with it.
+	$(TOOLCHAIN)/bin/llvm-ar p build/rust/sysroot/$(RUST_LIB)/libcore.rlib $$($(TOOLCHAIN)/bin/llvm-ar t build/rust/sysroot/$(RUST_LIB)/libcore.rlib | grep '\.o$$') > $@
+# The crate for one image, with the --cfg names that image has ($(2)). Where the linker optimises the image as a
+# whole, $(1) is an object of bitcode for it.
 define RUST_template
 $(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
 	@mkdir -p $$(@D)
-	$$(RUSTC) $$(RUST_FLAGS) -Clinker-plugin-lto $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type lib --emit=obj -o $$(@:.o=.bc) rust/src/lib.rs
-	$$(CLANG) -target pi32v2 -mcpu=r3 -flto -Wno-override-module -x ir -c $$(@:.o=.bc) -o $$@
+	$$(RUSTC) $$(RUST_FLAGS) -Clinker-plugin-lto -Clto=fat $$(addprefix --cfg ,$(2)) --sysroot build/rust/sysroot --crate-type lib --emit=obj -o $$@ rust/src/lib.rs
 endef
-# Where it is native code, $(1) is an archive of native code, which rustc has optimised as a whole and cut down to what
-# its C names reach.
+# Where rustc does, $(1) is an archive of native code, cut down to what its C names reach.
 define RUST_whole_template
 $(1): $$(RUST_SRC) build/rust/sysroot.stamp Makefile
 	@mkdir -p $$(@D)

@@ -8,6 +8,8 @@ publish = false
 
 [profile.release]
 opt-level = "s"
+# With -Clto=fat in the Makefile's flags: bitcode only, of the kind that links with the rest (see the Makefile).
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 debug = false
