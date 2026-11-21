@@ -1021,11 +1021,11 @@ static void t_public_recovery(void)
     CHECK(t_go() == END_RESET && t_usb_reset());
     CHECK(!sim.ncmd && !t_app_calls && !t_update_calls);
     t_prep(4);
-    /* The FM-1 sets I/O code 4, keeping the other bits; the SMK-37 leaves it alone. */
+    /* The I/O voltage is left as found, as stock V15 leaves it. */
     sim_p33_set(5, 0xc1);
     sim.limit = 2500000;
     CHECK(t_go() == END_TIMEOUT);
-    CHECK(sim_p33_get(5) == (SMK ? 0xc1:0xc4));
+    CHECK(sim_p33_get(5) == 0xc1);
     CHECK(!t_app_calls && !t_update_calls && !t_resets && !nor_nlog);
     CHECK(t_row_is(0, SMK ? "SMK-37 M-BOOTLOADER":"FM-1 M-BOOTLOADER"));
     CHECK(t_row_is(1, "1.0-ABCDEF0-DIRTY"));
