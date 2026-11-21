@@ -42,16 +42,16 @@ ifdef TEST_REQUESTS
 CFLAGS += -DTEST_REQUESTS
 export BOOT_VERSION_SUFFIX := -test
 endif
-COMMON := runtime
+COMMON :=
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
-STAGE0 := stage0 upkr runtime
-STAGE1 := runtime
+STAGE0 :=
+STAGE1 :=
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
 STAGE := $(COMMON)
 HEADERS := $(wildcard include/*.h)
-SIM_SOURCES := src/stage0.c tests/boot_sim.c tests/boot_nor.c
+SIM_SOURCES := tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
 LIFECYCLE_SOURCES := src/loader.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
@@ -172,9 +172,7 @@ build/$(1)/sfx.ld: tools/sfx.ld.S build/$(1)/installer.bin build/$(1)/installer.
 	$(CLANG) -E -P -x c -DSFX_PACK=$$$$(./build/sfx-layout place build/$(1)/installer.bin build/$(1)/installer.pack) $$< -o $$@
 build/$(1)/sfx_start.o: src/sfx_start.S build/$(1)/installer.pack Makefile
 	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild/$(1) $(2) -c $$< -o $$@
-build/$(1)/sfx.o: src/sfx.c $(HEADERS) Makefile
-	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
-build/$(1)/sfx.elf: build/$(1)/sfx_start.o build/$(1)/sfx.o build/$(1)/s0/upkr.o build/$(1)/sfx.ld
+build/$(1)/sfx.elf: build/$(1)/sfx_start.o build/$(1)/mboot.o $$(RUST_CORE_lto) build/$(1)/sfx.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/sfx.ld -Map build/$(1)/sfx.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/installer-sfx.bin: build/$(1)/sfx.elf build/sfx-layout tools/sfx_symbols.py
 	$(OBJCOPY) -O binary -j .entry -j .pack -j .text $$< $$@
@@ -251,12 +249,12 @@ build/midi-update-test: $(HOST_RUST_MU) tests/midi_update_test.c $(HEADERS)
 build/midi-update-test-smk37: $(HOST_RUST_MU_SMK) tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DBOARD_SMK -DMU_TEST_APP_RAM -Iinclude tests/midi_update_test.c $(HOST_RUST_MU_SMK) -Wl,--gc-sections -o $@
-build/sfx-layout: src/upkr.c tools/sfx_layout.c $(HEADERS)
+build/sfx-layout: $(HOST_RUST) tools/sfx_layout.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tools/sfx_layout.c -o $@
-build/upkr-test: src/upkr.c tests/upkr_test.c $(HEADERS)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude tools/sfx_layout.c $(HOST_RUST) -Wl,--gc-sections -o $@
+build/upkr-test: $(HOST_RUST) tests/upkr_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude src/upkr.c tests/upkr_test.c -o $@
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude tests/upkr_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
 build/core-test: $(HOST_RUST) tests/core_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c99 -O2 -g -Wall -Wextra -Werror -Iinclude tests/core_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
@@ -348,7 +346,7 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(H
 	./build/midi-update-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DBOARD_SMK -DMU_TEST_APP_RAM -Iinclude tests/midi_update_test.c $(HOST_RUST_MU_SMK) -Wl,--gc-sections -o build/midi-update-test-smk37-sanitize
 	./build/midi-update-test-smk37-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/upkr.c tests/upkr_test.c -o build/upkr-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/upkr_test.c $(HOST_RUST) -Wl,--gc-sections -o build/upkr-test-sanitize
 	./build/upkr-test-sanitize build/fm1/stage1.pack build/fm1/stage1.bin
 	./build/upkr-test-sanitize build/smk37/stage1.pack build/smk37/stage1.bin
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o build/boot-test-fm1-sanitize

@@ -16,9 +16,16 @@ pub mod hw;
 #[cfg(not(stage0))]
 pub mod midi_update;
 pub mod platform;
+// On this computer, for the tests, the C library has these.
+#[cfg(target_arch = "pi32v2")]
+pub mod runtime;
 #[cfg(not(any(stage0, boot_sim)))]
 pub mod sdboot;
+#[cfg(not(any(stage0, stage1)))]
+pub mod sfx;
 pub mod stage0;
+#[cfg(not(stage1))]
+pub mod upkr;
 #[cfg(not(any(stage0, boot_sim)))]
 pub mod usb_midi;
 
