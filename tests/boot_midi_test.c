@@ -38,7 +38,7 @@ static bool t_mu_ram_app, t_mu_written;
 void usb_midi_start(void) { ++t_usb_starts; t_usb_started_at = sim.now; }
 void usb_midi_stop(void) { ++t_usb_stops; }
 void usb_midi_poll(void) {}
-void usb_midi_send(const uint8_t *data, uint32_t size) { (void)data; (void)size; }
+bool usb_midi_send(const uint8_t *data, uint32_t size) { (void)data; (void)size; return true; }
 enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written)
 {
     (void)key, (void)sector;

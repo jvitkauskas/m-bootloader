@@ -55,7 +55,7 @@ void mu_rx(uint8_t byte);
  * sector is MU_SECTOR bytes of scratch. Whether flash was changed is in *written. */
 enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written);
 /* The hooks. */
-void mu_send(const uint8_t *data, uint32_t size);    /* one whole F0..F7 message */
+bool mu_send(const uint8_t *data, uint32_t size);    /* one whole F0..F7 message */
 void mu_idle(void);                                  /* runs USB, and takes about a millisecond */
 bool mu_cancel(void);
 bool mu_read(uint32_t address, void *out, uint32_t size);

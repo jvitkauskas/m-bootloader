@@ -319,12 +319,12 @@ static bool ep1_wait(void) {
     return false;
 }
 
-void usb_midi_send(const uint8_t *data, uint32_t size) {
+bool usb_midi_send(const uint8_t *data, uint32_t size) {
     uint32_t at = 0;
     while (at < size) {
         uint32_t n = 0;
         if (!configuration || !ep1_wait())
-            return;
+            return false;
         while (at < size && n < PACKET) {
             uint32_t left = size-at;
             uint32_t count = left > 3 ? 3:left;
@@ -340,6 +340,7 @@ void usb_midi_send(const uint8_t *data, uint32_t size) {
         sie_write(INDEX, 1);
         sie_write(TX_CSR1, sie_read(TX_CSR1) | 0x01);
     }
+    return true;
 }
 
 void usb_midi_stop(void) {
