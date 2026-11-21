@@ -10,11 +10,12 @@
 #include "midi_update.h"
 
 /* The transport: counts what goes out, and can refuse (a host that stopped reading). */
-static unsigned sent, refuse_after = ~0u;
+static unsigned sent, attempts, refuse_after = ~0u;
 static unsigned first_y[4096], first_colour[4096];
 bool mu_send(const uint8_t *data, uint32_t size) {
     assert(size >= 14 && data[0] == 0xf0 && data[1] == 0x7d && data[2] == 'F' && data[3] == 'S' && data[4] == 1);
     assert(data[size-1] == 0xf7 && (size-10) % 4 == 0 && data[9] >= 1 && data[9] <= 127);
+    ++attempts;
     if (sent >= refuse_after)
         return false;
     if (sent < 4096) {
@@ -100,10 +101,11 @@ int main(void) {
     /* A host that asks, then stops reading: the first send that doesn't go stops the replay at once. */
     refuse_after = sent+3;
     before = sent;
+    unsigned tried = attempts;
     hello(1);
-    assert(sent == before+3);                      /* three went, the fourth didn't, and nothing more was tried */
+    assert(sent == before+3 && attempts == tried+4);   /* three went, the fourth didn't, and nothing more was tried */
     display_row(6, 0xffff, 0, "QUIET", 5);
-    assert(sent == before+3);
+    assert(sent == before+3 && attempts == tried+4);
 
     /* It reads again and asks: the whole screen again. */
     refuse_after = ~0u;

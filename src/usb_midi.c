@@ -340,7 +340,7 @@ bool usb_midi_send(const uint8_t *data, uint32_t size) {
         sie_write(INDEX, 1);
         sie_write(TX_CSR1, sie_read(TX_CSR1) | 0x01);
     }
-    return true;
+    return ep1_wait();                             /* the last packet taken too: a host that stopped reading says so now */
 }
 
 void usb_midi_stop(void) {
