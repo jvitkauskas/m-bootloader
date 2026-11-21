@@ -6,14 +6,15 @@
 //! reach a hook: each use takes it afresh.
 use crate::board::{KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait};
 use crate::formats::{self, App, AppState, Config, Guard, Header, Nor, Request, Updater, Work, crc16, le16};
-use crate::hw::{Reg, Text, irq_off, sync_cpu};
+use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
+use crate::hw::{Reg, Text, irq_off, retained, sync_cpu};
 use crate::platform::{
     flash_capacity, flash_erase, flash_init, flash_jedec, flash_program, flash_read, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
     hal_reset, hal_xip,
 };
 use crate::sdboot::{sd_probe, sd_stage2};
 use crate::stage0::rom_download;
-use crate::{Global, contract, display, text};
+use crate::{Aligned, Global, contract, display, text};
 
 const SMK: bool = cfg!(smk);
 const BOARD: u32 = if SMK { 2 } else { 1 };
@@ -21,11 +22,6 @@ const TITLE: Text = if SMK { text!("SMK-37 M-BOOTLOADER") } else { text!("FM-1 M
 const CONTROLS: Text = if SMK { text!("< > MOVE SEQ PLAY OK") } else { text!("OCT-/+ MOVE PLAY OK") };
 const HOLD: Text = if SMK { text!("HOLD SEQ PLAY 3 S") } else { text!("HOLD PLAY 3 S") };
 const RELEASE: Text = if SMK { text!("RELEASE SEQ PLAY") } else { text!("RELEASE PLAY") };
-const YELLOW: u16 = 0xffe0;
-const WHITE: u16 = 0xffff;
-const GREEN: u16 = 0x07e0;
-const RED: u16 = 0xf800;
-const GREY: u16 = 0x8410;
 const NONE: Text = text!("");
 /// The version, in stage 0's header.
 const VERSION: Text = unsafe { Text::at(0x01c0_2050) };
@@ -35,10 +31,7 @@ const RETAINED: usize = 0x01c7_fd80;
 /// What the app is handed.
 const APP_CONTEXT: usize = 0x01c7_fe08;
 
-/// M-VAVE's updater reads what it's given in words, and crashes if these aren't aligned (§6.4).
-#[repr(align(4))]
-struct Aligned<const N: usize>([u8; N]);
-
+// M-VAVE's updater reads what it's given in words, and crashes if these aren't aligned (§6.4).
 static WORK: Global<Aligned<{ formats::WORK_SIZE }>> = Global::new(Aligned([0; formats::WORK_SIZE]));
 // These four keep their C names, by which tests/updater_context_test.py finds them in the linked image.
 #[cfg_attr(target_arch = "pi32v2", unsafe(export_name = "request"))]
@@ -86,12 +79,6 @@ fn header() -> &'static mut Header {
 
 fn nor() -> &'static mut Nor {
     unsafe { NOR.get() }
-}
-
-/// `N` bytes of the retained area, from `offset`.
-fn retained<const N: usize>(offset: usize) -> &'static mut [u8; N] {
-    // Safety: RAM that is this program's to read and write, and no two of these are kept at once.
-    unsafe { &mut *((RETAINED + offset) as *mut [u8; N]) }
 }
 
 fn screen() -> bool {

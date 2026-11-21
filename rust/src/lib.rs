@@ -13,6 +13,8 @@ pub mod display;
 #[cfg(not(stage0))]
 pub mod formats;
 pub mod hw;
+#[cfg(not(any(stage0, stage1)))]
+pub mod installer;
 #[cfg(not(stage0))]
 pub mod midi_update;
 pub mod platform;
@@ -23,7 +25,11 @@ pub mod runtime;
 pub mod sdboot;
 #[cfg(not(any(stage0, stage1)))]
 pub mod sfx;
+#[cfg(ram_stage)]
+pub mod stage;
 pub mod stage0;
+#[cfg(any(test_request_sd, test_request_midi))]
+pub mod test_request;
 #[cfg(not(stage1))]
 pub mod upkr;
 #[cfg(not(any(stage0, boot_sim)))]
@@ -47,6 +53,10 @@ pub mod usb_midi {
         pub safe fn usb_midi_stop();
     }
 }
+
+/// Bytes that the DMA or other firmware reads in words: aligned for it.
+#[repr(align(4))]
+pub struct Aligned<const N: usize>(pub [u8; N]);
 
 /// A global of this program, which has one thread and no interrupts.
 #[repr(transparent)]

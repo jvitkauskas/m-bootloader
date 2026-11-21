@@ -11,6 +11,11 @@ const SPI1_BUF: Reg = SPI1_CON.add(8);
 const SPI1_ADR: Reg = SPI1_CON.add(12);
 const SPI1_CNT: Reg = SPI1_CON.add(16);
 const IO_MUX1: Reg = unsafe { Reg::at(0x51020) };
+pub const YELLOW: u16 = 0xffe0;
+pub const WHITE: u16 = 0xffff;
+pub const GREEN: u16 = 0x07e0;
+pub const RED: u16 = 0xf800;
+pub const GREY: u16 = 0x8410;
 /// A character's cell: 12 by 16 pixels of two bytes.
 const CELL: usize = 384;
 /// docs/SPEC.md Appendix A, author-provided MIT glyphs; see NOTICE.md.
@@ -304,6 +309,11 @@ pub fn line(row: u32, fg: u16, text: &[u8]) {
     display().row(row, fg, 0, text)
 }
 
+/// The bar of an operation that takes a while, in a frame.
+pub fn progress(percent: u32, color: u16) {
+    display().progress(percent, color)
+}
+
 pub fn release() {
     display().active = false;
     SPI1_CON.write(0);
@@ -349,7 +359,7 @@ pub unsafe extern "C" fn display_text(row: u32, fg: u16, text: *const c_char) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn display_progress(percent: u32, color: u16) {
-    display().progress(percent, color)
+    progress(percent, color)
 }
 
 #[unsafe(no_mangle)]

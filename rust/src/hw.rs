@@ -103,6 +103,12 @@ pub fn irq_off() {
     }
 }
 
+/// `N` bytes of the retained area, which survives a reset (docs/SPEC.md §6.1), from `offset`.
+pub fn retained<const N: usize>(offset: usize) -> &'static mut [u8; N] {
+    // Safety: RAM that is this program's to read and write. No caller keeps two of these at once.
+    unsafe { &mut *((0x01c7_fd80 + offset) as *mut [u8; N]) }
+}
+
 /// Text for the screen: NUL-terminated, as the C that is left takes it. One word, where a `&str` is two.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(transparent)]

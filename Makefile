@@ -16,7 +16,9 @@ RUSTC ?= rustc-pi32v2
 # Any recent rustc, for the tests on the host.
 HOST_RUSTC ?= rustc
 CARGO ?= cargo
-RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs)
+RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs) VERSION
+# What the RAM stage tells a host its version is.
+export STAGE_VERSION := $(shell cat VERSION)
 RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=s -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
 # What the linker needs of Rust's core library, where it optimises Rust and C together.
@@ -47,7 +49,7 @@ COMMON :=
 STAGE0 :=
 STAGE1 :=
 LOADER := $(COMMON) loader loader_target
-INSTALLER := $(COMMON) installer
+INSTALLER := $(COMMON)
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
 STAGE := $(COMMON)
 HEADERS := $(wildcard include/*.h)
@@ -117,7 +119,8 @@ define BOARD_template
 $$(eval $$(call RUST_template,build/$(1)/mboot.o,$(3)))
 $$(eval $$(call RUST_whole_template,build/$(1)/s0/libmboot.a,$(3) stage0))
 $$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,$(3) stage1))
-$$(eval $$(call RUST_template,build/$(1)/st/mboot.o,$(3) ram_stage))
+$$(eval $$(call RUST_template,build/$(1)/st/ota/mboot.o,$(3) ram_stage stage_ota))
+$$(eval $$(call RUST_template,build/$(1)/st/ram/mboot.o,$(3) ram_stage))
 build/$(1)/%.o: src/%.c $(HEADERS) Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
@@ -183,17 +186,13 @@ build/$(1)/st/%.o: src/%.c $(HEADERS) Makefile
 	$(CLANG) $(CFLAGS) -flto -DRAM_STAGE $(2) -c $$< -o $$@
 build/$(1)/stage_start.o: src/stage_start.S Makefile
 	$(CLANG) -target pi32v2 -mcpu=r3 $(2) -c $$< -o $$@
-build/$(1)/stage_ota.o: src/stage.c $(HEADERS) Makefile build/boot_version.h
-	$(CLANG) $(CFLAGS) -flto $(2) -DSTAGE_OTA -DSTAGE_VERSION=\"$$$$(cat VERSION)\" -c $$< -o $$@
-build/$(1)/stage_ram.o: src/stage.c $(HEADERS) Makefile build/boot_version.h
-	$(CLANG) $(CFLAGS) -flto $(2) -DSTAGE_VERSION=\"$$$$(cat VERSION)\" -c $$< -o $$@
 build/$(1)/stage-ota.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c0a800 -DRAM_LENGTH=0xc000 -DINSTALLER_BUILD $$< -o $$@
 build/$(1)/stage-ram.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DINSTALLER_BUILD $$< -o $$@
-build/$(1)/stage-ota.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_ota.o build/$(1)/stage_start.o build/$(1)/stage-ota.ld
+build/$(1)/stage-ota.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/ota/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ota.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ota.ld -Map build/$(1)/stage-ota.map -o $$@ $$(filter %.o,$$^)
-build/$(1)/stage-ram.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_ram.o build/$(1)/stage_start.o build/$(1)/stage-ram.ld
+build/$(1)/stage-ram.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/ram/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ram.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ram.ld -Map build/$(1)/stage-ram.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage-ota.bin: build/$(1)/stage-ota.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -290,9 +289,10 @@ build/boot-test-requests: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h $(HE
 build/test-request.ld: tools/target.ld.S
 	@mkdir -p build
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=test_request_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DLOADER_BUILD $< -o $@
-build/test-request-%.bin: src/test_request.c include/platform.h build/test-request.ld
-	$(CLANG) $(CFLAGS) -DTEST_REQUEST=$(if $(filter sd,$*),4,5) -c $< -o build/test-request-$*.o
-	$(LINK) --gc-sections -T build/test-request.ld -o build/test-request-$*.elf build/test-request-$*.o
+$(eval $(call RUST_whole_template,build/test-request-midi/libmboot.a,test_request_midi))
+$(eval $(call RUST_whole_template,build/test-request-sd/libmboot.a,test_request_sd))
+build/test-request-%.bin: build/test-request-%/libmboot.a build/test-request.ld
+	$(LINK) --gc-sections -T build/test-request.ld -u test_request_entry -o build/test-request-$*.elf $<
 	$(OBJCOPY) -O binary -j .text build/test-request-$*.elf $@
 test-requests: build/test-request-midi.bin build/test-request-sd.bin
 build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h $(HEADERS) $$(call sim_rust,$$*,_MIDI)
