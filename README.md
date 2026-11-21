@@ -70,6 +70,10 @@ Baud Girl run with it.
 
 ## Status
 
+**This branch, `rust-port`, is the bootloader rewritten in Rust, and has not run on a unit.** It builds every
+product and passes every test here. What follows is what the C releases were tested on. [rust/PORT.md](rust/PORT.md)
+has what changed, the sizes, and what is not known.
+
 | | |
 |---|---|
 | SMK-37 Pro | tested on hardware: start-up (about 1 s), both keys, every menu action, the calibration guard, an official M-VAVE update, Snoop37 and Baud Girl, all loader operations, installation with M-UPGRADE |
@@ -169,16 +173,17 @@ skips the model and version checks.
 
 ## Build
 
-You need Python 3, GNU Make, Rust and a C compiler, and the
-[pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release
-`pi32v2-23.1.5-5`. Nothing from JieLi is needed. On Linux x86-64:
+You need Python 3, GNU Make, a C compiler and Rust with cargo for the tests and tools, the
+[pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release `pi32v2-23.1.6-1`, and a rustc for
+pi32v2 built on that LLVM from [pi32v2-rust](https://github.com/jvitkauskas/pi32v2-rust), which has no release
+yet. Nothing from JieLi is needed. On Linux x86-64:
 
 ```sh
-curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.5-5/pi32v2-llvm-23.1.5-5-linux-x64.tar.xz
-echo 'a20e257b840eb6b212761bfa93a7f3804502940d0035d62790da3d42fefa31e3  toolchain.tar.xz' | sha256sum -c
+curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.6-1/pi32v2-llvm-23.1.6-1-linux-x64.tar.xz
+echo '0ab9d51920b2fbfa3f01859bb6eedc5f7ce75d00baf4a602490d3a9d75760888  toolchain.tar.xz' | sha256sum -c
 mkdir toolchain && tar -xJf toolchain.tar.xz -C toolchain --strip-components=1
 cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 upkr
-make
+make RUSTC=<the pi32v2 rustc>
 ```
 
 Upkr is the packer that stores stage 1. `make UPKR=<path>` uses one installed elsewhere. The release also has packages for Linux arm64 and macOS, with their checksums in
@@ -197,7 +202,7 @@ example `1.1-e9a25e1`. The build fails if an image outgrows its slot.
 
 `make test` runs the tests: the formats, the loader protocol, and the start-up
 and menu of both boards on a simulated chip and flash. `make sanitize` runs them
-under ASan and UBSan, and `make reproducible` checks that two builds match.
+with the tests' C under ASan and UBSan and the Rust's overflow checks on, and `make reproducible` checks that two builds match.
 Some tests also use flash images of real units and M-VAVE's packages in
 `testdata/`. Those contain M-VAVE's firmware, so they are not in the
 repository, and the tests skip them when absent.
@@ -206,15 +211,17 @@ repository, and the tests skip them when absent.
 
 | Path | What |
 |---|---|
-| `src/startup.S`, `src/stage0.c` | stage 0: entry, power and clock, holding the key for download mode ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
-| `src/boot.c` | stage 1: start-up decisions, menu |
-| `src/midi_update.c`, `src/usb_midi.c` | MIDI mode: the update protocol, and the USB-MIDI device |
-| `src/core.c` | flash formats, checksums, ciphers, updater decoding and calibration rules (portable C, also built for the tests) |
-| `src/contract.c` | what the firmware and updaters are handed at start |
-| `src/platform.c`, `src/board.c`, `src/display.c` | clock, SPI flash, keys, LEDs, screen |
-| `src/loader.c`, `src/loader_target.c` | the flash loader |
-| `src/sdboot.c` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
-| `src/installer.c`, `src/installer_start.S` | the installer in the `.fwsc` packages |
+| `src/startup.S`, `rust/src/stage0.rs`, `upkr.rs` | stage 0: entry, power and clock, holding the key for download mode, unpacking stage 1 ([specification §4.4](docs/SPEC.md#44-the-bootloaders-two-stages)) |
+| `rust/src/boot.rs` | stage 1: start-up decisions, menu |
+| `rust/src/midi_update.rs`, `usb_midi.rs` | MIDI mode: the update protocol, and the USB-MIDI device |
+| `rust/src/formats.rs` | flash formats, checksums, ciphers, updater decoding and calibration rules (portable, also built for the tests) |
+| `rust/src/contract.rs` | what the firmware and updaters are handed at start |
+| `rust/src/platform.rs`, `board.rs`, `display.rs`, `hw.rs` | clock, SPI flash, keys, LEDs, screen, registers |
+| `rust/src/loader.rs` | the flash loader |
+| `rust/src/sdboot.rs` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
+| `rust/src/installer.rs`, `sfx.rs`, `src/installer_start.S` | the installer in the `.fwsc` packages |
+| `rust/src/stage.rs` | MIDI mode as a program in RAM |
+| `include/` | the C interface the Rust keeps, for the tests |
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
 | `docs/SPEC.md` | the specification: hardware, formats and protocols |
 | `docs/PROVENANCE.md`, `docs/handover/` | how it was written, and the specification and instructions as handed over |

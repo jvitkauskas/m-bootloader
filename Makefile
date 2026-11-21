@@ -11,7 +11,7 @@ NM := $(TOOLCHAIN)/bin/llvm-nm
 # Upkr 0.2.3 (see README), at UPKR=<path> or on the PATH.
 export UPKR ?= upkr
 HOSTCC ?= cc
-# The pi32v2 rustc (see README), on the same LLVM as the toolchain: the linker optimises Rust and C together.
+# The pi32v2 rustc (see README), on the same LLVM as the toolchain: the linker generates the code from its bitcode.
 RUSTC ?= rustc-pi32v2
 # Any recent rustc, for the tests on the host.
 HOST_RUSTC ?= rustc
@@ -21,7 +21,7 @@ RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs) VERSION
 export STAGE_VERSION := $(shell cat VERSION)
 RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=s -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
-# What the linker needs of Rust's core library, where it optimises Rust and C together.
+# Rust's core library, as the linker takes it.
 RUST_CORE_lto := build/rust/core.o
 HOST_RUST := build/host/host/libmboot.a
 # For the simulated chip's tests, which have their own MIDI mode.
@@ -38,20 +38,11 @@ HOST_RUST_SD := build/host/platform_sim-import_early/libmboot.a
 HOST_RUST_SD_SMK := build/host/smk-platform_sim-import_early/libmboot.a
 HOST_RUST_MU := build/host/mu_test_app_ram/libmboot.a
 HOST_RUST_MU_SMK := build/host/smk-mu_test_app_ram/libmboot.a
-CFLAGS := -target pi32v2 -mcpu=r3 -std=c99 -Oz -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror -Iinclude
 # A test build: make clean, then make TEST_REQUESTS=1 (docs/SPEC.md §11.9).
 ifdef TEST_REQUESTS
-CFLAGS += -DTEST_REQUESTS
+RUST_TEST := test_requests
 export BOOT_VERSION_SUFFIX := -test
 endif
-COMMON :=
-# The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
-STAGE0 :=
-STAGE1 :=
-LOADER := $(COMMON)
-INSTALLER := $(COMMON)
-# MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
-STAGE := $(COMMON)
 HEADERS := $(wildcard include/*.h)
 SIM_SOURCES := tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
@@ -108,21 +99,12 @@ build/host/%/libmboot.a: $(RUST_SRC) Makefile
 define BOARD_template
 $$(eval $$(call RUST_template,build/$(1)/mboot.o,$(3)))
 $$(eval $$(call RUST_template,build/$(1)/s0/mboot.o,$(3) stage0))
-$$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,$(3) stage1))
+$$(eval $$(call RUST_template,build/$(1)/s1/mboot.o,$(3) stage1 $$(RUST_TEST)))
 $$(eval $$(call RUST_template,build/$(1)/st/ota/mboot.o,$(3) ram_stage stage_ota))
 $$(eval $$(call RUST_template,build/$(1)/st/ram/mboot.o,$(3) ram_stage))
-build/$(1)/%.o: src/%.c $(HEADERS) Makefile
-	@mkdir -p $$(@D)
-	$(CLANG) $(CFLAGS) -flto $(2) -c $$< -o $$@
 build/$(1)/startup.o: src/startup.S build/boot_version.h Makefile
 	@mkdir -p $$(@D)
 	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild $(2) -c $$< -o $$@
-build/$(1)/s0/%.o: src/%.c $(HEADERS) Makefile
-	@mkdir -p $$(@D)
-	$(CLANG) $(CFLAGS) -DSTAGE0 $(2) -c $$< -o $$@
-build/$(1)/s1/%.o: src/%.c $(HEADERS) Makefile
-	@mkdir -p $$(@D)
-	$(CLANG) $(CFLAGS) -flto -DSTAGE1 $(2) -c $$< -o $$@
 build/$(1)/stage0.ld: tools/stage0.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c $$< -o $$@
@@ -139,7 +121,7 @@ build/$(1)/stage0.syms: build/$(1)/stage0.elf
 	$(OBJCOPY) --wildcard --localize-symbol='_R*' $$< $$@
 build/$(1)/stage1.ld: tools/stage1.ld.S build/$(1)/stage0.bin
 	$(CLANG) -E -P -x c -DSTAGE1_ORIGIN=$$$$((0x1c02000+$$$$(stat -c%s build/$(1)/stage0.bin))) $$< -o $$@
-build/$(1)/stage1.elf: $$(addprefix build/$(1)/s1/,$$(addsuffix .o,$$(STAGE1))) build/$(1)/s1/mboot.o $$(RUST_CORE_lto) build/$(1)/stage0.syms build/$(1)/stage1.ld
+build/$(1)/stage1.elf: build/$(1)/s1/mboot.o $$(RUST_CORE_lto) build/$(1)/stage0.syms build/$(1)/stage1.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections --just-symbols=build/$(1)/stage0.syms -T build/$(1)/stage1.ld -Map build/$(1)/stage1.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage1.bin: build/$(1)/stage1.elf
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -155,7 +137,7 @@ build/$(1)/installer_start.o: src/installer_start.S build/$(1)/uboot.boot Makefi
 	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild/$(1) $(2) -c $$< -o $$@
 build/$(1)/installer.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=installer_entry -DRAM_ORIGIN=0x1c0a800 -DRAM_LENGTH=0xc000 -DINSTALLER_BUILD $$< -o $$@
-build/$(1)/installer.elf: $$(addprefix build/$(1)/,$$(addsuffix .o,$$(INSTALLER))) build/$(1)/mboot.o $$(RUST_CORE_lto) build/$(1)/installer_start.o build/$(1)/installer.ld
+build/$(1)/installer.elf: build/$(1)/mboot.o $$(RUST_CORE_lto) build/$(1)/installer_start.o build/$(1)/installer.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/installer.ld -Map build/$(1)/installer.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/installer.bin: build/$(1)/installer.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -175,18 +157,15 @@ build/$(1)/installer-sfx.bin: build/$(1)/sfx.elf build/sfx-layout tools/sfx_symb
 	$(OBJCOPY) -O binary -j .entry -j .pack -j .text $$< $$@
 	./build/sfx-layout check build/$(1)/installer.bin $$@ $$$$(python3 tools/sfx_symbols.py $(NM) $$<)
 # The RAM stage: linked for the updater's address, and for run-ram's slot.
-build/$(1)/st/%.o: src/%.c $(HEADERS) Makefile
-	@mkdir -p $$(@D)
-	$(CLANG) $(CFLAGS) -flto -DRAM_STAGE $(2) -c $$< -o $$@
 build/$(1)/stage_start.o: src/stage_start.S Makefile
 	$(CLANG) -target pi32v2 -mcpu=r3 $(2) -c $$< -o $$@
 build/$(1)/stage-ota.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c0a800 -DRAM_LENGTH=0xc000 -DINSTALLER_BUILD $$< -o $$@
 build/$(1)/stage-ram.ld: tools/target.ld.S
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=stage_entry -DRAM_ORIGIN=0x1c28000 -DRAM_LENGTH=0x8000 -DINSTALLER_BUILD $$< -o $$@
-build/$(1)/stage-ota.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/ota/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ota.ld
+build/$(1)/stage-ota.elf: build/$(1)/st/ota/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ota.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ota.ld -Map build/$(1)/stage-ota.map -o $$@ $$(filter %.o,$$^)
-build/$(1)/stage-ram.elf: $$(addprefix build/$(1)/st/,$$(addsuffix .o,$$(STAGE))) build/$(1)/st/ram/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ram.ld
+build/$(1)/stage-ram.elf: build/$(1)/st/ram/mboot.o $$(RUST_CORE_lto) build/$(1)/stage_start.o build/$(1)/stage-ram.ld
 	$(LINK) --plugin-opt=O3 --relax --gc-sections -T build/$(1)/stage-ram.ld -Map build/$(1)/stage-ram.map -o $$@ $$(filter %.o,$$^)
 build/$(1)/stage-ota.bin: build/$(1)/stage-ota.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
@@ -204,9 +183,6 @@ build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin build
 
 define LOADER_template
 $$(eval $$(call RUST_template,build/loader-$(1)/mboot.o,loader_$(1)))
-build/loader-$(1)/%.o: src/%.c $(HEADERS) Makefile
-	@mkdir -p $$(@D)
-	$(CLANG) $(CFLAGS) -DLOADER_ADDRESS=$(2) -c $$< -o $$@
 build/loader-$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=loader_entry -DRAM_ORIGIN=$(2) -DRAM_LENGTH=0x8000 -DLOADER_BUILD $$< -o $$@
