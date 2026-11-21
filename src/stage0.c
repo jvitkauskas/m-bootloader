@@ -30,8 +30,6 @@ void rom_download(void) {
 __attribute__((noinline)) bool apply_config(void) {
     p33_write(9, (p33_read(9)&0xf0) | 11);
     p33_write(6, (p33_read(6)&0xf8) | 3);
-    if (!SMK)
-        p33_write(5, (p33_read(5)&0xf8) | 4); /* 3.2 V, as FM-1 016's configuration */
     for (unsigned n = 0; n < 2; ++n)
         sync_cpu();
     for (unsigned n = 0; n < 16; ++n)
