@@ -16,7 +16,7 @@ RUSTC ?= rustc-pi32v2
 # Any recent rustc, for the tests on the host.
 HOST_RUSTC ?= rustc
 CARGO ?= cargo
-RUST_SRC := $(wildcard rust/src/*.rs)
+RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs)
 RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=s -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
 # What the linker needs of Rust's core library, where it optimises Rust and C together.
@@ -24,6 +24,12 @@ RUST_CORE_lto := build/rust/core.o
 HOST_RUST := build/host/host/libmboot.a
 # For the simulated chip's tests, which have their own MIDI mode.
 HOST_RUST_SIM := build/host/boot_sim-platform_sim/libmboot.a
+HOST_RUST_SIM_SMK := build/host/boot_sim-platform_sim-smk/libmboot.a
+HOST_RUST_SIM_REQUESTS := build/host/boot_sim-platform_sim-test_requests/libmboot.a
+HOST_RUST_SIM_MIDI := build/host/boot_sim-platform_sim-midi_mode-mu_test_app_ram/libmboot.a
+HOST_RUST_SIM_MIDI_SMK := build/host/boot_sim-platform_sim-midi_mode-mu_test_app_ram-smk/libmboot.a
+# The simulated chip's library for a test: $(1) is smk37 or fm1, $(2) is _MIDI or nothing.
+sim_rust = $(HOST_RUST_SIM$(2)$(if $(filter smk37,$(1)),_SMK,))
 HOST_RUST_PSIM := build/host/platform_sim/libmboot.a
 # For the card's test and the panel's, which stand in for the pins and the timer.
 HOST_RUST_SD := build/host/platform_sim-import_early/libmboot.a
@@ -39,7 +45,7 @@ endif
 COMMON := runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 := stage0 upkr runtime
-STAGE1 := runtime boot
+STAGE1 := runtime
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
@@ -275,12 +281,13 @@ build/sdboot-test: $(HOST_RUST_SD) tests/sdboot_test.c $(HEADERS)
 build/sdboot-test-smk37: $(HOST_RUST_SD_SMK) tests/sdboot_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOARD_SMK -Iinclude tests/sdboot_test.c $(HOST_RUST_SD_SMK) -Wl,--gc-sections -o $@
-build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS) $(HOST_RUST_SIM)
+.SECONDEXPANSION:
+build/boot-test-fm1 build/boot-test-smk37: build/boot-test-%: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h $(HEADERS) $$(call sim_rust,$$*,)
 	@mkdir -p $(@D)
-	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
-build/boot-test-requests: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS) $(HOST_RUST_SIM)
+	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_test.c $(call sim_rust,$*,) -Wl,--gc-sections -o $@
+build/boot-test-requests: $(SIM_SOURCES) tests/boot_test.c tests/boot_sim.h $(HEADERS) $(HOST_RUST_SIM_REQUESTS)
 	@mkdir -p build
-	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_REQUESTS $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
+	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_REQUESTS $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM_REQUESTS) -Wl,--gc-sections -o $@
 # What asks a test build's bootloader for MIDI mode or the SD card item, through run-ram.
 build/test-request.ld: tools/target.ld.S
 	@mkdir -p build
@@ -290,9 +297,9 @@ build/test-request-%.bin: src/test_request.c include/platform.h build/test-reque
 	$(LINK) --gc-sections -T build/test-request.ld -o build/test-request-$*.elf build/test-request-$*.o
 	$(OBJCOPY) -O binary -j .text build/test-request-$*.elf $@
 test-requests: build/test-request-midi.bin build/test-request-sd.bin
-build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h src/boot.c $(HEADERS) $(HOST_RUST_SIM)
+build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h $(HEADERS) $$(call sim_rust,$$*,_MIDI)
 	@mkdir -p $(@D)
-	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
+	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_midi_test.c $(call sim_rust,$*,_MIDI) -Wl,--gc-sections -o $@
 build/loader-slot-a-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c $< -o $@
@@ -323,7 +330,7 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	python3 tests/container_test.py
 	$(if $(TEST_REQUESTS),NO_INSTALLER_PACKAGES=1 )python3 tests/fwsc_test.py
 	python3 tests/stage2_test.py
-sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(HOST_RUST_SIM) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
+sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(HOST_RUST_SIM) $(HOST_RUST_SIM_SMK) $(HOST_RUST_SIM_MIDI) $(HOST_RUST_SIM_MIDI_SMK) $(HOST_RUST_MU) $(HOST_RUST_MU_SMK)
 	@mkdir -p build
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/core_test.c $(HOST_RUST) -Wl,--gc-sections -o build/core-test-sanitize
 	./build/core-test-sanitize
@@ -346,11 +353,11 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(H
 	./build/upkr-test-sanitize build/smk37/stage1.pack build/smk37/stage1.bin
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o build/boot-test-fm1-sanitize
 	./build/boot-test-fm1-sanitize
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o build/boot-test-smk37-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_test.c $(HOST_RUST_SIM_SMK) -Wl,--gc-sections -o build/boot-test-smk37-sanitize
 	./build/boot-test-smk37-sanitize
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o build/boot-midi-test-fm1-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM_MIDI) -Wl,--gc-sections -o build/boot-midi-test-fm1-sanitize
 	./build/boot-midi-test-fm1-sanitize
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM) -Wl,--gc-sections -o build/boot-midi-test-smk37-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM_MIDI_SMK) -Wl,--gc-sections -o build/boot-midi-test-smk37-sanitize
 	./build/boot-midi-test-smk37-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c tests/loader_slot_test.c -o build/loader-slot-a-sanitize.o
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DLOADER_ADDRESS=0x01c28000 -c tests/loader_slot_test.c -o build/loader-slot-b-sanitize.o

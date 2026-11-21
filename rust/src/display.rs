@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! The screen: docs/SPEC.md §8.4. 240 by 240 pixels on SPI1, written in 15 rows of 20 characters.
 use crate::Global;
-use crate::hw::{Reg, bit, dma_address, sync_cpu};
+use crate::hw::{Reg, Text, bit, dma_address, sync_cpu};
 use crate::platform::{gpio_level, gpio_output, hal_delay_us, hal_fault, hal_fault_clear};
 use core::ffi::{CStr, c_char};
 
@@ -287,9 +287,32 @@ impl Display {
     }
 }
 
+pub fn init(board: u32) -> bool {
+    display().init(board)
+}
+
+pub fn rect(x: u32, y: u32, w: u32, h: u32, color: u16) {
+    display().rect(x, y, w, h, color)
+}
+
+/// A row of text: 15 rows of 20 characters, on black.
+pub fn text(row: u32, fg: u16, text: Text) {
+    line(row, fg, text.as_bytes())
+}
+
+pub fn line(row: u32, fg: u16, text: &[u8]) {
+    display().row(row, fg, 0, text)
+}
+
+pub fn release() {
+    display().active = false;
+    SPI1_CON.write(0);
+}
+
+// The C interface (include/display.h).
 #[unsafe(no_mangle)]
 pub extern "C" fn display_init(board: u32) -> bool {
-    display().init(board)
+    init(board)
 }
 
 #[unsafe(no_mangle)]
@@ -331,6 +354,5 @@ pub extern "C" fn display_progress(percent: u32, color: u16) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn display_release() {
-    display().active = false;
-    SPI1_CON.write(0);
+    release()
 }

@@ -29,6 +29,13 @@
 #define main boot_test_main
 #include "boot_test.c"
 #undef main
+#ifdef BOARD_SMK
+#define MENU_KEYS "< > SEQ PLAY SEQ REC"
+#else
+#define MENU_KEYS "OCT- OCT+ PLAY REC"
+#endif
+/* rust/src/boot.rs's: MIDI mode as when no menu has opened it. */
+void boot_test_midi_reset(void);
 
 static unsigned t_midi_runs, t_usb_starts, t_usb_stops, t_ram_app_calls, t_ram_app_mhz;
 static unsigned long long t_usb_started_at;
@@ -72,8 +79,7 @@ static const unsigned t_menu_keys[] = { KEY_PREV, KEY_NEXT, KEY_SELECT, KEY_RECO
 static void t_midi_prep(unsigned fixture)
 {
     t_prep(fixture);
-    midi_alone = false;
-    midi_stuck = 0;
+    boot_test_midi_reset();
     t_midi_runs = t_usb_starts = t_usb_stops = t_ram_app_calls = t_ram_app_mhz = 0;
     t_usb_started_at = 0;
     t_mu_first = MU_CANCELLED;

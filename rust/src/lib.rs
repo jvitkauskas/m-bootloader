@@ -4,6 +4,8 @@
 #![cfg_attr(target_arch = "pi32v2", feature(asm_experimental_arch))]
 // Stage 0 is linked whole, so it is built with only what it has: docs/SPEC.md §4.4.
 pub mod board;
+#[cfg(any(stage1, boot_sim))]
+pub mod boot;
 #[cfg(not(stage0))]
 pub mod contract;
 #[cfg(not(stage0))]
@@ -11,14 +13,33 @@ pub mod display;
 #[cfg(not(stage0))]
 pub mod formats;
 pub mod hw;
-// The simulated chip's tests have their own MIDI mode, and stand in for the card, whose bus that chip doesn't model.
-#[cfg(not(any(stage0, boot_sim)))]
+#[cfg(not(stage0))]
 pub mod midi_update;
 pub mod platform;
 #[cfg(not(any(stage0, boot_sim)))]
 pub mod sdboot;
+pub mod stage0;
 #[cfg(not(any(stage0, boot_sim)))]
 pub mod usb_midi;
+
+// The simulated chip has no USB, and doesn't model the card's bus: its tests stand in for both.
+#[cfg(boot_sim)]
+pub mod sdboot {
+    unsafe extern "C" {
+        pub safe fn sd_probe(lsb_mhz: u32) -> bool;
+        pub safe fn sd_stage2(lsb_mhz: u32) -> Option<crate::hw::Text>;
+    }
+}
+
+#[cfg(boot_sim)]
+pub mod usb_midi {
+    unsafe extern "C" {
+        pub safe fn usb_midi_start();
+        pub safe fn usb_midi_poll();
+        pub fn usb_midi_send(data: *const u8, size: u32);
+        pub safe fn usb_midi_stop();
+    }
+}
 
 /// A global of this program, which has one thread and no interrupts.
 #[repr(transparent)]

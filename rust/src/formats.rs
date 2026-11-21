@@ -240,6 +240,15 @@ impl Flash {
 }
 
 impl Nor {
+    /// The flash, through these three, with its capacity still to be found.
+    pub const fn new(
+        read: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, u32) -> bool,
+        program: unsafe extern "C" fn(*mut c_void, u32, *const c_void, u32) -> bool,
+        erase: unsafe extern "C" fn(*mut c_void, u32, u32) -> bool,
+    ) -> Nor {
+        Nor { flash: Flash { ctx: core::ptr::null_mut(), capacity: 0, read }, program, erase }
+    }
+
     fn program(&self, address: u32, src: &[u8]) -> bool {
         unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
     }

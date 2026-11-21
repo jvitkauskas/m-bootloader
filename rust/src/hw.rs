@@ -117,8 +117,19 @@ impl Text {
         Text(core::ptr::NonNull::new(s.as_ptr().cast_mut()).unwrap())
     }
 
+    /// # Safety
+    /// A NUL-terminated string is at `address`, for as long as the program runs.
+    pub const unsafe fn at(address: usize) -> Text {
+        Text(core::ptr::NonNull::new(core::ptr::without_provenance_mut(address)).unwrap())
+    }
+
     pub const fn as_ptr(self) -> *const u8 {
         self.0.as_ptr()
+    }
+
+    /// Without its NUL.
+    pub fn as_bytes(self) -> &'static [u8] {
+        unsafe { core::ffi::CStr::from_ptr(self.0.as_ptr().cast()) }.to_bytes()
     }
 }
 

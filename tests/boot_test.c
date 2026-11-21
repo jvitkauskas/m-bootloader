@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
-/* Full boot/menu integration: this translation unit includes the production
- * boot.c so tests can reset its private BSS between simulated power cycles.
+/* Full boot/menu integration: the production rust/src/boot.rs, which has an entry for these tests
+ * to reset its private data between simulated power cycles.
  * The register/NOR model and scenario approach are adapted from the other
  * independent implementation (a), under MIT; no original implementation is used.
  */
@@ -10,10 +10,29 @@
 #include <setjmp.h>
 #include <sys/mman.h>
 #include "boot_sim.h"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmisleading-indentation"
-#include "../src/boot.c"
-#pragma GCC diagnostic pop
+#include "core.h"
+#include "contract.h"
+#include "platform.h"
+#include "board.h"
+#include "display.h"
+#include "sdboot.h"
+#include "stage0.h"
+#include <string.h>
+#ifdef BOARD_SMK
+#define SMK true
+#else
+#define SMK false
+#endif
+#define GREEN 0x07e0
+#define GREY 0x8410
+/* rust/src/boot.rs's, for these tests: its private data as at power-on, and what they look at. */
+void boot_test_reset(void);
+const uint8_t *boot_test_clock_meta(void);
+const uint8_t *boot_test_memory_meta(void);
+unsigned boot_test_effective_width(void);
+#define clock_meta boot_test_clock_meta()
+#define memory_meta boot_test_memory_meta()
+#define effective_width boot_test_effective_width()
 #define CHECK(c) do { ++t_checks; if (!(c)) { \
     fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#c); ++t_failures; } } while (0)
 #define RET(off) ((uint8_t *)(uintptr_t)(0x01c7fd80u+(off)))
@@ -155,26 +174,10 @@ static int t_rom_read(void *param, void *dest, uint32_t offset, uint32_t size)
 
 static void t_reset_boot_state(void)
 {
-    memset(work, 0, sizeof(work));
-    memset(request, 0, sizeof(request));
-    memset(clock_meta, 0, sizeof(clock_meta));
-    memset(memory_meta, 0, sizeof(memory_meta));
-    memset(update_meta, 0, sizeof(update_meta));
-    memset(&config, 0, sizeof(config));
-    memset(&app, 0, sizeof(app));
-    memset(&header, 0, sizeof(header));
-    memset(&nor, 0, sizeof(nor));
-    jedec = unit_key = trim = 0;
-    memset(mac, 0, sizeof(mac));
-    effective_width = 0;
-    mounted = xip_attempted = screen_ready = false;
-    reason = NULL;
+    boot_test_reset();
     t_sd_calls = 0;
     t_sd_card = false;
     t_sd_result = NULL;
-#ifdef TEST_REQUESTS
-    test_sd = false;
-#endif
 }
 
 static void t_prep(unsigned fixture)
