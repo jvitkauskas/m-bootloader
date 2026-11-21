@@ -1,0 +1,16 @@
+# Builds `core` for pi32v2 from the compiler's own sources (the Makefile's sysroot rule): this crate is empty.
+[package]
+name = "sysroot"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+panic = "abort"
+debug = false
+overflow-checks = false
+
+[workspace]
