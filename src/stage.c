@@ -36,8 +36,8 @@ static uint32_t waited, seen;
 /* An install stopped partway: restarting now would leave no firmware, and stock has no way back. */
 static bool stay;
 
-void mu_send(const uint8_t *data, uint32_t size) {
-    usb_midi_send(data, size);
+bool mu_send(const uint8_t *data, uint32_t size) {
+    return usb_midi_send(data, size);
 }
 
 void mu_idle(void) {

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+#include "mirror.h"
 #include "display.h"
 #include "platform.h"
 #include <string.h>
@@ -193,6 +194,9 @@ void display_rect(unsigned x, unsigned y, unsigned w, unsigned h, uint16_t color
         n -= k;
     }
     gpio_level(cs_port, cs_pin, true);
+#ifdef MIRROR
+    mirror_rect(x, y, w, h, color);
+#endif
 }
 
 void display_pixels(unsigned x, unsigned y, unsigned w, unsigned h, const uint8_t *data) {
@@ -281,23 +285,35 @@ bool display_init(unsigned board) {
     return active;
 }
 
+/* A character's glyph: lower case as upper, anything without one as a space. */
+unsigned display_glyph(char c) {
+    unsigned char ch = (unsigned char)c;
+    if (ch >= 'a' && ch <= 'z')
+        ch -= 32;
+    unsigned g = 0;
+    while (characters[g] && (unsigned char)characters[g] != ch)
+        ++g;
+    return characters[g] ? g:0;
+}
+
+/* Whether pixel x, y of a glyph's 12x16 cell is in the text colour: the 5x7 glyph, doubled. */
+bool display_lit(unsigned g, unsigned x, unsigned y) {
+    return x < 10 && y < 14 && (glyphs[g][x/2]&(1u << (y/2)));
+}
+
 void display_row(unsigned row, uint16_t fg, uint16_t bg, const char *text, unsigned n) {
     if (!active || row >= 15)
         return;
     if (n > 20)
         n = 20;
+#ifdef MIRROR
+    mirror_row_begin(row, fg, bg, text, n);
+#endif
     for (unsigned c = 0; c < 20 && active; ++c) {
-        unsigned char ch = c < n ? (unsigned char)text[c]:' ';
-        if (ch >= 'a' && ch <= 'z')
-            ch -= 32;
-        unsigned g = 0;
-        while (characters[g] && (unsigned char)characters[g] != ch)
-            ++g;
-        if (!characters[g])
-            g = 0;
+        unsigned g = display_glyph(c < n ? text[c]:' ');
         for (unsigned y = 0; y < 16; ++y)
             for (unsigned x = 0; x < 12; ++x) {
-                uint16_t color = x < 10 && y < 14 && (glyphs[g][x/2]&(1u << (y/2))) ? fg:bg;
+                uint16_t color = display_lit(g, x, y) ? fg:bg;
                 unsigned at = 2*(y*12+x);
                 pixels[at] = color >> 8;
                 pixels[at+1] = color;
@@ -306,6 +322,9 @@ void display_row(unsigned row, uint16_t fg, uint16_t bg, const char *text, unsig
         dma(sizeof(pixels));
         gpio_level(cs_port, cs_pin, true);
     }
+#ifdef MIRROR
+    mirror_row_end();
+#endif
 }
 
 void display_text(unsigned row, uint16_t fg, const char *text) {

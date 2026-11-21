@@ -91,7 +91,7 @@ static uint8_t answer[700], asked[1200];
 static int answered = -1;
 static uint32_t answer_size, asked_size;
 
-void mu_send(const uint8_t *data, uint32_t size) {
+bool mu_send(const uint8_t *data, uint32_t size) {
     static uint8_t u[700];
     assert(data[0] == 0xf0 && data[size-1] == 0xf7);
     uint32_t n = unpack7(data+1, size-2, u);
@@ -104,7 +104,7 @@ void mu_send(const uint8_t *data, uint32_t size) {
         assert((uint8_t)~sum == u[33]);
         memcpy(identity, u+6, 27);
         identity_seen = true;
-        return;
+        return true;
     }
     if (u[2] != 0x30) {
         uint32_t len = u[3] | (uint32_t)u[4] << 8 | (uint32_t)u[5] << 16, sum = 0;
@@ -115,7 +115,7 @@ void mu_send(const uint8_t *data, uint32_t size) {
         answered = u[2];
         answer_size = len;
         memcpy(answer, u+6, len);
-        return;
+        return true;
     }
     assert(n == 15);
     uint32_t sum = 0;
@@ -125,7 +125,7 @@ void mu_send(const uint8_t *data, uint32_t size) {
     uint32_t address = u[7] | (uint32_t)u[8] << 8 | (uint32_t)u[9] << 16 | (uint32_t)u[10] << 24;
     uint32_t len = u[11] | (uint32_t)u[12] << 8 | (uint32_t)u[13] << 16;
     if (stop_answering)
-        return;
+        return true;
     if (app_size) {
         assert(len <= 512 && address+len <= app_size);
         if (!app_first_read_seen) {
@@ -134,21 +134,21 @@ void mu_send(const uint8_t *data, uint32_t size) {
         }
         ++app_requests;
         if (app_stop_after && app_requests > app_stop_after)
-            return;
+            return true;
         if (app_cancel_after && app_requests == app_cancel_after) {
             static const uint8_t soft[] = { 0xf0, 0x22, 0x24, 0x35, 0x7d, 0xf7 };
             queue_bytes(soft, sizeof(soft));
-            return;
+            return true;
         }
         respond(address, app+address, len);
         if (app_changes_trailer && app_requests == 1)
             app[app_size-1] ^= 1;
-        return;
+        return true;
     }
     if (address == 0xf0000000u) {
         finish_seen = true;
         respond(address, (const uint8_t *)"success", 8);
-        return;
+        return true;
     }
     assert(len <= 512 && address+len <= package_size);
     ++reads_served;
@@ -157,7 +157,7 @@ void mu_send(const uint8_t *data, uint32_t size) {
     if (soft_after && reads_served == soft_after) {
         static const uint8_t soft[] = { 0xf0, 0x22, 0x24, 0x35, 0x7d, 0xf7 };
         queue_bytes(soft, sizeof(soft));
-        return;
+        return true;
     }
     static uint8_t chunk[512];
     memcpy(chunk, package+address, len);
@@ -165,6 +165,7 @@ void mu_send(const uint8_t *data, uint32_t size) {
     if (corrupt_at_pass2 >= 0 && address == PACKAGE_OFFSET+(uint32_t)corrupt_at_pass2 && ++pass2_seen == 2)
         chunk[3] ^= 1;
     respond(address, chunk, len);
+    return true;
 }
 
 void mu_idle(void) {

@@ -20,11 +20,11 @@ endif
 COMMON := core platform display runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 := stage0 upkr board platform runtime
-STAGE1 := core platform display runtime contract boot sdboot midi_update usb_midi
+STAGE1 := core platform display runtime contract boot sdboot midi_update usb_midi mirror
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
-STAGE := $(COMMON) midi_update usb_midi
+STAGE := $(COMMON) midi_update usb_midi mirror
 HEADERS := $(wildcard include/*.h)
 SIM_SOURCES := src/core.c src/contract.c src/platform.c src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
@@ -177,6 +177,9 @@ build/smk37/stage-elite-listed.fwsc: build/smk37/stage-ota.bin tools/fwsc.py too
 	python3 tools/fwsc.py stage --listed-flash smk37-elite $< $@
 build/manifest.json: $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) tools/manifest.py
 	python3 tools/manifest.py $(A_PRODUCTS) $(B_PRODUCTS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) > $@
+build/mirror-test: src/mirror.c tests/mirror_test.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DSTAGE1 -Iinclude src/mirror.c tests/mirror_test.c -o $@
 build/midi-update-test: src/core.c src/midi_update.c tests/midi_update_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DMU_TEST_APP_RAM -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o $@
@@ -239,7 +242,7 @@ build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADE
 	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
 build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o -o $@
-test: all build/boot-test-requests build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/sdboot-test-smk37 build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/boot-midi-test-fm1 build/boot-midi-test-smk37 build/loader-lifecycle-test
+test: all build/boot-test-requests build/midi-update-test build/mirror-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/sdboot-test-smk37 build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/boot-midi-test-fm1 build/boot-midi-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
 	./build/contract-test
@@ -248,6 +251,7 @@ test: all build/boot-test-requests build/midi-update-test build/midi-update-test
 	./build/sdboot-test
 	./build/sdboot-test-smk37
 	./build/midi-update-test
+	./build/mirror-test
 	./build/midi-update-test-smk37
 	./build/boot-test-fm1
 	./build/boot-test-smk37
@@ -277,6 +281,8 @@ sanitize:
 	./build/sdboot-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DMU_TEST_APP_RAM -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o build/midi-update-test-sanitize
 	./build/midi-update-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DSTAGE1 -Iinclude src/mirror.c tests/mirror_test.c -o build/mirror-test-sanitize
+	./build/mirror-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DBOARD_SMK -DMU_TEST_APP_RAM -Iinclude src/core.c src/midi_update.c tests/midi_update_test.c -o build/midi-update-test-smk37-sanitize
 	./build/midi-update-test-smk37-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/upkr.c tests/upkr_test.c -o build/upkr-test-sanitize

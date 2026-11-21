@@ -248,7 +248,15 @@ static void ep1_receive(void) {
     sie_write(RX_CSR2, csr >> 8);
 }
 
+static uint32_t polls;
+/* Polls so far: each is followed by a 0.5 ms wait (mu_idle, ep1_wait), so twice the milliseconds spent in MIDI mode,
+ * time inside sends included. The Big Screen mirror's clock. */
+uint32_t usb_midi_polls(void) {
+    return polls;
+}
+
 void usb_midi_poll(void) {
+    ++polls;
     if (!running)
         return;
     if (REG(CON0)&BIT(13))                      /* a frame's start is pending: acknowledge it */
@@ -319,12 +327,12 @@ static bool ep1_wait(void) {
     return false;
 }
 
-void usb_midi_send(const uint8_t *data, uint32_t size) {
+bool usb_midi_send(const uint8_t *data, uint32_t size) {
     uint32_t at = 0;
     while (at < size) {
         uint32_t n = 0;
         if (!configuration || !ep1_wait())
-            return;
+            return false;
         while (at < size && n < PACKET) {
             uint32_t left = size-at;
             uint32_t count = left > 3 ? 3:left;
@@ -340,6 +348,7 @@ void usb_midi_send(const uint8_t *data, uint32_t size) {
         sie_write(INDEX, 1);
         sie_write(TX_CSR1, sie_read(TX_CSR1) | 0x01);
     }
+    return ep1_wait();                             /* the last packet taken too: a host that stopped reading says so now */
 }
 
 void usb_midi_stop(void) {

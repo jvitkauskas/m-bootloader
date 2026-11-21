@@ -4,6 +4,7 @@
  * the package. The whole package is read and checked before anything is erased. */
 #include "midi_update.h"
 #include "core.h"
+#include "mirror.h"
 #define FRAME_MAX 640u
 #define PACKET_MAX 512u
 #define TRIES 5u
@@ -35,6 +36,14 @@ void mu_rx(uint8_t b) {
         else
             frame[frame_size++] = b;
     }
+}
+
+/* A wait: USB, and the Big Screen mirror's clock */
+static void idle(void) {
+    mu_idle();
+#ifdef MIRROR
+    mirror_tick();
+#endif
 }
 
 static uint32_t le32(const uint8_t *p) {
@@ -95,6 +104,11 @@ static unsigned take(uint32_t *size) {
     if (!frame_ready)
         return NOTHING;
     unsigned kind = NOTHING;
+#ifdef MIRROR
+    if (frame_size == 4 && frame[0] == 0x7d && frame[1] == 'F' && frame[2] == 'S')
+        mirror_hello(frame[3]);                    /* FM-1 Big Screen: an app is watching (src/mirror.c) */
+    else
+#endif
     if (frame_size == 4 && frame[0] == 0x22 && frame[1] == 0x24 && frame[2] == 0x35) {
         if (frame[3] == 0x7f)
             kind = ASK_UPGRADE;
@@ -123,10 +137,14 @@ static bool ask(uint32_t address, uint32_t size, uint8_t *out) {
     uint8_t request[8] = { 0, (uint8_t)address, (uint8_t)(address >> 8), (uint8_t)(address >> 16),
         (uint8_t)(address >> 24), (uint8_t)size, (uint8_t)(size >> 8), 0 };
     for (unsigned tries = 0; tries < TRIES; ++tries) {
+#ifdef MIRROR
+        mirror_poll();                             /* a viewer who came during the install: before the request, so
+                                                    * its reply can't arrive during the screen (one frame is held) */
+#endif
         send_message(0x30, request, sizeof(request));
         for (unsigned ms = 0; ms < TRY_MS; ++ms) {
             uint32_t n;
-            mu_idle();
+            idle();
             unsigned kind = take(&n);
             /* Until something is erased, the key and the soft key still get out. */
             if (kind == ASK_DOWNLOAD) {
@@ -318,7 +336,7 @@ static void serve_read(uint8_t cmd, uint8_t *sector, uint32_t n) {
             return;
         }
         crc = core_crc32(crc, sector, part);
-        mu_idle();
+        idle();
     }
     put_le32(decoded+8, crc^UINT32_MAX);
     send_message(cmd, decoded, 12);
@@ -360,7 +378,10 @@ enum mu_result mu_run(uint16_t key, uint8_t *sector, bool *written) {
     *written = false;
     for (; ; ) {
         uint32_t n;
-        mu_idle();
+        idle();
+#ifdef MIRROR
+        mirror_poll();
+#endif
         unsigned kind = take(&n);
         if (kind == ASK_UPGRADE) {
             enum mu_result r = install(key, sector, written);
