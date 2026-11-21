@@ -25,7 +25,7 @@ HOST_RUST := build/host/host/libmboot.a
 # For the simulated chip's tests, which have their own MIDI mode.
 HOST_RUST_SIM := build/host/boot_sim-platform_sim/libmboot.a
 HOST_RUST_PSIM := build/host/platform_sim/libmboot.a
-# For the card's test, which stands in for the pins and the timer.
+# For the card's test and the panel's, which stand in for the pins and the timer.
 HOST_RUST_SD := build/host/platform_sim-import_early/libmboot.a
 HOST_RUST_SD_SMK := build/host/smk-platform_sim-import_early/libmboot.a
 HOST_RUST_MU := build/host/mu_test_app_ram/libmboot.a
@@ -36,18 +36,18 @@ ifdef TEST_REQUESTS
 CFLAGS += -DTEST_REQUESTS
 export BOOT_VERSION_SUFFIX := -test
 endif
-COMMON := display runtime
+COMMON := runtime
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
-STAGE0 := stage0 upkr board runtime
-STAGE1 := display runtime boot usb_midi
+STAGE0 := stage0 upkr runtime
+STAGE1 := runtime boot usb_midi
 LOADER := $(COMMON) loader loader_target
 INSTALLER := $(COMMON) installer
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
 STAGE := $(COMMON) usb_midi
 HEADERS := $(wildcard include/*.h)
-SIM_SOURCES := src/board.c src/display.c src/stage0.c tests/boot_sim.c tests/boot_nor.c
+SIM_SOURCES := src/stage0.c tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
-LIFECYCLE_SOURCES := src/loader.c src/display.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
+LIFECYCLE_SOURCES := src/loader.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
 # M-UPGRADE packages: only our installer, which writes the bootloader, carried self-extracting. A test build has
@@ -263,9 +263,9 @@ build/loader-test: $(HOST_RUST) src/loader.c tests/loader_test.c $(HEADERS)
 build/contract-test: $(HOST_RUST) tests/contract_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude tests/contract_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
-build/panel-board-test: src/board.c src/display.c tests/panel_board_test.c $(HEADERS)
+build/panel-board-test: $(HOST_RUST_SD) tests/panel_board_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude src/board.c src/display.c tests/panel_board_test.c -o $@
+	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/panel_board_test.c $(HOST_RUST_SD) -Wl,--gc-sections -o $@
 build/platform-test: $(HOST_RUST_PSIM) tests/platform_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -DPLATFORM_SIM -Iinclude tests/platform_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o $@
@@ -331,7 +331,7 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(H
 	./build/loader-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/contract_test.c $(HOST_RUST) -Wl,--gc-sections -o build/contract-test-sanitize
 	./build/contract-test-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude src/board.c src/display.c tests/panel_board_test.c -o build/panel-board-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/panel_board_test.c $(HOST_RUST_SD) -Wl,--gc-sections -o build/panel-board-test-sanitize
 	./build/panel-board-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -DPLATFORM_SIM -Iinclude tests/platform_test.c $(HOST_RUST_PSIM) -Wl,--gc-sections -o build/platform-test-sanitize
 	./build/platform-test-sanitize

@@ -69,6 +69,19 @@ pub fn gpio(port: u32, offset: u32) -> Reg {
     Reg(0x50000 + 0x40 * port + offset)
 }
 
+/// The address the DMA is given for a pointer.
+pub fn dma_address(p: *mut u8) -> u32 {
+    #[cfg(boot_sim)]
+    {
+        unsafe extern "C" {
+            fn platform_dma_address(pointer: *const core::ffi::c_void) -> u32;
+        }
+        return unsafe { platform_dma_address(p.cast()) };
+    }
+    #[cfg(not(boot_sim))]
+    return p as u32;
+}
+
 pub const fn bit(n: u32) -> u32 {
     1 << n
 }

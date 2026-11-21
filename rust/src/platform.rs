@@ -572,18 +572,7 @@ mod flash {
         cs(true);
     }
 
-    /// The address the DMA is given for a pointer.
-    fn dma_address(p: *mut u8) -> u32 {
-        #[cfg(boot_sim)]
-        {
-            unsafe extern "C" {
-                fn platform_dma_address(pointer: *const c_void) -> u32;
-            }
-            return unsafe { platform_dma_address(p.cast()) };
-        }
-        #[cfg(not(boot_sim))]
-        return p as u32;
-    }
+    use crate::hw::dma_address;
 
     fn dma_receive(out: *mut u8, n: u32) {
         DMA_MUX.write(2);

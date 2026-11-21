@@ -3,8 +3,11 @@
 #![no_std]
 #![cfg_attr(target_arch = "pi32v2", feature(asm_experimental_arch))]
 // Stage 0 is linked whole, so it is built with only what it has: docs/SPEC.md §4.4.
+pub mod board;
 #[cfg(not(stage0))]
 pub mod contract;
+#[cfg(not(stage0))]
+pub mod display;
 #[cfg(not(stage0))]
 pub mod formats;
 pub mod hw;
