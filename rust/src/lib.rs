@@ -15,6 +15,8 @@ pub mod formats;
 pub mod hw;
 #[cfg(not(any(stage0, stage1)))]
 pub mod installer;
+#[cfg(not(any(stage0, stage1, ram_stage)))]
+pub mod loader;
 #[cfg(not(stage0))]
 pub mod midi_update;
 pub mod platform;

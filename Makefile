@@ -48,14 +48,14 @@ COMMON :=
 # The bootloader's two stages (docs/SPEC.md §4.4). Stage 0 is linked alone, so it cannot depend on stage 1.
 STAGE0 :=
 STAGE1 :=
-LOADER := $(COMMON) loader loader_target
+LOADER := $(COMMON)
 INSTALLER := $(COMMON)
 # MIDI mode in RAM, for units without m-bootloader (docs/SPEC.md §11.7).
 STAGE := $(COMMON)
 HEADERS := $(wildcard include/*.h)
 SIM_SOURCES := tests/boot_sim.c tests/boot_nor.c
 SIM_FLAGS := -std=c11 -g -Wall -Wextra -Werror -DPLATFORM_SIM -DBOOT_SIM -no-pie -Iinclude
-LIFECYCLE_SOURCES := src/loader.c tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
+LIFECYCLE_SOURCES := tests/boot_sim.c tests/boot_nor.c tests/loader_lifecycle_test.c
 A_PRODUCTS := build/fm1/uboot.boot build/smk37/uboot.boot
 B_PRODUCTS := build/loader/mflr-loader-a.bin build/loader/mflr-loader-b.bin
 # M-UPGRADE packages: only our installer, which writes the bootloader, carried self-extracting. A test build has
@@ -260,9 +260,9 @@ build/core-test: $(HOST_RUST) tests/core_test.c $(HEADERS)
 build/installer-host: $(HOST_RUST) tests/installer_host.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude tests/installer_host.c $(HOST_RUST) -Wl,--gc-sections -o $@
-build/loader-test: $(HOST_RUST) src/loader.c tests/loader_test.c $(HEADERS)
+build/loader-test: $(HOST_RUST) tests/loader_test.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -std=c99 -O2 -g -Wall -Wextra -Werror -Iinclude src/loader.c tests/loader_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
+	$(HOSTCC) -std=c99 -O2 -g -Wall -Wextra -Werror -Iinclude tests/loader_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
 build/contract-test: $(HOST_RUST) tests/contract_test.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=c11 -O2 -g -Wall -Wextra -Werror -Iinclude tests/contract_test.c $(HOST_RUST) -Wl,--gc-sections -o $@
@@ -298,14 +298,8 @@ test-requests: build/test-request-midi.bin build/test-request-sd.bin
 build/boot-midi-test-fm1 build/boot-midi-test-smk37: build/boot-midi-test-%: $(SIM_SOURCES) tests/boot_midi_test.c tests/boot_test.c tests/boot_sim.h $(HEADERS) $$(call sim_rust,$$*,_MIDI)
 	@mkdir -p $(@D)
 	$(HOSTCC) $(SIM_FLAGS) -O2 $(if $(filter smk37,$*),-DBOARD_SMK,) $(SIM_SOURCES) tests/boot_midi_test.c $(call sim_rust,$*,_MIDI) -Wl,--gc-sections -o $@
-build/loader-slot-a-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADERS)
-	@mkdir -p $(@D)
-	$(HOSTCC) $(SIM_FLAGS) -O2 -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c $< -o $@
-build/loader-slot-b-test.o: tests/loader_slot_test.c src/loader_target.c $(HEADERS)
-	@mkdir -p $(@D)
-	$(HOSTCC) $(SIM_FLAGS) -O2 -DLOADER_ADDRESS=0x01c28000 -c $< -o $@
-build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h build/loader-slot-a-test.o build/loader-slot-b-test.o $(HEADERS) $(HOST_RUST_SIM)
-	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) build/loader-slot-a-test.o build/loader-slot-b-test.o $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
+build/loader-lifecycle-test: $(LIFECYCLE_SOURCES) tests/boot_sim.h $(HEADERS) $(HOST_RUST_SIM)
+	$(HOSTCC) $(SIM_FLAGS) -O2 $(LIFECYCLE_SOURCES) $(HOST_RUST_SIM) -Wl,--gc-sections -o $@
 test: all build/boot-test-requests build/midi-update-test build/midi-update-test-smk37 build/upkr-test build/sdboot-test build/sdboot-test-smk37 build/installer-host build/core-test build/loader-test build/contract-test build/panel-board-test build/platform-test build/boot-test-fm1 build/boot-test-smk37 build/boot-midi-test-fm1 build/boot-midi-test-smk37 build/loader-lifecycle-test
 	./build/core-test
 	./build/loader-test
@@ -332,7 +326,7 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(H
 	@mkdir -p build
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/core_test.c $(HOST_RUST) -Wl,--gc-sections -o build/core-test-sanitize
 	./build/core-test-sanitize
-	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude src/loader.c tests/loader_test.c $(HOST_RUST) -Wl,--gc-sections -o build/loader-test-sanitize
+	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/loader_test.c $(HOST_RUST) -Wl,--gc-sections -o build/loader-test-sanitize
 	./build/loader-test-sanitize
 	$(HOSTCC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/contract_test.c $(HOST_RUST) -Wl,--gc-sections -o build/contract-test-sanitize
 	./build/contract-test-sanitize
@@ -357,9 +351,7 @@ sanitize: $(HOST_RUST) $(HOST_RUST_PSIM) $(HOST_RUST_SD) $(HOST_RUST_SD_SMK) $(H
 	./build/boot-midi-test-fm1-sanitize
 	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DBOARD_SMK $(SIM_SOURCES) tests/boot_midi_test.c $(HOST_RUST_SIM_MIDI_SMK) -Wl,--gc-sections -o build/boot-midi-test-smk37-sanitize
 	./build/boot-midi-test-smk37-sanitize
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DTEST_SLOT_A -DLOADER_ADDRESS=0x01c20000 -c tests/loader_slot_test.c -o build/loader-slot-a-sanitize.o
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined -DLOADER_ADDRESS=0x01c28000 -c tests/loader_slot_test.c -o build/loader-slot-b-sanitize.o
-	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(LIFECYCLE_SOURCES) build/loader-slot-a-sanitize.o build/loader-slot-b-sanitize.o $(HOST_RUST_SIM) -Wl,--gc-sections -o build/loader-lifecycle-test-sanitize
+	$(HOSTCC) $(SIM_FLAGS) -O1 -fsanitize=address,undefined $(LIFECYCLE_SOURCES) $(HOST_RUST_SIM) -Wl,--gc-sections -o build/loader-lifecycle-test-sanitize
 	./build/loader-lifecycle-test-sanitize
 reproducible: all
 	python3 tools/reproducible.py $(A_PRODUCTS) $(B_PRODUCTS) $(INSTALLERS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS)

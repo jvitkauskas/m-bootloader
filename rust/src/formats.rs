@@ -168,6 +168,28 @@ pub fn put_le32<const N: usize>(b: &mut [u8; N], at: usize, v: u32) {
     put_le16(b, at + 2, (v >> 16) as u16);
 }
 
+#[inline(always)]
+pub fn be16<const N: usize>(b: &[u8; N], at: usize) -> u16 {
+    u16::from_be_bytes([b[at], b[at + 1]])
+}
+
+#[inline(always)]
+pub fn be32<const N: usize>(b: &[u8; N], at: usize) -> u32 {
+    u32::from_be_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+}
+
+#[inline(always)]
+pub fn put_be16<const N: usize>(b: &mut [u8; N], at: usize, v: u16) {
+    b[at] = (v >> 8) as u8;
+    b[at + 1] = v as u8;
+}
+
+#[inline(always)]
+pub fn put_be32<const N: usize>(b: &mut [u8; N], at: usize, v: u32) {
+    put_be16(b, at, (v >> 16) as u16);
+    put_be16(b, at + 2, v as u16);
+}
+
 pub fn range(address: u32, size: u32, limit: u32) -> bool {
     address <= limit && size <= limit - address
 }
