@@ -17,6 +17,8 @@ pub mod midi_update;
 pub mod platform;
 #[cfg(not(any(stage0, boot_sim)))]
 pub mod sdboot;
+#[cfg(not(any(stage0, boot_sim)))]
+pub mod usb_midi;
 
 /// A global of this program, which has one thread and no interrupts.
 #[repr(transparent)]
