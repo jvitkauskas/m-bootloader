@@ -23,7 +23,7 @@ test, and stays inside every size limit. **Nothing of it has run on a unit.**
 - **Still assembly:** the four entries (`src/*.S`).
 - **Still C:** the tests, the simulated chip (`tests/boot_sim.c`) and the host tools. `include/*.h` stays for them: it
   is the C interface that the Rust keeps.
-- **Size:** 4,297 lines of C became 6,093 lines of Rust, part of them the C interface and what the tests need.
+- **Size:** 4,297 lines of C became 6,217 lines of Rust, part of them the C interface and what the tests need.
 
 ### Tests that changed
 
@@ -63,17 +63,17 @@ Bytes. The package is the M-UPGRADE stream of the self-extracting installer.
 
 | | Limit | FM-1, C | FM-1, Rust | SMK-37, C | SMK-37, Rust |
 |---|---|---|---|---|---|
-| Stage 0 | | 2,752 | 2,780 | 2,752 | 2,780 |
-| Stage 1, unpacked | | 15,408 | 15,944 | 16,052 | 16,744 |
-| **Payload** | 16,112 | 13,717 | 14,274 | 14,182 | **14,878** |
-| **RAM** (stages and data) | 29,440 | 26,456 | 26,912 | 27,104 | **27,712** |
-| **Package** | 20,224 | 17,607 | 18,420 | 18,141 | **19,167** |
-| RAM stage | 23,324 | 8,436 | 8,528 | 8,516 | 8,656 |
-| Flash loader | 32,768 | 6,016 | 5,316 | 6,016 | 5,316 |
+| Stage 0 | | 2,752 | 2,836 | 2,752 | 2,836 |
+| Stage 1, unpacked | | 15,408 | 15,852 | 16,052 | 16,632 |
+| **Payload** | 16,112 | 13,717 | 14,239 | 14,182 | **14,768** |
+| **RAM** (stages and data) | 29,440 | 26,456 | 26,872 | 27,104 | **27,656** |
+| **Package** | 20,224 | 17,607 | 18,370 | 18,141 | **18,985** |
+| RAM stage | 23,324 | 8,436 | 8,456 | 8,516 | 8,584 |
+| Flash loader | 32,768 | 6,016 | 5,324 | 6,016 | 5,324 |
 
-The SMK-37 is the tight board. It keeps 1,234 bytes of payload, 1,728 of RAM and 1,057 of package, where the C had
-1,930, 2,336 and 2,083. The C here is `main` built with the 23.1.6-1 toolchain, with which the Rust came out the
-same sizes as with the releases above.
+The SMK-37 is the tight board. It keeps 1,344 bytes of payload, 1,784 of RAM and 1,239 of package, where the C had
+1,930, 2,336 and 2,083. The C here is `main` built with the 23.1.6-1 toolchain. The Rust is built with the releases
+above.
 
 ### As each module moved (SMK-37)
 
@@ -90,6 +90,7 @@ same sizes as with the releases above.
 | + `stage0.c`, `upkr.c`, `runtime.c`, `sfx.c` | 14,991 | 27,824 | 19,210 |
 | + `installer.c`, `stage.c`, `loader.c` | 14,991 | 27,824 | 19,179 |
 | the linker optimises stage 0 too | 14,878 | 27,712 | 19,167 |
+| less unsafe code (below) | 14,768 | 27,656 | 18,985 |
 
 Data-handling code cost most (`core.c`, `midi_update.c`, `sdboot.c`: about +17% of stage 1's share). Register code came out level.
 `boot.c` made the whole smaller, because the last C in stage 1 went with it and nothing crossed a language border any
@@ -106,6 +107,8 @@ Each line is a measurement on this code.
 | Full LTO bitcode (`-Clto=fat`), not rustc's default ThinLTO bitcode | with half of `core.c` ported, stage 1 was 16,320 against 16,912: the linker does not optimise across the two kinds, so nothing inlined between C and Rust | full |
 | A global that isn't all zeros | the USB state held an empty slice (a non-null pointer), which put its 216 bytes in the image | all zeros |
 | Returning a 32-byte struct in an `Option` | two `memcpy` calls each time; parsing in place took half of `core.c` from +31% to +24% over C | in place |
+| The flash through a trait, where C's interface was a struct of function pointers and a context | stage 1: 16,636 against 16,728; payload 14,720 against 14,864 | the trait |
+| The unpacker on slices, with every access checked | stage 0: 2,836 against 2,780 | checked |
 | `-Zinline-mir=yes` | +104 on stage 1 | no |
 | `-global-merge-group-by-use=false` (linker) | SMK-37 stage 1 −56, payload −23; FM-1 payload +14; the C build +88 | no |
 | `--icf=all` (linker) | loader −32, nothing else | no |
@@ -117,6 +120,59 @@ functions: `Range::next`, `<[u8]>::get`, `Index::index` for each array size, `Ch
 bytes, each call site pays for a call, and nothing folds through them. C has no such helpers, so `-Oz` costs it
 nothing.
 
+## Unsafe code
+
+A bootloader writes registers, jumps to code it has just loaded, and shares memory with a ROM and with firmware, so
+some of it stays `unsafe`. After the port, a second pass took out what did not have to be. Counted by the compiler,
+in the code that goes into each image (`-Zunpretty=expanded`):
+
+| Image | `unsafe` blocks, as ported | Now | `unsafe fn`, as ported | Now |
+|---|---|---|---|---|
+| Stage 0 | 38 | 18 | 7 | 4 |
+| Stage 1 | 105 | 41 | 35 | 7 |
+| RAM stage | 120 | 41 | 39 | 9 |
+| Installer | 128 | 38 | 37 | 9 |
+| Flash loader | 133 | 61 | 38 | 14 |
+
+What changed, and what it cost on the SMK-37:
+
+| Change | Payload | Checked by the compiler now |
+|---|---|---|
+| As ported | 14,878 | |
+| A register is `Reg::at::<ADDRESS>()`, where each was an `unsafe` block | 14,864 | the address is among the chip's registers (§2.2), not RAM or flash |
+| The formats' code reaches the flash through a trait | 14,720 | no function pointers, contexts or raw buffers between the formats and the driver |
+| MIDI mode's hooks are a trait, and take slices | 14,710 | the sizes of what is sent, read and programmed |
+| The unpacker works on slices | 14,759 | every read and write of the unpacker is inside the pack and the room given |
+| C interfaces with raw pointers only where something uses them (the tests, and the loader for the ROM) | 14,768 | none of them is in the bootloader |
+| The retained area is `retained::<OFFSET, N>()` | 14,768 | the bytes are inside the area (§6.1) |
+
+What is left in stage 1, by what it is for:
+
+| Blocks | What | Why it stays |
+|---|---|---|
+| 14 | references to globals (`Global::get`): the buffers, and the display's, the card's and USB's state | see below |
+| 8 | the hardware: three register accesses, three instructions (`csync`, `cli`, `ssync`), a DMA read, a buffer the USB controller writes | |
+| 5 | fixed memory as slices: the retained area, where an updater, an SD card image and a RAM app load, the flash as it is mapped | the addresses are the specification's |
+| 4 | calls into code that was just loaded and checked: the app, an updater, the SD card image, a RAM app | |
+| 4 | `memmove`, `memcmp`, `bcmp`, `strlen`, which the compiler calls | |
+| 5 | inside `Global` and `Text`, and the version's address | |
+| 1 | clearing the image's own data at entry | |
+
+**The globals are the part the compiler does not check.** The program has one thread and no interrupts, and its
+buffers are globals because the stack is small. Functions such as `work()` in `boot.rs` are safe to call but hand out
+a `&'static mut`, so two of them could be alive at once, and nothing but the rule at the top of that file prevents
+it. Two ways to close that were not done:
+
+1. **Check it in the tests.** `Global` could count its borrows in the builds for this computer, which the boot
+   simulations and the sanitizers run, and cost nothing on the unit. It would find a broken rule wherever a test
+   reaches it.
+2. **Pass the state down from the entry**, as `&mut`, so that the compiler checks every use. Tried for stage 1's
+   4 KiB work buffer alone, it gave the same bytes of stage 1. The rest (the request, the app's record, MIDI mode's
+   buffers, the drivers' state) was not tried, and touches `boot.rs`, the protocol and the drivers' entries.
+
+Also left as it was: the flash loader keeps C's struct of services, which the ROM's two callbacks and the tests
+fill in, with about a dozen blocks of its own.
+
 ## Compiler work
 
 Four commits in pi32v2-llvm, released in `pi32v2-23.1.6-2`, and a documentation commit in pi32v2-rust, whose
@@ -124,8 +180,8 @@ release `pi32v2-1.100.0-1` is built on that LLVM.
 
 | Change | Effect here (SMK-37) | Used here |
 |---|---|---|
-| `-inline-minsize-hint-threshold=50`: in size-minimum code, callees that ask to be inlined get a threshold of their own | At `z`: payload 14,704 against 14,878 at `s`, RAM 27,504 against 27,712, package 18,992 against 19,167. Stage 0 is 2,724, under the C's 2,752 | `make RUST_OPT=z`, with that LLVM |
-| The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878: the packer does better with repeats than with calls to them | no |
+| `-inline-minsize-hint-threshold=50`: in size-minimum code, callees that ask to be inlined get a threshold of their own | At `z`: payload 14,608 against 14,768 at `s`, RAM 27,456 against 27,656, package 18,796 against 18,985. Stage 0 is 2,776 against 2,836 | `make RUST_OPT=z`, with that LLVM |
+| The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878 (before the unsafe code was reduced): the packer does better with repeats than with calls to them | no |
 | Variadic prologues pass the machine verifier | none: found while verifying outlined code | |
 
 - **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`. Asking for `z` with a
@@ -157,10 +213,11 @@ Not done:
 - **Hardware.** Not run on a unit. The clock set-up's `nop` loops and `wait_mask` compile to the same instructions
   as the C (compared in the disassembly). The USB controller's access spacing, the SPI and DMA paths, and everything
   timing-related have not been compared instruction for instruction.
-- **The unpacker on the target.** The Rust `stage1_unpack`, linked by itself, ran in pi32v2-isa's simulator on both
-  boards' packs: stage 1 came back byte for byte, and a damaged pack was refused. Stage 0 as a whole did not run
-  there, and nothing else did.
-- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,990). Its requests were not tried.
+- **The unpacker on the target.** The Rust unpacker, linked by itself, ran in pi32v2-isa's simulator on both
+  boards' packs: stage 1 came back byte for byte, the installer unpacked in place as its package carries it, and
+  packs that were cut, damaged or given too little room were refused. Stage 0 as a whole did not run there, and
+  nothing else did.
+- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,881). Its requests were not tried.
 - **USB MIDI** (`usb_midi.rs`) has no test at all, as in C.
 - **m-apps** builds its drivers from this repository's `src/*.c`, which are gone here.
 - **Elite builds** differ from the Pro only in the package's model name, as before.
