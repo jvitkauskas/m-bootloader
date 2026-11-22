@@ -28,7 +28,7 @@ ifeq ($(RUST_OPT),z)
 LINK += -mllvm -inline-minsize-hint-threshold=50
 RUST_HINT := -C llvm-args=-inline-minsize-hint-threshold=50
 endif
-RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=$(RUST_OPT) -C codegen-units=1 -C debuginfo=0 -Zunstable-options -C panic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=.
+RUST_FLAGS := --target pi32v2-unknown-none --edition 2024 --crate-name mboot -C opt-level=$(RUST_OPT) -C codegen-units=1 -C debuginfo=0 -C symbol-mangling-version=v0 -Zunstable-options -C panic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=.
 RUST_LIB := lib/rustlib/pi32v2-unknown-none/lib
 # Rust's core library, as the linker takes it.
 RUST_CORE_lto := build/rust/core.o
@@ -47,7 +47,8 @@ HOST_RUST_SD := build/host/platform_sim-import_early/libmboot.a
 HOST_RUST_SD_SMK := build/host/smk-platform_sim-import_early/libmboot.a
 HOST_RUST_MU := build/host/mu_test_app_ram/libmboot.a
 HOST_RUST_MU_SMK := build/host/smk-mu_test_app_ram/libmboot.a
-# A test build: make clean, then make TEST_REQUESTS=1 (docs/SPEC.md §11.9).
+# A test build: make clean, then make TEST_REQUESTS=1 (docs/SPEC.md §11.9). (Without the clean the Rust is built again
+# too, but the last build's packages stay in build/.)
 ifdef TEST_REQUESTS
 RUST_TEST := test_requests
 export BOOT_VERSION_SUFFIX := -test
@@ -79,16 +80,17 @@ build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
 
-# What changes the Rust without changing a file: a build with another RUST_OPT starts the Rust again.
+# What changes the Rust without changing a file: a build with another RUST_OPT, or one that is a test build where the
+# last was not, starts the Rust again.
 build/rust/options: FORCE
 	@mkdir -p $(@D)
-	@echo 'RUST_OPT=$(RUST_OPT)' | cmp -s - $@ || echo 'RUST_OPT=$(RUST_OPT)' > $@
+	@echo 'RUST_OPT=$(RUST_OPT) TEST_REQUESTS=$(TEST_REQUESTS)' | cmp -s - $@ || echo 'RUST_OPT=$(RUST_OPT) TEST_REQUESTS=$(TEST_REQUESTS)' > $@
 # Rust's core library for pi32v2, built once from the compiler's sources, as bitcode. -Clto=fat makes that the kind of
 # bitcode C's is: the linker keeps rustc's usual kind (for ThinLTO) apart from C's, and couldn't optimise across them.
 build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile build/rust/options
 	@mkdir -p build/rust/sysroot/$(RUST_LIB)
 	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
-	CARGO_TARGET_DIR=build/rust/target CARGO_PROFILE_RELEASE_OPT_LEVEL=$(RUST_OPT) RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
+	CARGO_TARGET_DIR=build/rust/target CARGO_PROFILE_RELEASE_OPT_LEVEL=$(RUST_OPT) RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Csymbol-mangling-version=v0 -Zunstable-options -Cpanic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
 		$(CARGO) build --quiet --release --manifest-path rust/sysroot/Cargo.toml --target pi32v2-unknown-none -Zbuild-std=core
 	@# (wherever this cargo keeps them: under deps/ up to 1.99, under build/<crate>/ from 1.100)
 	for f in core compiler_builtins; do \
