@@ -654,6 +654,29 @@ mod flash {
         unsafe { flash_read(core::ptr::null_mut(), a, out.as_mut_ptr().cast(), out.len() as u32) }
     }
 
+    /// The chip's own flash, for the formats' code.
+    pub struct Chip;
+
+    impl crate::formats::Flash for Chip {
+        fn capacity(&self) -> u32 {
+            CAPACITY.read()
+        }
+
+        fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
+            read(address, dst)
+        }
+    }
+
+    impl crate::formats::Nor for Chip {
+        fn program(&self, address: u32, src: &[u8]) -> bool {
+            program(address, src)
+        }
+
+        fn erase(&self, address: u32, size: u32) -> bool {
+            flash_erase(core::ptr::null_mut(), address, size)
+        }
+    }
+
     /// # Safety
     /// `data` has `n` bytes.
     #[unsafe(no_mangle)]

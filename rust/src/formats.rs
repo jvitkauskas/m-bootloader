@@ -18,18 +18,81 @@ pub type Line = [u8; 32];
 pub type Work = [u8; WORK_SIZE];
 pub type Request = [u8; 80];
 
+/// A flash that can be read.
+pub trait Flash {
+    /// Its size in bytes.
+    fn capacity(&self) -> u32;
+
+    /// `dst.len()` bytes from `address`, which `read` has checked are inside the flash, and at least one.
+    fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool;
+
+    fn read(&self, address: u32, dst: &mut [u8]) -> bool {
+        range(address, dst.len() as u32, self.capacity()) && (dst.is_empty() || self.read_inside(address, dst))
+    }
+
+    /// A line of the top-level directory, which is stored under the fixed key.
+    fn read_top(&self, address: u32, raw: &mut Line) -> bool {
+        if !self.read(address, raw) {
+            return false;
+        }
+        enc(0xffff, raw);
+        true
+    }
+}
+
+/// A flash that can be written too.
+pub trait Nor: Flash {
+    /// Within one page of 256 bytes.
+    fn program(&self, address: u32, src: &[u8]) -> bool;
+
+    /// A sector of 4096 bytes, or a block of 65536.
+    fn erase(&self, address: u32, size: u32) -> bool;
+}
+
+/// A flash as C has it (include/core.h): the tests' flashes, and the loader's.
 #[repr(C)]
-pub struct Flash {
+pub struct CFlash {
     pub ctx: *mut c_void,
     pub capacity: u32,
     pub read: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, u32) -> bool,
 }
 
 #[repr(C)]
-pub struct Nor {
-    pub flash: Flash,
+pub struct CNor {
+    pub flash: CFlash,
     pub program: unsafe extern "C" fn(*mut c_void, u32, *const c_void, u32) -> bool,
     pub erase: unsafe extern "C" fn(*mut c_void, u32, u32) -> bool,
+}
+
+// Safety, for these: whoever made the struct gave it functions that take what they are given here.
+impl Flash for CFlash {
+    fn capacity(&self) -> u32 {
+        self.capacity
+    }
+
+    fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
+        unsafe { (self.read)(self.ctx, address, dst.as_mut_ptr().cast(), dst.len() as u32) }
+    }
+}
+
+impl Flash for CNor {
+    fn capacity(&self) -> u32 {
+        self.flash.capacity
+    }
+
+    fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
+        self.flash.read_inside(address, dst)
+    }
+}
+
+impl Nor for CNor {
+    fn program(&self, address: u32, src: &[u8]) -> bool {
+        unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
+    }
+
+    fn erase(&self, address: u32, size: u32) -> bool {
+        unsafe { (self.erase)(self.flash.ctx, address, size) }
+    }
 }
 
 #[repr(C)]
@@ -242,46 +305,8 @@ fn line_ok(raw: &Line) -> bool {
     crc16(0, &raw[2..]) == le16(raw, 0)
 }
 
-impl Flash {
-    pub fn read(&self, address: u32, dst: &mut [u8]) -> bool {
-        let size = dst.len() as u32;
-        if !range(address, size, self.capacity) {
-            return false;
-        }
-        size == 0 || unsafe { (self.read)(self.ctx, address, dst.as_mut_ptr().cast(), size) }
-    }
-
-    /// A line of the top-level directory, which is stored under the fixed key.
-    fn read_top(&self, address: u32, raw: &mut Line) -> bool {
-        if !self.read(address, raw) {
-            return false;
-        }
-        enc(0xffff, raw);
-        true
-    }
-}
-
-impl Nor {
-    /// The flash, through these three, with its capacity still to be found.
-    pub const fn new(
-        read: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, u32) -> bool,
-        program: unsafe extern "C" fn(*mut c_void, u32, *const c_void, u32) -> bool,
-        erase: unsafe extern "C" fn(*mut c_void, u32, u32) -> bool,
-    ) -> Nor {
-        Nor { flash: Flash { ctx: core::ptr::null_mut(), capacity: 0, read }, program, erase }
-    }
-
-    fn program(&self, address: u32, src: &[u8]) -> bool {
-        unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
-    }
-
-    fn erase(&self, address: u32, size: u32) -> bool {
-        unsafe { (self.erase)(self.flash.ctx, address, size) }
-    }
-}
-
-pub fn app_read(f: &Flash, base: u32, key: u16, mut offset: u32, mut dst: &mut [u8]) -> bool {
-    if base > f.capacity || !range(offset, dst.len() as u32, f.capacity - base) {
+pub fn app_read(f: &impl Flash, base: u32, key: u16, mut offset: u32, mut dst: &mut [u8]) -> bool {
+    if base > f.capacity() || !range(offset, dst.len() as u32, f.capacity() - base) {
         return false;
     }
     while !dst.is_empty() {
@@ -358,21 +383,21 @@ impl Record {
     }
 }
 
-pub fn header_read(f: &Flash, h: &mut Header) -> bool {
+pub fn header_read(f: &impl Flash, h: &mut Header) -> bool {
     h.alignment = 0;
     if !f.read_top(0, &mut h.bytes) || !line_ok(&h.bytes) {
         return false;
     }
     h.filesystem_size = le32(&h.bytes, 8);
-    if h.filesystem_size > f.capacity {
+    if h.filesystem_size > f.capacity() {
         return false;
     }
     h.alignment = h.bytes[13];
     true
 }
 
-pub fn top_find(f: &Flash, name: &[u8], r: &mut Record, raw: &mut Line) -> bool {
-    let (mut offset, mut end) = (32, f.capacity);
+pub fn top_find(f: &impl Flash, name: &[u8], r: &mut Record, raw: &mut Line) -> bool {
+    let (mut offset, mut end) = (32, f.capacity());
     while offset < 32 * 65 && range(offset, 32, end) {
         if !f.read_top(offset, raw) || !r.parse(raw) {
             return false;
@@ -388,7 +413,7 @@ pub fn top_find(f: &Flash, name: &[u8], r: &mut Record, raw: &mut Line) -> bool 
     false
 }
 
-fn info_version(f: &Flash, address: u32, raw: &mut Line) -> Option<u16> {
+fn info_version(f: &impl Flash, address: u32, raw: &mut Line) -> Option<u16> {
     (f.read_top(address, raw) && line_ok(raw)).then(|| le16(raw, 6))
 }
 
@@ -397,7 +422,7 @@ fn sentinel(length: u32) -> bool {
 }
 
 /// The directory to use, of the two the flash may hold: the second if the first's version can't be read or is older.
-fn directory(f: &Flash, selected: &mut Record, raw: &mut Line) -> bool {
+fn directory(f: &impl Flash, selected: &mut Record, raw: &mut Line) -> bool {
     if !top_find(f, b"app_dir_head", selected, raw) {
         return false;
     }
@@ -415,7 +440,7 @@ fn directory(f: &Flash, selected: &mut Record, raw: &mut Line) -> bool {
 }
 
 /// The files, and whether there is one app among them. None if the directory is unsound.
-fn files(f: &Flash, app: &mut App, room: u32, raw: &mut Line) -> Option<bool> {
+fn files(f: &impl Flash, app: &mut App, room: u32, raw: &mut Line) -> Option<bool> {
     let mut record = Record::EMPTY;
     let (mut offset, mut first_file, mut have_app) = (32, u32::MAX, false);
     for _ in 0..MAX_FILES {
@@ -462,7 +487,7 @@ fn files(f: &Flash, app: &mut App, room: u32, raw: &mut Line) -> Option<bool> {
 
 /// Mount validates metadata, ranges and the entry; `app_check` validates every file's data. `header` gets the freshly
 /// decoded flash header even if no usable app is found.
-pub fn app_mount(f: &Flash, key: u16, app: &mut App, header: &mut Header) -> bool {
+pub fn app_mount(f: &impl Flash, key: u16, app: &mut App, header: &mut Header) -> bool {
     *app = App::EMPTY;
     app.key = key;
     if !header_read(f, header) {
@@ -475,7 +500,7 @@ pub fn app_mount(f: &Flash, key: u16, app: &mut App, header: &mut Header) -> boo
     if !area.parse(&raw) || area.attribute != 0x83 || !area.is(b"app_area_head") {
         return false;
     }
-    let room = f.capacity - selected.address;
+    let room = f.capacity() - selected.address;
     app.base = selected.address;
     app.extent = area.length;
     if area.address >= XIP && area.address & 1 == 0 && area.address - XIP < room {
@@ -490,12 +515,12 @@ pub fn app_mount(f: &Flash, key: u16, app: &mut App, header: &mut Header) -> boo
     false
 }
 
-fn erased_tail(f: &Flash, end: u32, scratch: &mut Line) -> bool {
+fn erased_tail(f: &impl Flash, end: u32, scratch: &mut Line) -> bool {
     f.read(end - 32, scratch) && scratch.iter().all(|&b| b == 255)
 }
 
-fn check(f: &Flash, app: &App, work: &mut Work) -> AppState {
-    if app.base == 0 || app.base > f.capacity || app.entry == 0 {
+fn check(f: &impl Flash, app: &App, work: &mut Work) -> AppState {
+    if app.base == 0 || app.base > f.capacity() || app.entry == 0 {
         return AppState::NotFound;
     }
     let Some(files) = app.files.get(..app.file_count as usize).filter(|files| !files.is_empty()) else {
@@ -503,7 +528,7 @@ fn check(f: &Flash, app: &App, work: &mut Work) -> AppState {
     };
     let mut state = AppState::Ok;
     for r in files {
-        if !range(r.address, r.length, f.capacity - app.base) {
+        if !range(r.address, r.length, f.capacity() - app.base) {
             return AppState::Incomplete;
         }
         let (mut pos, mut crc) = (0, 0);
@@ -541,7 +566,7 @@ fn check(f: &Flash, app: &App, work: &mut Work) -> AppState {
     state
 }
 
-pub fn app_check(f: &Flash, app: &mut App, work: &mut Work) -> AppState {
+pub fn app_check(f: &impl Flash, app: &mut App, work: &mut Work) -> AppState {
     app.state = check(f, app, work);
     app.state
 }
@@ -565,12 +590,12 @@ fn request_mark(raw: &Request) -> bool {
 
 /// Selects the first magic/CRC match, then checks its nonzero CRC and type. With `count`, counts all magic/CRC matches
 /// independently of validity.
-pub fn request_scan(f: &Flash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
+pub fn request_scan(f: &impl Flash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
     let mut raw = [0; 80];
     let step = request_step(alignment);
     let mut matches = 0;
-    if f.capacity >= step {
-        let mut boundary = f.capacity - step;
+    if f.capacity() >= step {
+        let mut boundary = f.capacity() - step;
         while boundary > 4096 && f.read(boundary - 256, &mut raw) {
             if request_mark(&raw) && crc16(0, &raw[2..]) == le16(&raw, 0) {
                 if matches == 0 {
@@ -652,13 +677,13 @@ pub fn lz4_block(input: &[u8], out: &mut [u8], produced: usize, block: usize) ->
     lz4(input, out, produced, block) == Some(true)
 }
 
-pub fn updater_decode(f: &Flash, request: &Request, out: &mut [u8], work: &mut Work, u: &mut Updater) -> bool {
+pub fn updater_decode(f: &impl Flash, request: &Request, out: &mut [u8], work: &mut Work, u: &mut Updater) -> bool {
     let (mut raw, mut outer) = ([0; 32], Record::EMPTY);
     if !request_valid(request) || !f.read(le32(request, 72), &mut raw) || !outer.parse(&raw) {
         return false;
     }
     let (stream, length) = (outer.address, outer.length);
-    if length < 64 || !range(stream, length, f.capacity) || !f.read(stream + 32, &mut raw) || !line_ok(&raw) {
+    if length < 64 || !range(stream, length, f.capacity()) || !f.read(stream + 32, &mut raw) || !line_ok(&raw) {
         return false;
     }
     let total = le32(&raw, 4);
@@ -686,7 +711,7 @@ pub fn updater_decode(f: &Flash, request: &Request, out: &mut [u8], work: &mut W
     produced == total && crc16(0, &out[..total as usize]) == u.crc
 }
 
-fn program_pages(nor: &Nor, mut address: u32, mut src: &[u8]) -> bool {
+fn program_pages(nor: &impl Nor, mut address: u32, mut src: &[u8]) -> bool {
     while !src.is_empty() {
         let (now, rest) = src.split_at((256 - (address & 255) as usize).min(src.len()));
         if !nor.program(address, now) {
@@ -698,7 +723,7 @@ fn program_pages(nor: &Nor, mut address: u32, mut src: &[u8]) -> bool {
     true
 }
 
-fn verify_bytes(f: &Flash, mut address: u32, expected: &[u8]) -> bool {
+fn verify_bytes(f: &impl Flash, mut address: u32, expected: &[u8]) -> bool {
     let mut raw = [0; 32];
     for part in expected.chunks(32) {
         let got = &mut raw[..part.len()];
@@ -715,15 +740,15 @@ const TRIM_SIZE: usize = 0x22c;
 const TRIM_NAME: usize = 0x224;
 
 /// The SMK-37's calibration guard (§9.3): keeps a copy of the calibration at the top of the flash, and puts it back.
-pub fn guard(nor: &Nor, smk: bool, work: &mut Work) -> Guard {
-    let f = &nor.flash;
+pub fn guard(nor: &impl Nor, smk: bool, work: &mut Work) -> Guard {
+    let f = nor;
     if !smk {
         return Guard::Unchanged;
     }
-    if f.capacity < 0xc3000 || f.capacity & 4095 != 0 {
+    if f.capacity() < 0xc3000 || f.capacity() & 4095 != 0 {
         return Guard::Error;
     }
-    let base = f.capacity - 4096;
+    let base = f.capacity() - 4096;
     let (slot, rest): (&mut [u8; 16 + TRIM_SIZE], _) = work.split_first_chunk_mut().unwrap();
     let source: &mut [u8; TRIM_SIZE] = rest.first_chunk_mut().unwrap();
     if (base < TRIM_AT + 4096 && TRIM_AT < base + 4096) || !f.read(base, slot) || !f.read(TRIM_AT, source) {
@@ -762,14 +787,14 @@ pub fn guard(nor: &Nor, smk: bool, work: &mut Work) -> Guard {
 
 /// Invalidates, by programming their CRC to zero, the flash requests (scanned as `request_scan`) whose staged stream
 /// ends at `stream_end`.
-pub fn request_retire(nor: &Nor, alignment: u8, stream_end: u32) -> u32 {
+pub fn request_retire(nor: &impl Nor, alignment: u8, stream_end: u32) -> u32 {
     let (mut raw, mut outer, mut r) = ([0; 80], [0; 32], Record::EMPTY);
-    let (f, step) = (&nor.flash, request_step(alignment));
+    let (f, step) = (nor, request_step(alignment));
     let mut retired = 0;
-    if f.capacity < step {
+    if f.capacity() < step {
         return 0;
     }
-    let mut boundary = f.capacity - step;
+    let mut boundary = f.capacity() - step;
     while boundary > 4096 && f.read(boundary - 256, &mut raw) {
         if request_mark(&raw)
             && request_valid(&raw)
@@ -963,12 +988,12 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_read(f: &Flash, address: u32, dst: M, size: u32) -> bool {
+    pub unsafe extern "C" fn core_read(f: &CFlash, address: u32, dst: M, size: u32) -> bool {
         f.read(address, unsafe { from_raw_parts_mut(dst.cast(), size as usize) })
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_app_read(f: &Flash, base: u32, key: u16, offset: u32, dst: M, size: u32) -> bool {
+    pub unsafe extern "C" fn core_app_read(f: &CFlash, base: u32, key: u16, offset: u32, dst: M, size: u32) -> bool {
         app_read(f, base, key, offset, unsafe { from_raw_parts_mut(dst.cast(), size as usize) })
     }
 
@@ -988,28 +1013,28 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_header_read(f: &Flash, h: &mut Header) -> bool {
+    pub extern "C" fn core_header_read(f: &CFlash, h: &mut Header) -> bool {
         header_read(f, h)
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_top_find(f: &Flash, name: *const c_char, r: &mut Record) -> bool {
+    pub unsafe extern "C" fn core_top_find(f: &CFlash, name: *const c_char, r: &mut Record) -> bool {
         top_find(f, unsafe { CStr::from_ptr(name) }.to_bytes(), r, &mut [0; 32])
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_app_mount(f: &Flash, key: u16, app: &mut App) -> bool {
+    pub extern "C" fn core_app_mount(f: &CFlash, key: u16, app: &mut App) -> bool {
         core_app_mount_header(f, key, app, None)
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_app_mount_header(f: &Flash, key: u16, app: &mut App, header: Option<&mut Header>) -> bool {
+    pub extern "C" fn core_app_mount_header(f: &CFlash, key: u16, app: &mut App, header: Option<&mut Header>) -> bool {
         let mut local = Header::EMPTY;
         app_mount(f, key, app, header.unwrap_or(&mut local))
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_app_check(f: &Flash, app: &mut App, work: &mut Work) -> AppState {
+    pub extern "C" fn core_app_check(f: &CFlash, app: &mut App, work: &mut Work) -> AppState {
         app_check(f, app, work)
     }
 
@@ -1024,7 +1049,7 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_request_scan(f: &Flash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
+    pub extern "C" fn core_request_scan(f: &CFlash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
         request_scan(f, alignment, request, count)
     }
 
@@ -1035,17 +1060,17 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_updater_decode(f: &Flash, request: &Request, out: *mut u8, capacity: u32, work: &mut Work, u: &mut Updater) -> bool {
+    pub unsafe extern "C" fn core_updater_decode(f: &CFlash, request: &Request, out: *mut u8, capacity: u32, work: &mut Work, u: &mut Updater) -> bool {
         updater_decode(f, request, unsafe { from_raw_parts_mut(out, capacity as usize) }, work, u)
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_guard(nor: &Nor, smk: bool, work: &mut Work) -> Guard {
+    pub extern "C" fn core_guard(nor: &CNor, smk: bool, work: &mut Work) -> Guard {
         guard(nor, smk, work)
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_request_retire(nor: &Nor, alignment: u8, stream_end: u32) -> u32 {
+    pub extern "C" fn core_request_retire(nor: &CNor, alignment: u8, stream_end: u32) -> u32 {
         request_retire(nor, alignment, stream_end)
     }
 

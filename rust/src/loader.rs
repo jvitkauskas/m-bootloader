@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //! The flash loader that M-Flasher runs on the chip, as a plug-in of the ROM's download mode: docs/SPEC.md §10.
-use crate::formats::{Nor, be16, be32, crc16, le16, le32, put_be16, put_be32, put_le32, range, usb_begin, usb_stream};
+use crate::formats::{CNor, Flash, Nor, be16, be32, crc16, le16, le32, put_be16, put_be32, put_le32, range, usb_begin, usb_stream};
 use core::ffi::c_void;
 
 /// What it answers to FC40, after "MFLR".
@@ -9,7 +9,7 @@ const VERSION: &[u8; 7] = b"MFLR1.3";
 /// What the loader works through: the ROM's USB callbacks, and the chip. C lays these two out, for the tests.
 #[repr(C)]
 pub struct Services {
-    pub nor: Nor,
+    pub nor: CNor,
     pub send: unsafe extern "C" fn(*const c_void, u32) -> i32,
     pub receive: unsafe extern "C" fn(*mut c_void, u32) -> i32,
     pub read_start: Option<unsafe extern "C" fn(u32, *mut c_void, u32) -> bool>,
@@ -189,7 +189,7 @@ impl State {
             let mut at = a;
             while !data.is_empty() {
                 let (page, rest) = data.split_at((256 - (at & 255) as usize).min(data.len()));
-                if !unsafe { (self.io.nor.program)(self.io.nor.flash.ctx, at, page.as_ptr().cast(), page.len() as u32) } {
+                if !self.io.nor.program(at, page) {
                     self.error = 4;
                     break;
                 }
@@ -213,7 +213,7 @@ impl State {
                 let size = if op == 0xfb00 { 65536 } else { 4096 };
                 if a & (size - 1) != 0 || !range(a, size, capacity) {
                     self.error = 3;
-                } else if !unsafe { (self.io.nor.erase)(self.io.nor.flash.ctx, a, size) } {
+                } else if !self.io.nor.erase(a, size) {
                     self.error = 4;
                 }
             }
@@ -315,7 +315,7 @@ macro_rules! target {
         pub mod $module {
             use super::{Services, State, loader_init};
             use crate::Global;
-            use crate::formats::Nor;
+            use crate::formats::{CFlash, CNor};
             use crate::hw::sync_cpu;
             use crate::platform::*;
             use core::mem::MaybeUninit;
@@ -350,8 +350,11 @@ macro_rules! target {
                 hal_fault_clear();
                 let mhz = hal_clock_b();
                 flash_init(1, 1);
-                let mut nor = Nor::new(flash_read, flash_program, flash_erase);
-                nor.flash.capacity = flash_capacity();
+                let nor = CNor {
+                    flash: CFlash { ctx: core::ptr::null_mut(), capacity: flash_capacity(), read: flash_read },
+                    program: flash_program,
+                    erase: flash_erase,
+                };
                 // Safety: the ROM's two callbacks, at the addresses it gave.
                 let io = unsafe {
                     Services {

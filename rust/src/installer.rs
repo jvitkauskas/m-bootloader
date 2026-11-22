@@ -3,10 +3,10 @@
 //! installed bootloader, stock or ours, runs it (§6.3). It rewrites only the bootloader and its boot-area record,
 //! checks them, retires the update request, in RAM and in flash, and resets into the new bootloader.
 use crate::display::{self, GREEN, RED, WHITE, YELLOW};
-use crate::formats::{self, BOOT_AREA, Header, Nor};
+use crate::formats::{self, BOOT_AREA, Header};
 use crate::hw::{Text, irq_off, retained, sync_cpu};
 use crate::platform::{
-    self, flash_capacity, flash_erase, flash_init, flash_program, flash_read, flash_release, hal_delay_us, hal_early, hal_fault_clear, hal_reset, hal_timer_clock,
+    self, flash_capacity, flash_erase, flash_init, flash_release, hal_delay_us, hal_early, hal_fault_clear, hal_reset, hal_timer_clock,
 };
 use crate::{Aligned, Global, text};
 
@@ -75,20 +75,13 @@ fn install(screen: bool) -> Option<Text> {
     if changed { None } else { Some(text!("ALREADY INSTALLED")) }
 }
 
-/// The flash, for the formats' code. Its capacity is as found.
-pub fn nor() -> Nor {
-    let mut nor = Nor::new(flash_read, flash_program, flash_erase);
-    nor.flash.capacity = flash_capacity();
-    nor
-}
-
 /// The flash copy of the request is acted on whenever the app does not mount, by this bootloader as by the stock one:
 /// retire it too, or a later broken app would have every start run this again (§6.2).
 pub fn retire_flash_request(stream_end: u32) {
-    let (nor, mut header) = (nor(), Header::EMPTY);
+    let mut header = Header::EMPTY;
     hal_fault_clear();
-    if formats::header_read(&nor.flash, &mut header) {
-        formats::request_retire(&nor, header.alignment, stream_end);
+    if formats::header_read(&platform::Chip, &mut header) {
+        formats::request_retire(&platform::Chip, header.alignment, stream_end);
     }
 }
 

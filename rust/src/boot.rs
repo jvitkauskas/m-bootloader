@@ -5,11 +5,11 @@
 //! the menu that started it is still running. So nothing here keeps a reference to a global across a call that can
 //! reach a hook: each use takes it afresh.
 use crate::board::{KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait};
-use crate::formats::{self, App, AppState, Config, Guard, Header, Nor, Request, Updater, Work, crc16, le16};
+use crate::formats::{self, App, AppState, Config, Flash, Guard, Header, Request, Updater, Work, crc16, le16};
 use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
-use crate::hw::{Reg, Text, irq_off, retained, sync_cpu};
+use crate::hw::{Text, irq_off, retained, sync_cpu};
 use crate::platform::{
-    flash_capacity, flash_erase, flash_init, flash_jedec, flash_program, flash_read, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
+    Chip,    flash_capacity, flash_erase, flash_init, flash_jedec, flash_program, flash_read, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
     hal_reset, hal_xip,
 };
 use crate::sdboot::{sd_probe, sd_stage2};
@@ -44,7 +44,6 @@ static MEMORY_META: Global<Aligned<60>> = Global::new(Aligned([0; 60]));
 static UPDATE_META: Global<Aligned<24>> = Global::new(Aligned([0; 24]));
 static APP: Global<App> = Global::new(App::EMPTY);
 static HEADER: Global<Header> = Global::new(Header::EMPTY);
-static NOR: Global<Nor> = Global::new(Nor::new(flash_read, flash_program, flash_erase));
 static JEDEC: Global<u32> = Global::new(0);
 static UNIT_KEY: Global<u16> = Global::new(0);
 static TRIM: Global<u16> = Global::new(0);
@@ -75,10 +74,6 @@ fn app() -> &'static mut App {
 
 fn header() -> &'static mut Header {
     unsafe { HEADER.get() }
-}
-
-fn nor() -> &'static mut Nor {
-    unsafe { NOR.get() }
 }
 
 fn screen() -> bool {
@@ -145,13 +140,12 @@ impl Line {
 fn identify() {
     JEDEC.set(flash_jedec());
     let capacity = flash_capacity();
-    nor().flash.capacity = capacity;
     let mut mac = [255; 8];
     UNIT_KEY.set((hal_efuse(1, 3) >> 8) as u16);
     let (r2, r3) = (hal_efuse(0, 2), hal_efuse(0, 3));
     TRIM.set((r2 | r3 & 0xfff2_38fc) as u16);
     let (page, _) = work().split_first_chunk_mut::<256>().unwrap();
-    if capacity >= 256 && nor().flash.read(capacity - 256, page) {
+    if capacity >= 256 && Chip.read(capacity - 256, page) {
         mac = *page[64..].first_chunk().unwrap();
         let nonzero = page[..8].iter().any(|&b| b != 0);
         if UNIT_KEY.read() == 0xffff && nonzero && crc16(0, &page[..8]) == le16(page, 8) {
@@ -454,10 +448,10 @@ fn menu() -> bool {
     }
     display::text(13, YELLOW, text!("CHECKING"));
     if MOUNTED.read() {
-        formats::app_check(&nor().flash, app(), work());
+        formats::app_check(&Chip, app(), work());
     }
     let mut updates = 0;
-    formats::request_scan(&nor().flash, header().alignment, work().first_chunk_mut().unwrap(), Some(&mut updates));
+    formats::request_scan(&Chip, header().alignment, work().first_chunk_mut().unwrap(), Some(&mut updates));
     let card = sd_probe(60);
     let (mut selection, mut last, mut previous, mut stable) = (0, 0, 0, 0);
     let mut first_draw = true;
@@ -504,7 +498,7 @@ fn menu() -> bool {
         line = Line::new(text!("FLASH "));
         line.number(JEDEC.read(), 16, 6);
         line.push(b' ');
-        line.number(nor().flash.capacity / 1024, 10, 0);
+        line.number(flash_capacity() / 1024, 10, 0);
         line.push(b'K');
         line.show(6, WHITE);
         display::text(7, GREY, text!("--------------------"));
@@ -640,7 +634,7 @@ fn update(ram: bool) {
     *retained::<2>(2) = [0; 2];
     // Safety: where a staged updater is loaded and runs (§6.3), which is free until then.
     let load = unsafe { core::slice::from_raw_parts_mut(formats::UPDATE_LOAD as usize as *mut u8, formats::UPDATE_MAX as usize) };
-    if formats::updater_decode(&nor().flash, request(), load, work(), &mut updater) {
+    if formats::updater_decode(&Chip, request(), load, work(), &mut updater) {
         #[cfg(boot_sim)]
         {
             unsafe extern "C" {
@@ -665,17 +659,16 @@ fn update(ram: bool) {
     hal_fault_clear();
     let flash_ok = flash_init(WIDTH, BAUD);
     EFFECTIVE_WIDTH.set(flash_read_width());
-    nor().flash.capacity = flash_capacity();
     *header() = Header::EMPTY;
     // (Mounting clears what it knew of the app first.)
     MOUNTED.set(false);
-    if flash_ok && nor().flash.capacity == 0x10_0000 {
-        MOUNTED.set(formats::app_mount(&nor().flash, UNIT_KEY.read(), app(), header()));
+    if flash_ok && flash_capacity() == 0x10_0000 {
+        MOUNTED.set(formats::app_mount(&Chip, UNIT_KEY.read(), app(), header()));
     } else {
         *app() = App::EMPTY;
     }
     if MOUNTED.read() {
-        formats::app_check(&nor().flash, app(), work());
+        formats::app_check(&Chip, app(), work());
     }
     if screen() {
         clear_rows(2, 14);
@@ -720,10 +713,10 @@ pub extern "C" fn boot_main(_device: *const u32) {
     board_restore();
     let mut flash_ok = flash_init(1, 1);
     identify();
-    flash_ok = flash_ok && nor().flash.capacity == 0x10_0000 && flash_init(WIDTH, BAUD);
+    flash_ok = flash_ok && flash_capacity() == 0x10_0000 && flash_init(WIDTH, BAUD);
     EFFECTIVE_WIDTH.set(flash_read_width());
-    MOUNTED.set(flash_ok && formats::app_mount(&nor().flash, UNIT_KEY.read(), app(), header()));
-    let guarded = formats::guard(nor(), SMK, work());
+    MOUNTED.set(flash_ok && formats::app_mount(&Chip, UNIT_KEY.read(), app(), header()));
+    let guarded = formats::guard(&Chip, SMK, work());
     if !flash_ok {
         REASON.set(Some(text!("FLASH ERROR")));
     } else if guarded == Guard::Error {
@@ -742,7 +735,7 @@ pub extern "C" fn boot_main(_device: *const u32) {
             if found {
                 *request() = *retained(8);
             } else if choice == 2 {
-                found = formats::request_scan(&nor().flash, header().alignment, request(), None);
+                found = formats::request_scan(&Chip, header().alignment, request(), None);
             }
             if found {
                 update(choice == 1);
@@ -793,7 +786,7 @@ pub extern "C" fn boot_main(_device: *const u32) {
         flash_init(EFFECTIVE_WIDTH.read(), BAUD);
         EFFECTIVE_WIDTH.set(flash_read_width());
         if MOUNTED.read() {
-            formats::app_check(&nor().flash, app(), work());
+            formats::app_check(&Chip, app(), work());
         }
         need_menu = true;
     }
@@ -815,7 +808,6 @@ pub mod test {
         }
         *app() = App::EMPTY;
         *header() = Header::EMPTY;
-        nor().flash.capacity = 0;
         JEDEC.set(0);
         UNIT_KEY.set(0);
         TRIM.set(0);
