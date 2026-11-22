@@ -75,9 +75,9 @@ was tested on one FM-1 and one SMK-37 Pro as `2.4-7b67881` and `2.4-46af0f5`, th
 changed: installing with M-Flasher and from the M-UPGRADE packages, starting firmware, the menu, REC for download
 mode, `BOOT ANYWAY`, MIDI mode (Felucca installed through it), Baud Girl's web installer, the SD card item with
 m-apps, the SMK-37's calibration guard, the flash loader, the RAM stage, and on the FM-1 M-VAVE's own update from V15
-to V16 and back. The flash loader is rewritten too and is now 1.4; it was tested while it still answered as 1.3.
-[rust/PORT.md](rust/PORT.md) has what changed, the sizes, each test ("On hardware") and what was not tried. What
-follows is what the C releases, up to 2.4, were tested on.
+to V16 and back. The flash loader is rewritten too and is now 1.4: most of its tests were while it still answered
+as 1.3. [rust/PORT.md](rust/PORT.md) has what changed, the sizes, each test ("On hardware") and what was not tried.
+What follows is what the C releases, up to 2.4, were tested on.
 
 | | |
 |---|---|

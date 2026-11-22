@@ -227,7 +227,15 @@ the `z` build, which is the default now, and the SMK-37 follow them.
 
 3.0 is that code with its versions changed: the bootloader's, in stage 0's header and in what the RAM stage tells
 a host, and the flash loader's, from 1.3 to 1.4. Stage 1 is byte for byte that of `2.4-46af0f5`, and each flash
-loader differs from the one tested in one byte. Nothing was run on a unit after the versions changed.
+loader differs from the one tested in one byte.
+
+After the versions changed, on the FM-1, by programs:
+
+- `3.0-7fd456a` was installed with M-Flasher over the stock bootloader, which M-Flasher planned as it had planned
+  2.4. It started the firmware (Baud Girl), and nothing outside the boot area changed.
+- The 1.4 flash loader replaced itself without a power cycle, in the second slot, the first, the second and the
+  first again, and answered each time from the slot it was put in. M-Flasher's own 1.3 replaced it, and was
+  replaced by it. The last of them passed the reads and the refusals.
 
 By programs: M-Flasher 0.12.1, and a script speaking §11.6 over USB MIDI with commands that only read. The screen
 was read with a camera.
@@ -286,9 +294,7 @@ Not tried: M-VAVE's own update on the SMK-37, as there is no other version of it
 M-UPGRADE refuses the version a unit has. Not reported: the RAM stage's M-UPGRADE packages, and the `s` build on the
 SMK-37.
 
-Not tried of the flash loader: one of these replacing another without a power cycle, in both slots and in a slot
-that an earlier one has used (§11.3), which their old version number kept M-Flasher from doing; M-Flasher
-uploading one itself; and a 64 KiB erase.
+Not tried of the flash loader: M-Flasher uploading one itself, as it has its own 1.3, and a 64 KiB erase.
 
 ## What is not known
 
