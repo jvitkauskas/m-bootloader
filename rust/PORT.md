@@ -128,11 +128,11 @@ in the code that goes into each image (`-Zunpretty=expanded`):
 
 | Image | `unsafe` blocks, as ported | Now | `unsafe fn`, as ported | Now |
 |---|---|---|---|---|
-| Stage 0 | 38 | 18 | 7 | 4 |
-| Stage 1 | 105 | 41 | 35 | 7 |
-| RAM stage | 120 | 41 | 39 | 9 |
-| Installer | 128 | 38 | 37 | 9 |
-| Flash loader | 133 | 61 | 38 | 14 |
+| Stage 0 | 38 | 19 | 7 | 5 |
+| Stage 1 | 105 | 42 | 35 | 9 |
+| RAM stage | 120 | 43 | 39 | 10 |
+| Installer | 128 | 39 | 37 | 10 |
+| Flash loader | 133 | 62 | 38 | 15 |
 
 What changed, and what it cost on the SMK-37:
 
@@ -144,31 +144,38 @@ What changed, and what it cost on the SMK-37:
 | MIDI mode's hooks are a trait, and take slices | 14,710 | the sizes of what is sent, read and programmed |
 | The unpacker works on slices | 14,759 | every read and write of the unpacker is inside the pack and the room given |
 | C interfaces with raw pointers only where something uses them (the tests, and the loader for the ROM) | 14,768 | none of them is in the bootloader |
-| The retained area is `retained::<OFFSET, N>()` | 14,768 | the bytes are inside the area (§6.1) |
+| The retained area is claimed by an entry, and its bytes are `bytes::<OFFSET, N>()` of the claim | 14,768 | the bytes are inside the area (§6.1), and two references into it are never alive at once |
+| `boot_main` takes stage 1's work buffer once, and passes it down | 14,768 | nothing else reaches the buffer |
+
+The last two leave every image's code as it was, byte for byte: they cost a claim (an `unsafe` block or two and
+an `unsafe fn` or two more in each image) and nothing on the unit. `memcpy` and `memmove` also copy their bytes as ones that may not
+be initialised, which is what the language asks of them, with the same code coming out.
 
 What is left in stage 1, by what it is for:
 
 | Blocks | What | Why it stays |
 |---|---|---|
-| 14 | references to globals (`Global::get`): the buffers, and the display's, the card's and USB's state | see below |
+| 14 | references to globals (`Global::get`): the work buffer where `boot_main` takes it, the request, the app's record and its header, the updater's context, MIDI mode's buffers, and the display's, the card's and USB's state | see below |
 | 8 | the hardware: three register accesses, three instructions (`csync`, `cli`, `ssync`), a DMA read, a buffer the USB controller writes | |
-| 5 | fixed memory as slices: the retained area, where an updater, an SD card image and a RAM app load, the flash as it is mapped | the addresses are the specification's |
+| 6 | fixed memory: the claim of the retained area and its bytes, where an updater, an SD card image and a RAM app load, the flash as it is mapped | the addresses are the specification's |
 | 4 | calls into code that was just loaded and checked: the app, an updater, the SD card image, a RAM app | |
 | 4 | `memmove`, `memcmp`, `bcmp`, `strlen`, which the compiler calls | |
 | 5 | inside `Global` and `Text`, and the version's address | |
 | 1 | clearing the image's own data at entry | |
 
-**The globals are the part the compiler does not check.** The program has one thread and no interrupts, and its
-buffers are globals because the stack is small. Functions such as `work()` in `boot.rs` are safe to call but hand out
-a `&'static mut`, so two of them could be alive at once, and nothing but the rule at the top of that file prevents
-it. Two ways to close that were not done:
+**The other globals are the part the compiler does not check.** The program has one thread and no interrupts, and
+its buffers are globals because the stack is small. Functions such as `app()` in `boot.rs` are safe to call but hand
+out a `&'static mut`, so two of them could be alive at once, and nothing but the rule at the top of that file
+prevents it. Two ways to close that:
 
 1. **Check it in the tests.** `Global` could count its borrows in the builds for this computer, which the boot
    simulations and the sanitizers run, and cost nothing on the unit. It would find a broken rule wherever a test
-   reaches it.
-2. **Pass the state down from the entry**, as `&mut`, so that the compiler checks every use. Tried for stage 1's
-   4 KiB work buffer alone, it gave the same bytes of stage 1. The rest (the request, the app's record, MIDI mode's
-   buffers, the drivers' state) was not tried, and touches `boot.rs`, the protocol and the drivers' entries.
+   reaches it. Not done.
+2. **Pass the state down from the entry**, as `&mut`, so that the compiler checks every use. Done for the work
+   buffer and the retained area (above). Not done for the rest: MIDI mode's hook that draws the menu again after a
+   RAM app reads the app's record, so the hooks would have to carry state, and the protocol's own buffers are
+   borrowed across hooks. That touches `boot.rs`, the protocol and the drivers' entries, and its cost in bytes is
+   not known.
 
 Also left as it was: the flash loader keeps C's struct of services, which the ROM's two callbacks and the tests
 fill in, with about a dozen blocks of its own.
