@@ -910,6 +910,7 @@ pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32)
 
 /// The C interface (include/core.h), for the C that is left and for the tests.
 /// Safety, for all of it: pointers are valid for what core.h says they hold.
+#[cfg(not(target_arch = "pi32v2"))]
 pub mod c {
     use super::*;
     use core::ffi::{CStr, c_char};

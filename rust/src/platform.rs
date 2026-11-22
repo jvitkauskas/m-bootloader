@@ -633,25 +633,23 @@ mod flash {
     /// # Safety
     /// `out` has room for `n` bytes. `ctx` is not used: the flash is the chip's.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn flash_read(_ctx: *mut c_void, mut a: u32, out: *mut c_void, mut n: u32) -> bool {
-        let (capacity, mut p) = (CAPACITY.read(), out.cast::<u8>());
-        if a > capacity || n > capacity - a {
-            return false;
-        }
-        while n != 0 {
-            let k = n.min(4096);
-            if !unsafe { flash_dma_start(a, p.cast(), k) } || !flash_dma_finish() {
-                return false;
-            }
-            a += k;
-            p = unsafe { p.add(k as usize) };
-            n -= k;
-        }
-        !failed().read()
+    pub unsafe extern "C" fn flash_read(_ctx: *mut c_void, a: u32, out: *mut c_void, n: u32) -> bool {
+        read(a, unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) })
     }
 
-    pub fn read(a: u32, out: &mut [u8]) -> bool {
-        unsafe { flash_read(core::ptr::null_mut(), a, out.as_mut_ptr().cast(), out.len() as u32) }
+    pub fn read(mut a: u32, out: &mut [u8]) -> bool {
+        let capacity = CAPACITY.read();
+        if a > capacity || out.len() as u32 > capacity - a {
+            return false;
+        }
+        for part in out.chunks_mut(4096) {
+            // Safety: the read is finished before `part` is used again.
+            if !unsafe { flash_dma_start(a, part.as_mut_ptr().cast(), part.len() as u32) } || !flash_dma_finish() {
+                return false;
+            }
+            a += part.len() as u32;
+        }
+        !failed().read()
     }
 
     /// The chip's own flash, for the formats' code.
