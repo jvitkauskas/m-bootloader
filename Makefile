@@ -11,17 +11,18 @@ NM := $(TOOLCHAIN)/bin/llvm-nm
 # Upkr 0.2.3 (see README), at UPKR=<path> or on the PATH.
 export UPKR ?= upkr
 HOSTCC ?= cc
-# The pi32v2 rustc (see README), on the same LLVM as the toolchain: the linker generates the code from its bitcode.
-RUSTC ?= rustc-pi32v2
+# The pi32v2 Rust compiler (see README), unpacked in pi32v2-rust/ or at PI32V2_RUST=<directory>. It has to be built on
+# the toolchain's LLVM: the linker generates the code from its bitcode.
+PI32V2_RUST ?= pi32v2-rust
+RUSTC := $(PI32V2_RUST)/bin/rustc
 # Any recent rustc, for the tests on the host.
 HOST_RUSTC ?= rustc
 CARGO ?= cargo
 RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs) VERSION
 # What the RAM stage tells a host its version is.
 export STAGE_VERSION := $(shell cat VERSION)
-# Rust's optimisation level. s works with any toolchain. z is smaller (rust/PORT.md), but only with an LLVM that has
-# -inline-minsize-hint-threshold, in the linker and in rustc: pi32v2-llvm 23.1.6-1 has not. Without it z is far
-# bigger, and does not fit.
+# Rust's optimisation level. z is smaller (rust/PORT.md), but only with -inline-minsize-hint-threshold, which the
+# linker and rustc have from pi32v2-llvm 23.1.6-2. Without it z is far bigger, and does not fit.
 RUST_OPT ?= s
 ifeq ($(RUST_OPT),z)
 LINK += -mllvm -inline-minsize-hint-threshold=50
@@ -140,7 +141,7 @@ build/$(1)/payload.bin: build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/s
 	python3 tools/join_stages.py build/$(1)/stage0.elf build/$(1)/stage0.bin build/$(1)/stage1.elf build/$(1)/stage1.bin build/$(1)/stage1.pack $$@ > build/$(1)/size.json
 build/$(1)/uboot.boot: build/$(1)/payload.bin tools/bankcb.py
 	python3 tools/bankcb.py wrap $(1) $$< $$@
-# The installer: a staged updater carrying this uboot.boot (src/installer.c).
+# The installer: a staged updater carrying this uboot.boot (rust/src/installer.rs).
 build/$(1)/installer_start.o: src/installer_start.S build/$(1)/uboot.boot Makefile
 	$(CLANG) -target pi32v2 -mcpu=r3 -Ibuild/$(1) $(2) -c $$< -o $$@
 build/$(1)/installer.ld: tools/target.ld.S
@@ -150,8 +151,8 @@ build/$(1)/installer.elf: build/$(1)/mboot.o $$(RUST_CORE_lto) build/$(1)/instal
 build/$(1)/installer.bin: build/$(1)/installer.elf tools/check_build.py
 	$(OBJCOPY) -O binary -j .text $$< $$@
 	python3 tools/check_build.py $$< $$@ 0x1c0a800 0x1c16800 installer_entry > build/$(1)/installer-size.json
-# As packages carry it: packed like stage 1, behind an unpacker that unpacks it in place (src/sfx.c), so the stream
-# fits where firmware stores an updater with room to spare. sfx-layout places the pack and checks the image.
+# As packages carry it: packed like stage 1, behind an unpacker that unpacks it in place (rust/src/sfx.rs), so the
+# stream fits where firmware stores an updater with room to spare. sfx-layout places the pack and checks the image.
 build/$(1)/installer.pack: build/$(1)/installer.bin build/upkr-test tools/pack_stage1.py
 	python3 tools/pack_stage1.py $$< $$@
 	./build/upkr-test $$@ $$<

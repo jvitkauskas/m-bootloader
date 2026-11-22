@@ -1,7 +1,7 @@
 # m-bootloader in Rust
 
-This branch (`rust-port`, from `main` at `121cfbe`, version 2.4) replaces every C source with Rust. It builds every
-product, passes every test, and stays inside every size limit. **Nothing of it has run on a unit.**
+Every C source of version 2.4 (`main` at `121cfbe`) was replaced with Rust. It builds every product, passes every
+test, and stays inside every size limit. **Nothing of it has run on a unit.**
 
 ## What changed
 
@@ -42,15 +42,16 @@ Every other test is as it was, and links the Rust through `include/*.h`.
 One crate, `rust/src/lib.rs`, compiled once for each image with the `--cfg` names the Makefile gives it (`stage0`,
 `stage1`, `smk`, `ram_stage`, ...). It needs:
 
-- **pi32v2 LLVM `23.1.6-1`** (`TOOLCHAIN=`). `main` uses 23.1.5-5. `RUST_OPT=z` needs a later one (below).
-- **A rustc for pi32v2** (`RUSTC=`), built from [pi32v2-rust](https://github.com/jvitkauskas/pi32v2-rust) on the same
-  LLVM. **There is no release of one**, so CI cannot build this branch yet, and `.github/workflows/build.yml` is not
-  changed.
+- **pi32v2 LLVM `23.1.6-2`** (`TOOLCHAIN=`). 2.4 was built with 23.1.5-5.
+- **The pi32v2 Rust compiler `1.100.0-1`** (`PI32V2_RUST=`), a release of
+  [pi32v2-rust](https://github.com/jvitkauskas/pi32v2-rust) built on that LLVM.
 - **cargo**, to build `core` from the compiler's sources once (`rust/sysroot`), and any recent rustc for the tests.
 
 ```sh
-make TOOLCHAIN=<pi32v2-llvm 23.1.6-1> RUSTC=<pi32v2 rustc> test
+make TOOLCHAIN=<pi32v2-llvm 23.1.6-2> PI32V2_RUST=<pi32v2-rust 1.100.0-1> test
 ```
+
+CI (`.github/workflows/build.yml`) downloads both releases and checks them against their checksums.
 
 The linker optimises each image as one program: rustc writes bitcode (`-Clinker-plugin-lto -Clto=fat`), and
 `ld.lld` generates the code. Stage 1 takes stage 0's C names only (`stage0.syms`), and stage 0 keeps exactly what
@@ -71,7 +72,8 @@ Bytes. The package is the M-UPGRADE stream of the self-extracting installer.
 | Flash loader | 32,768 | 6,016 | 5,316 | 6,016 | 5,316 |
 
 The SMK-37 is the tight board. It keeps 1,234 bytes of payload, 1,728 of RAM and 1,057 of package, where the C had
-1,930, 2,336 and 2,083. The C here is `main` built with the same 23.1.6-1 toolchain.
+1,930, 2,336 and 2,083. The C here is `main` built with the 23.1.6-1 toolchain, with which the Rust came out the
+same sizes as with the releases above.
 
 ### As each module moved (SMK-37)
 
@@ -117,8 +119,8 @@ nothing.
 
 ## Compiler work
 
-Done on local branches named `pi32v2-size`, of pi32v2-llvm (four commits on `7fdd65490`) and of pi32v2-rust (a
-documentation commit on `7d22990cc`). Neither is pushed, and no toolchain release has them.
+Four commits in pi32v2-llvm, released in `pi32v2-23.1.6-2`, and a documentation commit in pi32v2-rust, whose
+release `pi32v2-1.100.0-1` is built on that LLVM.
 
 | Change | Effect here (SMK-37) | Used here |
 |---|---|---|
@@ -126,8 +128,8 @@ documentation commit on `7d22990cc`). Neither is pushed, and no toolchain releas
 | The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878: the packer does better with repeats than with calls to them | no |
 | Variadic prologues pass the machine verifier | none: found while verifying outlined code | |
 
-- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`, which the released
-  toolchain builds. Asking for `z` with a linker that lacks the option fails at once.
+- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`. Asking for `z` with a
+  linker that lacks the option, one before 23.1.6-2, fails at once.
 - **How the two were checked.** pi32v2-isa's `tools/llvm/ctest.py`, which runs 3,328 calls in the simulator and
   compares them with JieLi's compiler, agrees on all of them at `-Oz`, `-Os` and `-O2`, with the outliner, and
   with both options. The machine verifier passes on this crate with the outliner on. The pi32v2 and inliner lit
@@ -141,8 +143,8 @@ documentation commit on `7d22990cc`). Neither is pushed, and no toolchain releas
 
 Not done:
 
-1. **A released rustc for pi32v2, with `core` built for it.** Today the build compiles `core` itself with nightly
-   flags (`-Zbuild-std`, `-Cpanic=immediate-abort`).
+1. **Using the `core` that the compiler's package has.** The build compiles `core` itself with nightly flags
+   (`-Zbuild-std`, `-Cpanic=immediate-abort`, `-Clto=fat`), which the packaged one is not built with.
 2. **Loading addresses.** Stage 1 has 351 six-byte constant loads, 2.1 KB of it: 109 addresses of its data, 104 of
    strings and tables, 63 plain constants, 39 registers, 36 others. Merging globals differently moved it by 50
    bytes either way (above). Getting more needs addresses the compiler can relate, which it can't across separately

@@ -70,9 +70,9 @@ Baud Girl run with it.
 
 ## Status
 
-**This branch, `rust-port`, is the bootloader rewritten in Rust, and has not run on a unit.** It builds every
-product and passes every test here. What follows is what the C releases were tested on. [rust/PORT.md](rust/PORT.md)
-has what changed, the sizes, and what is not known.
+**The source here is the bootloader rewritten in Rust, which has not run on a unit.** It builds every product and
+passes every test here. What follows is what the C releases, up to 2.4, were tested on.
+[rust/PORT.md](rust/PORT.md) has what changed, the sizes, and what is not known.
 
 | | |
 |---|---|
@@ -158,7 +158,7 @@ Linux, find the port with `amidi -l`, then
 it with M-VAVE's M-UPGRADE, over USB MIDI, without download mode. The unit has
 to run firmware that M-UPGRADE can update, such as M-VAVE's, and keeps it.
 
-A package holds no firmware, only our installer (`src/installer.c`): the
+A package holds no firmware, only our installer (`rust/src/installer.rs`): the
 unit's firmware stores it and the bootloader starts it. It writes only the
 bootloader and its boot-area record, shows its progress on the screen, and
 restarts the unit. M-UPGRADE then waits for an updater that never comes, and
@@ -174,23 +174,28 @@ skips the model and version checks.
 ## Build
 
 You need Python 3, GNU Make, a C compiler and Rust with cargo for the tests and tools, the
-[pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release `pi32v2-23.1.6-1`, and a rustc for
-pi32v2 built on that LLVM from [pi32v2-rust](https://github.com/jvitkauskas/pi32v2-rust), which has no release
-yet. Nothing from JieLi is needed. On Linux x86-64:
+[pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release `pi32v2-23.1.6-2`, and the
+[pi32v2 Rust compiler](https://github.com/jvitkauskas/pi32v2-rust) release `pi32v2-1.100.0-1`, which is built on
+that LLVM. Nothing from JieLi is needed. On Linux x86-64:
 
 ```sh
-curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.6-1/pi32v2-llvm-23.1.6-1-linux-x64.tar.xz
-echo '0ab9d51920b2fbfa3f01859bb6eedc5f7ce75d00baf4a602490d3a9d75760888  toolchain.tar.xz' | sha256sum -c
+curl -fLo toolchain.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.6-2/pi32v2-llvm-23.1.6-2-linux-x64.tar.xz
+echo 'b9aa6878a3e9863d54f7dea96ec5dd2e4f438b02a1503f7b042fa601bb5e4c22  toolchain.tar.xz' | sha256sum -c
 mkdir toolchain && tar -xJf toolchain.tar.xz -C toolchain --strip-components=1
+curl -fLo pi32v2-rust.tar.xz https://github.com/jvitkauskas/pi32v2-rust/releases/download/pi32v2-1.100.0-1/pi32v2-rust-1.100.0-1-linux-x64.tar.xz
+echo 'efc89e3cd13b38a22d6698b3d965c0a754bda31c0299afc9b4d73f0a73595690  pi32v2-rust.tar.xz' | sha256sum -c
+mkdir pi32v2-rust && tar -xJf pi32v2-rust.tar.xz -C pi32v2-rust --strip-components=1
 cargo install --locked --git https://github.com/exoticorn/upkr --rev a9e56d9d50d1f64cab7590f2c584a12b173e7715 upkr
-make RUSTC=<the pi32v2 rustc>
+make
 ```
 
-`make RUST_OPT=z` builds it about 1% smaller, with an LLVM that the 23.1.6-1 release is not yet
-([rust/PORT.md](rust/PORT.md)).
+Upkr is the packer that stores stage 1. `make UPKR=<path>` uses one installed elsewhere. Both releases also have
+packages for Linux arm64 and macOS, with their checksums in `SHA256SUMS`. `make TOOLCHAIN=<directory>` and
+`make PI32V2_RUST=<directory>` use a toolchain and a compiler unpacked elsewhere. The two have to be on the same
+LLVM, as the linker generates the code from the compiler's bitcode. The build compiles Rust's `core` library itself,
+with cargo, from the sources in the compiler's package.
 
-Upkr is the packer that stores stage 1. `make UPKR=<path>` uses one installed elsewhere. The release also has packages for Linux arm64 and macOS, with their checksums in
-`SHA256SUMS`. `make TOOLCHAIN=<directory>` uses a toolchain unpacked elsewhere.
+`make RUST_OPT=z` builds it about 1% smaller, where the default is `s` ([rust/PORT.md](rust/PORT.md)).
 
 | Output | What |
 |---|---|
