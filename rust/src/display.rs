@@ -344,7 +344,6 @@ pub fn pixels(x: u32, y: u32, w: u32, h: u32, data: &[u8]) {
 }
 
 // As the flash loader's table of services has them (rust/src/loader.rs).
-#[unsafe(no_mangle)]
 pub extern "C" fn display_init(board: u32) -> bool {
     init(board)
 }
@@ -352,14 +351,12 @@ pub extern "C" fn display_init(board: u32) -> bool {
 /// # Safety
 /// `text` holds `n` bytes.
 #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8, n: u32) {
     display().row(row, fg, bg, unsafe {
         core::slice::from_raw_parts(text, n.min(20) as usize)
     })
 }
 
-#[unsafe(no_mangle)]
 pub extern "C" fn display_progress(percent: u32, color: u16) {
     progress(percent, color)
 }

@@ -61,8 +61,8 @@ stage 1 calls (`stage0.keep`, read from stage 1's object).
 
 ## Sizes
 
-Bytes. The package is the M-UPGRADE stream of the self-extracting installer. The Rust is the default build,
-`RUST_OPT=z`.
+Bytes, as released in 3.0 (what they are since is under "The tests in Rust"). The package is the M-UPGRADE stream of
+the self-extracting installer. The Rust is the default build, `RUST_OPT=z`.
 
 | | Limit | FM-1, C | FM-1, Rust | SMK-37, C | SMK-37, Rust |
 |---|---|---|---|---|---|
@@ -300,8 +300,9 @@ Not tried of the flash loader: M-Flasher uploading one itself, as it has its own
 ## The tests in Rust
 
 After 3.0 the C that was left went too: 16 test and tool sources and the 12 headers of the C interface, 6,528 lines,
-became 8,367 lines of Rust. **No image changed**: the flash loaders and the RAM stage are byte for byte the 3.0
-release's, and the two bootloaders differ from it in the commit of their version text only.
+became 8,367 lines of Rust. **That changed no image**: with the tests ported, the flash loaders and the RAM stage
+were byte for byte the 3.0 release's, and the two bootloaders differed from it in the commit of their version text
+only. One change after it does change them, and makes them smaller ("The C names that only the tests used", below).
 
 | Was | Is |
 |---|---|
@@ -311,7 +312,7 @@ release's, and the two bootloaders differ from it in the commit of their version
 | `tests/boot_sim.c`, `boot_sim.h`, `boot_nor.c` | `rust/tests/sim.rs`, `nor.rs` |
 | `tests/boot_test.c`, `boot_midi_test.c`, `loader_lifecycle_test.c` | `rust/tests/boot.rs`, `boot_midi.rs`, `loader_lifecycle.rs` |
 | `tests/upkr_test.c`, `installer_host.c`, `tools/sfx_layout.c` | `tests/upkr_test.rs`, `installer_host.rs`, `tools/sfx_layout.rs` |
-| `include/*.h`, and the crate's C interface for them | gone: 129 exported C names in the crate became 77 |
+| `include/*.h`, and the crate's C interface for them | gone: 129 exported C names in the crate became 59 |
 
 - **Where they are.** The tests are modules of the crate (`rust/tests/`, from `rust/src/lib.rs` under `cfg(test)`),
   so they call what they test directly, private items included where one is opened to the crate. The Makefile
@@ -344,7 +345,26 @@ missed the same 9. The first round found one difference, which is why the tests 
 specification's constants themselves (the C had its own copies from `include/*.h`) and do not take them from the
 crate: a wrong value there has to fail a test, not be followed by it.
 
-Not as it was:
+### The C names that only the tests used
+
+MIDI mode's hooks, the USB-MIDI device's four functions and the card's two had C's calling convention and a name
+for the linker, and the flash loader's `loader_init` and the screen's three services had the name: the C tests
+called them. They are plain Rust functions now, and the three services keep the calling convention that the
+loader's table has, without the name. The images are smaller for it, and **they are images that no unit has run
+yet**:
+
+| | 3.0 | Now |
+|---|---|---|
+| FM-1: payload, RAM, package | 14,112, 26,696, 18,182 | 14,090, 26,656, 18,166 |
+| SMK-37: payload, RAM, package | 14,608, 27,456, 18,796 | 14,597, 27,408, 18,780 |
+| Stage 1 unpacked, FM-1 and SMK-37 | 15,736, 16,492 | 15,692, 16,448 |
+| Flash loader | 5,376 | 5,352 |
+
+Stage 0 is as it was, byte for byte, and the RAM stage is the same size with a few dozen bytes changed. The flash
+loader still says it is 1.4, with other bytes than the released 1.4 has: what it does is unchanged, and its version
+is for the next release to decide.
+
+### Not as it was
 
 - A check that fails inside a function the crate calls back through C's calling convention (a loader callback, a
   stand-in for stage 0) ends the program with its message, where it would otherwise be one failed test.

@@ -278,8 +278,7 @@ fn session_close() {
 }
 
 /// Whether a card answers (there is no card-detect line).
-#[unsafe(no_mangle)]
-pub extern "C" fn sd_probe(lsb_mhz: u32) -> bool {
+pub fn sd_probe(lsb_mhz: u32) -> bool {
     // Safety: the card's state is used only inside these two entries, which call nothing that comes back.
     let card = unsafe { CARD.get() };
     session_open(lsb_mhz);
@@ -289,8 +288,7 @@ pub extern "C" fn sd_probe(lsb_mhz: u32) -> bool {
 }
 
 /// Loads and calls /MBOOT/MENU.BIN; None when stage 2 returned, else what failed (for the menu).
-#[unsafe(no_mangle)]
-pub extern "C" fn sd_stage2(lsb_mhz: u32) -> Option<Text> {
+pub fn sd_stage2(lsb_mhz: u32) -> Option<Text> {
     let card = unsafe { CARD.get() };
     session_open(lsb_mhz);
     let mut error = Some(text!("NO SD CARD"));

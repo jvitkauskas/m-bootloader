@@ -290,8 +290,7 @@ pub(crate) mod midi {
         return crate::tests::mu_run(UNIT_KEY.read(), work, written);
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_idle() {
+    pub fn mu_idle() {
         for _ in 0..2 {
             usb_midi_poll();
             hal_delay_us(500);
@@ -301,8 +300,7 @@ pub(crate) mod midi {
     /// Called about once a millisecond: one odd scan mustn't stop an install. A key that was down when MIDI mode opened
     /// by itself counts once it has read as up for 50 scans in a row: past a release's bounce, and more than twice the
     /// 20 that leave, so a stuck key that reads up now and then doesn't make MIDI mode leave by itself.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_cancel() -> bool {
+    pub fn mu_cancel() -> bool {
         static HELD: Global<u32> = Global::new(0);
         static UP: Global<[u8; 4]> = Global::new([0; 4]);
         let keys = board_keys();
@@ -332,13 +330,15 @@ pub(crate) mod midi {
         held >= 20
     }
 
+    // (These two are the protocol's, so not used on the simulated chip either.)
+    #[cfg_attr(boot_sim, allow(dead_code))]
     fn frame(y: u32) {
         display::rect(10, y, 220, 12, WHITE);
         display::rect(12, y + 2, 216, 8, 0);
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_progress(writing: bool, percent: u32) {
+    #[cfg_attr(boot_sim, allow(dead_code))]
+    pub fn mu_progress(writing: bool, percent: u32) {
         static SHOWN: Global<u32> = Global::new(0);
         // A pass's start draws the screen for it.
         if percent == 0 {
@@ -386,8 +386,7 @@ pub(crate) mod midi {
         }
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_start_app() {
+    pub fn mu_start_app() {
         hal_delay_us(200_000);
         usb_midi_stop();
         sync_cpu();

@@ -469,18 +469,15 @@ impl Usb {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn usb_midi_start() {
+pub fn usb_midi_start() {
     usb().start()
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn usb_midi_poll() {
+pub fn usb_midi_poll() {
     usb().poll()
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn usb_midi_configured() -> bool {
+pub fn usb_midi_configured() -> bool {
     usb().configuration != 0
 }
 
@@ -489,8 +486,7 @@ pub fn send(message: &[u8]) {
     usb().send(message)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn usb_midi_stop() {
+pub fn usb_midi_stop() {
     usb().running = false;
     CON0.write(0);
     IO_CON0.write(0x0c);

@@ -311,7 +311,6 @@ impl State {
 
 /// # Safety
 /// `s` is room for a `State`, whatever it holds.
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn loader_init(s: *mut State, io: &Services) {
     // Safety: all zeros, then the services, make a State: its other fields are numbers.
     unsafe {
