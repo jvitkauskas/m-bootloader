@@ -95,8 +95,8 @@ mod own {
             core::ptr::write_bytes(&raw mut __stage0_bss_start, 0, (&raw const __stage0_bss_end).offset_from_unsigned(&raw const __stage0_bss_start))
         };
         hal_early();
-        const DMA_PRIORITY: Reg = unsafe { Reg::at(0x13004) };
-        const ENC_KEY: Reg = unsafe { Reg::at(0x40304) };
+        const DMA_PRIORITY: Reg = Reg::at::<0x13004>();
+        const ENC_KEY: Reg = Reg::at::<0x40304>();
         DMA_PRIORITY.write(0xffff);
         ENC_KEY.write(0xffff);
         if !apply_config() {

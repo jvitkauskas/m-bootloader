@@ -51,7 +51,7 @@ use state::{dma_active, failed, timer_mhz};
 // Stage 1 takes these from stage 0. So does a test that stands in for them (`import_early`).
 #[cfg(any(stage1, import_early))]
 unsafe extern "C" {
-    pub safe fn wait_mask(address: u32, mask: u32, value: bool) -> bool;
+    pub safe fn wait_mask(reg: Reg, mask: u32, value: bool) -> bool;
     pub safe fn settle(n: u32);
     pub safe fn hal_fault() -> bool;
     pub safe fn hal_fault_clear();
@@ -75,30 +75,28 @@ pub use early::*;
 pub use flash::*;
 
 fn wait(reg: Reg, mask: u32, value: bool) -> bool {
-    wait_mask(reg.address(), mask, value)
+    wait_mask(reg, mask, value)
 }
 
 #[cfg(not(any(stage1, import_early)))]
 mod early {
     use super::*;
 
-    const TIMER: Reg = unsafe { Reg::at(0x10400) };
-    const P33_CON: Reg = unsafe { Reg::at(0x13e08) };
-    const P33_BUF: Reg = unsafe { Reg::at(0x13e0c) };
-    const CLK_CON0: Reg = unsafe { Reg::at(0x1000c) };
-    const CLK_CON1: Reg = unsafe { Reg::at(0x10008) };
-    const CLK_DIV: Reg = unsafe { Reg::at(0x10014) };
-    const PLL_CON0: Reg = unsafe { Reg::at(0x119a0) };
-    const PLL_CON1: Reg = unsafe { Reg::at(0x119a4) };
-    const PLL_CON2: Reg = unsafe { Reg::at(0x119a8) };
-    const PLL_CON3: Reg = unsafe { Reg::at(0x119ac) };
+    const TIMER: Reg = Reg::at::<0x10400>();
+    const P33_CON: Reg = Reg::at::<0x13e08>();
+    const P33_BUF: Reg = Reg::at::<0x13e0c>();
+    const CLK_CON0: Reg = Reg::at::<0x1000c>();
+    const CLK_CON1: Reg = Reg::at::<0x10008>();
+    const CLK_DIV: Reg = Reg::at::<0x10014>();
+    const PLL_CON0: Reg = Reg::at::<0x119a0>();
+    const PLL_CON1: Reg = Reg::at::<0x119a4>();
+    const PLL_CON2: Reg = Reg::at::<0x119a8>();
+    const PLL_CON3: Reg = Reg::at::<0x119ac>();
     #[cfg(not(boot_sim))]
-    const POWER: Reg = unsafe { Reg::at(0x10000) };
+    const POWER: Reg = Reg::at::<0x10000>();
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn wait_mask(address: u32, mask: u32, value: bool) -> bool {
-        // Safety: every caller passes a register.
-        let reg = unsafe { Reg::at(address) };
+    pub extern "C" fn wait_mask(reg: Reg, mask: u32, value: bool) -> bool {
         let mut n = 3_000_000;
         while n != 0 {
             if (reg.read() & mask != 0) == value {
@@ -299,23 +297,24 @@ mod flash {
     use super::*;
     use core::ffi::c_void;
 
-    const SPI_CON: Reg = unsafe { Reg::at(0x11c00) };
+    const SPI_CON: Reg = Reg::at::<0x11c00>();
     const SPI_BAUD: Reg = SPI_CON.add(4);
     const SPI_BUF: Reg = SPI_CON.add(8);
     const SPI_ADR: Reg = SPI_CON.add(12);
     const SPI_CNT: Reg = SPI_CON.add(16);
-    const CLK_CON1: Reg = unsafe { Reg::at(0x10008) };
-    const CLK_DIV: Reg = unsafe { Reg::at(0x10014) };
-    const EFUSE_CON: Reg = unsafe { Reg::at(0x10200) };
-    const DMA_MUX: Reg = unsafe { Reg::at(0x13000) };
-    const SFC_CON: Reg = unsafe { Reg::at(0x40200) };
-    const SFC_BAUD: Reg = unsafe { Reg::at(0x40204) };
-    const SFC_BASE: Reg = unsafe { Reg::at(0x4020c) };
-    const ENC_CON: Reg = unsafe { Reg::at(0x40300) };
-    const ENC_KEY: Reg = unsafe { Reg::at(0x40304) };
-    const IO_MUX0: Reg = unsafe { Reg::at(0x5101c) };
-    const IO_MUX1: Reg = unsafe { Reg::at(0x51020) };
-    const CACHE_CON: Reg = unsafe { Reg::at(0x1eee008) };
+    const CLK_CON1: Reg = Reg::at::<0x10008>();
+    const CLK_DIV: Reg = Reg::at::<0x10014>();
+    const EFUSE_CON: Reg = Reg::at::<0x10200>();
+    const DMA_MUX: Reg = Reg::at::<0x13000>();
+    const SFC_CON: Reg = Reg::at::<0x40200>();
+    const SFC_BAUD: Reg = Reg::at::<0x40204>();
+    const SFC_BASE: Reg = Reg::at::<0x4020c>();
+    const ENC_CON: Reg = Reg::at::<0x40300>();
+    const ENC_KEY: Reg = Reg::at::<0x40304>();
+    const IO_MUX0: Reg = Reg::at::<0x5101c>();
+    const IO_MUX1: Reg = Reg::at::<0x51020>();
+    const CACHE_CON: Reg = Reg::at::<0x1eee008>();
+    const CACHE_TAGS: Reg = Reg::at::<0x1f0_0000>();
 
     static READ_WIDTH: Global<u32> = Global::new(1);
     static CAPACITY: Global<u32> = Global::new(0);
@@ -722,11 +721,11 @@ mod flash {
         SFC_BASE.write(base);
         ENC_KEY.write(key as u32);
         CACHE_CON.clear(bit(8) | bit(9));
-        for (from, to) in [(0x1f0_0000, 0x1f0_4000), (0x1f0_8000, 0x1f0_a000), (0x1f0_a000, 0x1f0_a200), (0x1f0_b000, 0x1f0_b200)] {
+        // The cache's tags (§3.6).
+        for (from, to) in [(0, 0x4000), (0x8000, 0xa000), (0xa000, 0xa200), (0xb000, 0xb200)] {
             let mut a = from;
             while a < to {
-                // Safety: the cache's tags (§3.6).
-                unsafe { Reg::at(a) }.write(0);
+                CACHE_TAGS.add(a).write(0);
                 a += 4;
             }
         }

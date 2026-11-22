@@ -3,7 +3,13 @@
 
 /// A 32-bit register of the chip.
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct Reg(u32);
+
+/// Where the chip has registers (docs/SPEC.md §2.2), and the cache's tags (§3.6): not its RAM, nor the flash.
+const fn is_register(address: u32) -> bool {
+    address.is_multiple_of(4) && matches!(address, 0x1_0000..0x2_0000 | 0x4_0000..0x6_0000 | 0x1ee_e000..0x1ee_f000 | 0x1f0_0000..0x1f0_c000)
+}
 
 #[cfg(platform_sim)]
 unsafe extern "C" {
@@ -12,10 +18,10 @@ unsafe extern "C" {
 }
 
 impl Reg {
-    /// # Safety
-    /// `address` is a register of this chip (docs/SPEC.md §2.2).
-    pub const unsafe fn at(address: u32) -> Reg {
-        Reg(address)
+    /// The register at `ADDRESS`, which does not compile unless the chip has registers there.
+    pub const fn at<const ADDRESS: u32>() -> Reg {
+        const { assert!(is_register(ADDRESS)) };
+        Reg(ADDRESS)
     }
 
     pub const fn address(self) -> u32 {

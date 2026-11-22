@@ -7,17 +7,17 @@ use crate::hw::{Reg, bit, dma_address, sync_cpu};
 use crate::midi_update::mu_rx;
 use crate::platform::{hal_delay_us, settle};
 
-const CON0: Reg = unsafe { Reg::at(0x11800) };
-const CON1: Reg = unsafe { Reg::at(0x11804) };
-const EP0_COUNT: Reg = unsafe { Reg::at(0x11808) };
+const CON0: Reg = Reg::at::<0x11800>();
+const CON1: Reg = Reg::at::<0x11804>();
+const EP0_COUNT: Reg = Reg::at::<0x11808>();
 const EP1_COUNT: Reg = EP0_COUNT.add(4);
-const EP0_ADDRESS: Reg = unsafe { Reg::at(0x11818) };
-const EP1_TX_ADDRESS: Reg = unsafe { Reg::at(0x1181c) };
+const EP0_ADDRESS: Reg = Reg::at::<0x11818>();
+const EP1_TX_ADDRESS: Reg = Reg::at::<0x1181c>();
 /// Endpoints 1 to 3: eight bytes apart.
-const EP1_RX_ADDRESS: Reg = unsafe { Reg::at(0x11820) };
-const EP4_RX_ADDRESS: Reg = unsafe { Reg::at(0x1183c) };
-const IO_CON0: Reg = unsafe { Reg::at(0x51000) };
-const CLOCK_CON1: Reg = unsafe { Reg::at(0x10010) };
+const EP1_RX_ADDRESS: Reg = Reg::at::<0x11820>();
+const EP4_RX_ADDRESS: Reg = Reg::at::<0x1183c>();
+const IO_CON0: Reg = Reg::at::<0x51000>();
+const CLOCK_CON1: Reg = Reg::at::<0x10010>();
 // The MUSB's registers.
 const FADDR: u32 = 0;
 const POWER: u32 = 1;

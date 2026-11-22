@@ -5,12 +5,12 @@ use crate::hw::{Reg, Text, bit, dma_address, sync_cpu};
 use crate::platform::{gpio_level, gpio_output, hal_delay_us, hal_fault, hal_fault_clear};
 use core::ffi::{CStr, c_char};
 
-const SPI1_CON: Reg = unsafe { Reg::at(0x11d00) };
+const SPI1_CON: Reg = Reg::at::<0x11d00>();
 const SPI1_BAUD: Reg = SPI1_CON.add(4);
 const SPI1_BUF: Reg = SPI1_CON.add(8);
 const SPI1_ADR: Reg = SPI1_CON.add(12);
 const SPI1_CNT: Reg = SPI1_CON.add(16);
-const IO_MUX1: Reg = unsafe { Reg::at(0x51020) };
+const IO_MUX1: Reg = Reg::at::<0x51020>();
 pub const YELLOW: u16 = 0xffe0;
 pub const WHITE: u16 = 0xffff;
 pub const GREEN: u16 = 0x07e0;

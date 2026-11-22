@@ -25,7 +25,7 @@ mod own {
     use crate::hw::{Reg, bit, gpio, sync_cpu};
     use crate::platform::{gpio_input, gpio_level, gpio_output, gpio_read, hal_delay_us};
 
-    const PHY: Reg = unsafe { Reg::at(0x16a0c) };
+    const PHY: Reg = Reg::at::<0x16a0c>();
     /// The registers of a port that are saved and put back.
     const OFFSETS: [u32; 8] = [0, 8, 12, 16, 20, 24, 28, 32];
     const PORTS: [u32; 2] = [0, 7];

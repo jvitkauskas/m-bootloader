@@ -16,7 +16,7 @@ use crate::{Global, text};
 
 pub const STAGE2_ADDRESS: usize = 0x01c2_8000;
 pub const STAGE2_MAX: u32 = 0x8000;
-const SPI1_CON: Reg = unsafe { Reg::at(0x11d00) };
+const SPI1_CON: Reg = Reg::at::<0x11d00>();
 const SPI1_BAUD: Reg = SPI1_CON.add(4);
 const SPI1_BUF: Reg = SPI1_CON.add(8);
 const CS: (u32, u32) = if cfg!(smk) { (2, 8) } else { (2, 7) };

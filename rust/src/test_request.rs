@@ -3,7 +3,7 @@
 //! and resets (docs/SPEC.md §11.9).
 use crate::hw::{Reg, bit, irq_off, sync_cpu};
 
-const POWER: Reg = unsafe { Reg::at(0x10000) };
+const POWER: Reg = Reg::at::<0x10000>();
 /// The request: the SD card item is 4, and MIDI mode is 5.
 const REQUEST: u8 = if cfg!(test_request_sd) { 4 } else { 5 };
 

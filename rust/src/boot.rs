@@ -765,9 +765,7 @@ pub extern "C" fn boot_main(_device: *const u32) {
             // What the app is handed: §6.5.
             *retained(0xa0) = header().bytes;
             contract::app(retained(APP_CONTEXT - RETAINED), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
-            *retained::<8>(0xd8) = [0; 8];
-            const APP_FLAGS: Reg = unsafe { Reg::at(0x01c7_fe60) };
-            APP_FLAGS.write(0);
+            *retained::<12>(0xd8) = [0; 12];
             board_restore();
             display::release();
             SCREEN_READY.set(false);
