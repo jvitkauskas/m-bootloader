@@ -111,7 +111,7 @@ pub extern "C" fn installer_main(_context: *mut u8, stream_end: u32) -> ! {
     if flash_capacity() != 0 {
         retire_flash_request(stream_end);
     }
-    *retained::<2>(8) = [0; 2];
+    *retained::<8, 2>() = [0; 2];
     sync_cpu();
     if screen {
         display::text(6, WHITE, text!(""));

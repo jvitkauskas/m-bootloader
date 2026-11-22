@@ -168,7 +168,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     #[cfg(stage_ota)]
     if flash_capacity() != 0 {
         crate::installer::retire_flash_request(_stream_end);
-        *retained::<2>(8) = [0; 2];
+        *retained::<8, 2>() = [0; 2];
         sync_cpu();
     }
     let key = (hal_efuse(1, 3) >> 8) as u16;
@@ -184,7 +184,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
             usb_midi_stop();
             flash_release();
             if r == Outcome::Download {
-                *retained(0) = *b"usb_update_mode\0";
+                *retained::<0, _>() = *b"usb_update_mode\0";
                 sync_cpu();
             }
             hal_reset();

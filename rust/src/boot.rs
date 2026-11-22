@@ -9,7 +9,7 @@ use crate::formats::{self, App, AppState, Config, Flash, Guard, Header, Request,
 use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
 use crate::hw::{Text, irq_off, retained, sync_cpu};
 use crate::platform::{
-    Chip,    flash_capacity, flash_erase, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
+    Chip, flash_capacity, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
     hal_reset, hal_xip,
 };
 use crate::sdboot::{sd_probe, sd_stage2};
@@ -212,7 +212,7 @@ mod midi {
         }
 
         fn erase(address: u32) -> bool {
-            flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
+            platform::flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
         }
 
         fn program(address: u32, data: &[u8]) -> bool {
@@ -501,7 +501,7 @@ fn menu() -> bool {
             line.append(text!(" B"));
         }
         line.show(4, WHITE);
-        let ram = formats::request_valid(retained(8));
+        let ram = formats::request_valid(retained::<8, _>());
         line = Line::new(if ram { text!("UPDATE RAM ") } else { text!("UPDATE ") });
         if updates != 0 {
             line.number(updates, 10, 0);
@@ -625,7 +625,7 @@ fn menu() -> bool {
         }
         if XIP_ATTEMPTED.read() {
             if action == BOOT_ANYWAY {
-                *retained(0) = *b"BOOTANY\0";
+                *retained::<0, _>() = *b"BOOTANY\0";
             }
             hal_reset();
         }
@@ -646,7 +646,7 @@ fn update(ram: bool) {
     let (clock, memory, meta) = unsafe { (&mut CLOCK_META.get().0, &mut MEMORY_META.get().0, &mut UPDATE_META.get().0) };
     contract::config(clock, memory, &CONFIG);
     contract::updater(meta, app(), UNIT_KEY.read(), pointer(clock), if ram { 0x01c7_fdb0 } else { pointer(memory) });
-    *retained::<2>(2) = [0; 2];
+    *retained::<2, 2>() = [0; 2];
     // Safety: where a staged updater is loaded and runs (§6.3), which is free until then.
     let load = unsafe { core::slice::from_raw_parts_mut(formats::UPDATE_LOAD as usize as *mut u8, formats::UPDATE_MAX as usize) };
     if formats::updater_decode(&Chip, request(), load, work(), &mut updater) {
@@ -667,7 +667,7 @@ fn update(ram: bool) {
         REASON.set(Some(text!("UPDATER REFUSED")));
     }
     if ram {
-        *retained::<2>(8) = [0; 2];
+        *retained::<8, 2>() = [0; 2];
     }
     sync_cpu();
     // §6.2: the updater may have changed both the SPI path and the contents.
@@ -706,9 +706,9 @@ fn xip_crc() -> bool {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".entry")]
 pub extern "C" fn boot_main(_device: *const u32) {
-    let mut bypass = contract::consume_bypass(retained(0));
+    let mut bypass = contract::consume_bypass(retained::<0, _>());
     #[cfg(test_requests)]
-    let asked = asked::consume(retained(0));
+    let asked = asked::consume(retained::<0, _>());
     #[cfg(not(boot_sim))]
     {
         unsafe extern "C" {
@@ -745,10 +745,10 @@ pub extern "C" fn boot_main(_device: *const u32) {
         }
         if !updates_done {
             updates_done = true;
-            let choice = contract::update_choice(retained(8), MOUNTED.read());
+            let choice = contract::update_choice(retained::<8, _>(), MOUNTED.read());
             let mut found = choice == 1;
             if found {
-                *request() = *retained(8);
+                *request() = *retained::<8, _>();
             } else if choice == 2 {
                 found = formats::request_scan(&Chip, header().alignment, request(), None);
             }
@@ -758,8 +758,8 @@ pub extern "C" fn boot_main(_device: *const u32) {
                     need_menu = true;
                     continue;
                 }
-            } else if MOUNTED.read() && formats::uart_request(retained(0)) {
-                *retained::<4>(0) = [0; 4];
+            } else if MOUNTED.read() && formats::uart_request(retained::<0, _>()) {
+                *retained::<0, 4>() = [0; 4];
                 hal_reset();
             }
         }
@@ -771,9 +771,9 @@ pub extern "C" fn boot_main(_device: *const u32) {
         let ok = hal_xip(app().base, UNIT_KEY.read(), EFFECTIVE_WIDTH.read(), BAUD);
         if ok && ((bypass && EFFECTIVE_WIDTH.read() == WIDTH) || xip_crc()) {
             // What the app is handed: §6.5.
-            *retained(0xa0) = header().bytes;
-            contract::app(retained(APP_CONTEXT - RETAINED), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
-            *retained::<12>(0xd8) = [0; 12];
+            *retained::<0xa0, _>() = header().bytes;
+            contract::app(retained::<{ APP_CONTEXT - RETAINED }, _>(), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
+            *retained::<0xd8, 12>() = [0; 12];
             board_restore();
             display::release();
             SCREEN_READY.set(false);

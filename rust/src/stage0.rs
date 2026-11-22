@@ -14,18 +14,14 @@ pub use own::*;
 #[cfg(any(stage0, boot_sim))]
 mod own {
     use crate::board::{KEY_RECOVERY, board_hold, board_init};
-    use crate::hw::{Reg, sync_cpu};
+    use crate::hw::{Reg, retained, sync_cpu};
     use crate::platform::{hal_clock_a, hal_early, hal_fault, hal_reset, p33_read, p33_write};
 
     const SMK: bool = cfg!(smk);
-    /// What survives a reset: docs/SPEC.md §6.1.
-    const RETAINED: usize = 0x01c7_fd80;
-
     /// Restarts the chip in its ROM's USB download mode (§4.2).
     #[unsafe(no_mangle)]
     pub extern "C" fn rom_download() -> ! {
-        // Safety: RAM that is this program's to write.
-        unsafe { *(RETAINED as *mut [u8; 16]) = *b"usb_update_mode\0" };
+        *retained::<0, _>() = *b"usb_update_mode\0";
         sync_cpu();
         hal_reset()
     }
