@@ -12,12 +12,6 @@ const fn is_register(address: u32) -> bool {
         && matches!(address, 0x1_0000..0x2_0000 | 0x4_0000..0x6_0000 | 0x1ee_e000..0x1ee_f000 | 0x1f0_0000..0x1f0_c000)
 }
 
-#[cfg(platform_sim)]
-unsafe extern "C" {
-    /// The tests' chip.
-    fn platform_register(address: usize) -> *mut u32;
-}
-
 impl Reg {
     /// The register at `ADDRESS`, which does not compile unless the chip has registers there.
     pub const fn at<const ADDRESS: u32>() -> Reg {
@@ -36,8 +30,9 @@ impl Reg {
 
     #[inline(always)]
     fn pointer(self) -> *mut u32 {
+        // The tests' chip.
         #[cfg(platform_sim)]
-        return unsafe { platform_register(self.0 as usize) };
+        return crate::tests::platform_register(self.0 as usize);
         #[cfg(not(platform_sim))]
         return self.0 as *mut u32;
     }
@@ -79,12 +74,7 @@ pub fn gpio(port: u32, offset: u32) -> Reg {
 /// The address the DMA is given for a pointer.
 pub fn dma_address(p: *mut u8) -> u32 {
     #[cfg(boot_sim)]
-    {
-        unsafe extern "C" {
-            fn platform_dma_address(pointer: *const core::ffi::c_void) -> u32;
-        }
-        return unsafe { platform_dma_address(p.cast()) };
-    }
+    return crate::tests::platform_dma_address(p.cast());
     #[cfg(not(boot_sim))]
     return p as u32;
 }
@@ -136,7 +126,7 @@ impl Retained {
     }
 }
 
-/// Text for the screen: NUL-terminated, as the C that is left takes it. One word, where a `&str` is two.
+/// Text for the screen: NUL-terminated, so that it is one word, where a `&str` is two.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct Text(core::ptr::NonNull<u8>);

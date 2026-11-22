@@ -158,12 +158,7 @@ mod early {
     #[unsafe(no_mangle)]
     pub extern "C" fn settle(n: u32) {
         #[cfg(boot_sim)]
-        {
-            unsafe extern "C" {
-                safe fn boot_sim_settle(iterations: u32);
-            }
-            boot_sim_settle(n);
-        }
+        crate::tests::boot_sim_settle(n);
         for _ in 0..n {
             #[cfg(target_arch = "pi32v2")]
             unsafe {
@@ -272,12 +267,7 @@ mod early {
     #[unsafe(no_mangle)]
     pub extern "C" fn hal_reset() -> ! {
         #[cfg(boot_sim)]
-        {
-            unsafe extern "C" {
-                safe fn boot_sim_reset() -> !;
-            }
-            boot_sim_reset();
-        }
+        crate::tests::boot_sim_reset();
         #[cfg(not(boot_sim))]
         {
             POWER.set(bit(4));

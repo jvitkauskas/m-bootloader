@@ -29,11 +29,11 @@ pub struct Services {
 
 #[repr(C)]
 pub struct State {
-    io: Services,
-    crc_table: [u32; 256],
-    buffer: [[u8; 4096]; 2],
-    error: u8,
-    screen: u8,
+    pub(crate) io: Services,
+    pub(crate) crc_table: [u32; 256],
+    pub(crate) buffer: [[u8; 4096]; 2],
+    pub(crate) error: u8,
+    pub(crate) screen: u8,
 }
 
 fn send_bytes(io: &Services, data: &[u8]) {
@@ -123,7 +123,7 @@ impl State {
     }
 
     /// 1 if the command was the loader's, with its answer sent; 0 to leave it to the ROM (FB06, FD07 and FB08 are).
-    fn dispatch(&mut self, cbw: &[u8; 31], ans: &mut [u8; 16]) -> i32 {
+    pub(crate) fn dispatch(&mut self, cbw: &[u8; 31], ans: &mut [u8; 16]) -> i32 {
         let c: &[u8; 16] = cbw.last_chunk().unwrap();
         let op = be16(c, 0);
         if !matches!(
@@ -327,11 +327,6 @@ pub unsafe extern "C" fn loader_init(s: *mut State, io: &Services) {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn loader_dispatch(s: &mut State, command: &[u8; 31], answer: &mut [u8; 16]) -> i32 {
-    s.dispatch(command, answer)
-}
-
 /// The loader as the ROM starts it: one for each address it is linked for (§10.1). The tests have both in one program.
 #[allow(unused_macros)]
 macro_rules! target {
@@ -420,14 +415,14 @@ macro_rules! target {
 target!(target, loader_entry, 0x01c2_0000);
 #[cfg(loader_b)]
 target!(target, loader_entry, 0x01c2_8000);
-#[cfg(boot_sim)]
+#[cfg(lifecycle_test)]
 target!(
     slot_a,
     loader_test_install_a,
     0x01c2_0000,
     loader_test_state_a
 );
-#[cfg(boot_sim)]
+#[cfg(lifecycle_test)]
 target!(
     slot_b,
     loader_test_install_b,

@@ -17,7 +17,7 @@ def refused(size, fn=wrap):
     return False
 
 
-# 16 bytes of (i*7+3), as tests/sdboot_test.c builds its images; the CRC is what rust/src/formats.rs gives for them.
+# 16 bytes of (i*7+3), as rust/tests/sdboot.rs builds its images; the CRC is what rust/src/formats.rs gives for them.
 code = bytes((i*7+3) & 255 for i in range(16))
 assert wrap(code) == code+b'STG2\xdf\xa6\0\0'
 

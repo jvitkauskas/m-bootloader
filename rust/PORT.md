@@ -22,13 +22,14 @@ hardware", below).
 | `src/test_request.c` | `rust/src/test_request.rs` | |
 
 - **Still assembly:** the four entries (`src/*.S`).
-- **Still C:** the tests, the simulated chip (`tests/boot_sim.c`) and the host tools. `include/*.h` stays for them: it
-  is the C interface that the Rust keeps.
+- **Still C in 3.0:** the tests, the simulated chip (`tests/boot_sim.c`) and the host tools, with `include/*.h`, the C
+  interface that the Rust kept for them. They are Rust since ("The tests in Rust", below), and no C is left.
 - **Size:** 4,297 lines of C became 6,217 lines of Rust, part of them the C interface and what the tests need.
 
 ### Tests that changed
 
-Three tests included a C source to reach its private data. They now go through entries the Rust has for them:
+(As in 3.0, when the tests were C.) Three tests included a C source to reach its private data. They now go through
+entries the Rust has for them:
 
 - `tests/boot_test.c`, `tests/boot_midi_test.c`: `boot_test_reset()` and three readers, in place of `#include
   "../src/boot.c"`. No check changed.
@@ -296,6 +297,62 @@ SMK-37.
 
 Not tried of the flash loader: M-Flasher uploading one itself, as it has its own 1.3, and a 64 KiB erase.
 
+## The tests in Rust
+
+After 3.0 the C that was left went too: 16 test and tool sources and the 12 headers of the C interface, 6,528 lines,
+became 8,367 lines of Rust. **No image changed**: the flash loaders and the RAM stage are byte for byte the 3.0
+release's, and the two bootloaders differ from it in the commit of their version text only.
+
+| Was | Is |
+|---|---|
+| `tests/core_test.c`, `contract_test.c`, `loader_test.c` | `rust/tests/formats.rs`, `contract.rs`, `loader.rs` |
+| `tests/midi_update_test.c` | `rust/tests/midi_update.rs` |
+| `tests/platform_test.c`, `panel_board_test.c`, `sdboot_test.c` | `rust/tests/platform.rs`, `panel_board.rs`, `sdboot.rs` |
+| `tests/boot_sim.c`, `boot_sim.h`, `boot_nor.c` | `rust/tests/sim.rs`, `nor.rs` |
+| `tests/boot_test.c`, `boot_midi_test.c`, `loader_lifecycle_test.c` | `rust/tests/boot.rs`, `boot_midi.rs`, `loader_lifecycle.rs` |
+| `tests/upkr_test.c`, `installer_host.c`, `tools/sfx_layout.c` | `tests/upkr_test.rs`, `installer_host.rs`, `tools/sfx_layout.rs` |
+| `include/*.h`, and the crate's C interface for them | gone: 129 exported C names in the crate became 77 |
+
+- **Where they are.** The tests are modules of the crate (`rust/tests/`, from `rust/src/lib.rs` under `cfg(test)`),
+  so they call what they test directly, private items included where one is opened to the crate. The Makefile
+  builds the crate with them in, `rustc --test`, once for each set of `--cfg` names a C test program had: 13
+  programs, each named by its names (`build/host/<names>/tests`). The three programs the build and the Python tests
+  run link the crate as a library (`--cfg tool`).
+- **Each is its C, line for line**: the same checks in the same order, and the same lines printed. With the private
+  images in `testdata/` and without them, every program's output was compared with its C original's, counts
+  included (the FM-1's boots: 71 scenarios and 398 checks with them, 13 and 89 without).
+- **What stands in for hardware** is named by the crate as `crate::tests::...` and listed in one place, the end of
+  `rust/tests/mod.rs`: the registers, the reset, the card, USB. They were names for the linker, which the compiler
+  could not check against their uses. One kind still is: under `import_early` a test supplies stage 0's functions
+  the way stage 1 gets them from stage 0, by name.
+- **A reset in the middle of a boot, or a power cut in the middle of an install**, was `setjmp` and `longjmp`. A
+  panic can't pass the functions with C's calling convention that lie in between, so the run is on a thread of its
+  own, which stops for good where it leaves (`rust/tests/escape.rs`). A run of the MIDI update's test with
+  M-VAVE's packages leaves about 1,600 of them, and takes 14 seconds where the C took 11.
+- **Addresses.** The boots map the chip's RAM and its flash window where the chip has them. The flash loader's test
+  is linked at fixed addresses below 4 GB (`-C relocation-model=static`), as its entry is given the ROM's functions
+  in 32 bits; it checks that they fit.
+- **`make sanitize` is gone.** It ran the tests' C under ASan and UBSan, and there is no such C now. The tests are
+  built with overflow checks and debug assertions instead, which also check what `unsafe` code promises the standard
+  library (alignment, null, overlap, lengths), in the crate and in the tests. That is less than the sanitizers
+  saw of the C, and more than they saw of the Rust.
+
+How the port was checked, besides the output: 37 one-line bugs were put into the crate, one at a time (a
+polynomial, an opcode, a limit, a text, a key's code, an address), and each was run against the C tests and against
+their ports. Both caught the same 28, in the same programs and with the same counts of failed checks, and both
+missed the same 9. The first round found one difference, which is why the tests state the keys' codes and the
+specification's constants themselves (the C had its own copies from `include/*.h`) and do not take them from the
+crate: a wrong value there has to fail a test, not be followed by it.
+
+Not as it was:
+
+- A check that fails inside a function the crate calls back through C's calling convention (a loader callback, a
+  stand-in for stage 0) ends the program with its message, where it would otherwise be one failed test.
+- `Display::pixels` is in no image: RAM apps had it from the C. It is built for the panel's test only, which still
+  checks it.
+- The loader's test on the simulated chip still does not run the entry's clearing of its own data, which is
+  compiled for the chip only; its comment no longer says it does.
+
 ## What is not known
 
 - **Timing.** The clock set-up's `nop` loops and `wait_mask` compile to the same instructions as the C (compared
@@ -308,5 +365,6 @@ Not tried of the flash loader: M-Flasher uploading one itself, as it has its own
 - **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,725). Its requests were tried on the FM-1
   only.
 - **USB MIDI** (`usb_midi.rs`) has no test here, as in C: what is known of it is from the two units.
-- **m-apps** builds its drivers from this repository's `src/*.c`, which are gone here.
+- **m-apps** builds its drivers from this repository's `src/*.c`, which are gone here, and `include/*.h` went with
+  the tests' C.
 - **Elite builds** differ from the Pro only in the package's model name, as before.

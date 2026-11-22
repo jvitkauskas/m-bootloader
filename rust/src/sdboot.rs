@@ -310,18 +310,16 @@ pub extern "C" fn sd_stage2(lsb_mhz: u32) -> Option<Text> {
     None
 }
 
-/// For tests/sdboot_test.c, which drives the two halves by themselves.
-#[cfg(platform_sim)]
+/// For the card's test (rust/tests/sdboot.rs), which drives the two halves by themselves.
+#[cfg(sdboot_test)]
 pub mod test {
     use super::*;
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn sd_test_init() -> bool {
+    pub fn sd_test_init() -> bool {
         unsafe { CARD.get() }.init()
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn sd_test_load() -> Option<Text> {
+    pub fn sd_test_load() -> Option<Text> {
         unsafe { CARD.get() }.load()
     }
 }

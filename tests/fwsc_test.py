@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Check the M-UPGRADE packages and the installer's C against the Python tools,
+"""Check the M-UPGRADE packages and the installer's code against the Python tools,
 and (when present) our package conventions against M-VAVE's packages."""
 import os
 from pathlib import Path
@@ -52,7 +52,7 @@ def synthetic_flash():
 
 
 def host(op, *inputs):
-    """Run the chip's C on the host; None if it refuses."""
+    """Run the chip's code on this computer (tests/installer_host.rs); None if it refuses."""
     with tempfile.TemporaryDirectory() as temp:
         paths = []
         for i, data in enumerate(inputs):
@@ -243,5 +243,5 @@ for name, variant in (('fm1-015.fwsc', 'fm1'), ('smk37-016.fwsc', 'smk37-pro'),
     stream = image[ota[0]['offset']:ota[0]['offset'] + ota[0]['size']]
     assert host('decode', stream) == updater_code(stream)
     vendor += 1
-print('PASS: LZ4, installer stream through the C decoder, C boot-area rewrite equal to bankcb, '
+print('PASS: LZ4, installer stream through the decoder, boot-area rewrite equal to bankcb, '
       f'flash request retirement, {len(BUILT) if PACKAGES else 0} packages, {vendor} M-VAVE package convention checks')

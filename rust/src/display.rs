@@ -189,8 +189,9 @@ impl Display {
         self.select(false);
     }
 
-    /// `data` holds two bytes for each pixel.
-    #[cfg(not(target_arch = "pi32v2"))]
+    /// `data` holds two bytes for each pixel. No image has this: RAM apps had it from the C, and the panel's test
+    /// still checks it.
+    #[cfg(panel_test)]
     fn pixels(&mut self, x: u32, y: u32, w: u32, h: u32, data: &[u8]) {
         if !self.visible(x, y, w, h) {
             return;
@@ -336,31 +337,16 @@ pub fn release() {
     SPI1_CON.write(0);
 }
 
-// The C interface (include/display.h).
+/// For the panel's test: w x h pixels from `data`, which holds two bytes for each.
+#[cfg(panel_test)]
+pub fn pixels(x: u32, y: u32, w: u32, h: u32, data: &[u8]) {
+    display().pixels(x, y, w, h, data)
+}
+
+// As the flash loader's table of services has them (rust/src/loader.rs).
 #[unsafe(no_mangle)]
 pub extern "C" fn display_init(board: u32) -> bool {
     init(board)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn display_rect(x: u32, y: u32, w: u32, h: u32, color: u16) {
-    display().rect(x, y, w, h, color)
-}
-
-/// w x h pixels from data, RGB565 big-endian, row by row. For RAM apps: the bootloader doesn't use it.
-///
-/// # Safety
-/// `data` holds `w * h * 2` bytes.
-#[cfg(not(target_arch = "pi32v2"))]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn display_pixels(x: u32, y: u32, w: u32, h: u32, data: *const u8) {
-    let d = display();
-    // Checked before the size is worked out, which a wild width would overflow.
-    if d.visible(x, y, w, h) {
-        d.pixels(x, y, w, h, unsafe {
-            core::slice::from_raw_parts(data, (w * h * 2) as usize)
-        })
-    }
 }
 
 /// # Safety
@@ -373,25 +359,7 @@ pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8
     })
 }
 
-/// # Safety
-/// `text` is NUL-terminated.
-#[cfg(not(target_arch = "pi32v2"))]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn display_text(row: u32, fg: u16, text: *const core::ffi::c_char) {
-    display().row(
-        row,
-        fg,
-        0,
-        unsafe { core::ffi::CStr::from_ptr(text) }.to_bytes(),
-    )
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn display_progress(percent: u32, color: u16) {
     progress(percent, color)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn display_release() {
-    release()
 }

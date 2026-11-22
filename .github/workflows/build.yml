@@ -52,18 +52,6 @@ jobs:
         run: make -j2
       - name: Public tests (private fixtures are absent)
         run: make test
-      - name: Address and undefined-behavior sanitizers
-        shell: bash
-        run: |
-          if make sanitize 2>&1 | tee "$RUNNER_TEMP/sanitize.log"; then
-            exit 0
-          fi
-          if grep -Eq 'LeakSanitizer.*(fatal error|does not work|not supported)' "$RUNNER_TEMP/sanitize.log"; then
-            echo 'LeakSanitizer cannot run here; retrying with leak detection only disabled.'
-            ASAN_OPTIONS=detect_leaks=0 make sanitize
-          else
-            exit 1
-          fi
       - name: Reproducibility
         run: make reproducible
       - name: Upload release artifacts and manifest only
