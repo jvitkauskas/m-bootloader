@@ -129,10 +129,10 @@ in the code that goes into each image (`-Zunpretty=expanded`):
 | Image | `unsafe` blocks, as ported | Now | `unsafe fn`, as ported | Now |
 |---|---|---|---|---|
 | Stage 0 | 38 | 19 | 7 | 5 |
-| Stage 1 | 105 | 42 | 35 | 9 |
-| RAM stage | 120 | 43 | 39 | 10 |
-| Installer | 128 | 39 | 37 | 10 |
-| Flash loader | 133 | 62 | 38 | 15 |
+| Stage 1 | 105 | 43 | 35 | 10 |
+| RAM stage | 120 | 43 | 39 | 11 |
+| Installer | 128 | 39 | 37 | 11 |
+| Flash loader | 133 | 62 | 38 | 16 |
 
 What changed, and what it cost on the SMK-37:
 
@@ -162,6 +162,7 @@ What is left in stage 1, by what it is for:
 | 4 | `memmove`, `memcmp`, `bcmp`, `strlen`, which the compiler calls | |
 | 5 | inside `Global` and `Text`, and the version's address | |
 | 1 | clearing the image's own data at entry | |
+| 1 | starting MIDI mode's protocol, whose buffers are borrowed across its hooks | its caller promises that no hook starts it again |
 
 **The other globals are the part the compiler does not check.** The program has one thread and no interrupts, and
 its buffers are globals because the stack is small. Functions such as `app()` in `boot.rs` are safe to call but hand
