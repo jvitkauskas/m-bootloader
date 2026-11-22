@@ -7,7 +7,7 @@ use crate::formats::{
 use core::ffi::c_void;
 
 /// What it answers to FC40, after "MFLR".
-const VERSION: &[u8; 7] = b"MFLR1.3";
+const VERSION: &[u8; 7] = b"MFLR1.4";
 
 /// What the loader works through: the ROM's USB callbacks, and the chip. C lays these two out, for the tests.
 #[repr(C)]

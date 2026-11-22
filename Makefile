@@ -76,7 +76,7 @@ STAGE_PRODUCTS := build/fm1/stage.fwsc build/smk37/stage-pro.fwsc build/smk37/st
 all: $(A_PRODUCTS) $(B_PRODUCTS) $(INSTALLERS) $(C_PRODUCTS) $(STAGE_RAM) $(STAGE_PRODUCTS) build/manifest.json
 
 # Refresh on every invocation; unchanged versions keep the header's mtime.
-# Only A's entry includes this header. B remains the hardware-tested MFLR1.3.
+# Only the bootloader's entry includes this header. The flash loader has a version of its own (rust/src/loader.rs).
 build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
