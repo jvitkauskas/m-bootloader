@@ -411,10 +411,30 @@ macro_rules! target {
     };
 }
 
-#[cfg(loader_a)]
-target!(target, loader_entry, 0x01c2_0000);
-#[cfg(loader_b)]
-target!(target, loader_entry, 0x01c2_8000);
+/// A hexadecimal number as the Makefile writes it ("0x1c20000").
+#[cfg(any(loader_a, loader_b))]
+const fn hex(s: &str) -> u32 {
+    let (s, mut i, mut v) = (s.as_bytes(), 2, 0u32);
+    assert!(s.len() > 2 && s[0] == b'0' && s[1] == b'x');
+    while i < s.len() {
+        let digit = match s[i] {
+            b @ b'0'..=b'9' => b - b'0',
+            b @ b'a'..=b'f' => b - b'a' + 10,
+            _ => panic!("not a hexadecimal number"),
+        };
+        v = v << 4 | digit as u32;
+        i += 1;
+    }
+    v
+}
+
+// The address is the one the Makefile links it for, which is the only place it is written.
+#[cfg(any(loader_a, loader_b))]
+target!(
+    target,
+    loader_entry,
+    const { crate::loader::hex(env!("LOADER_ADDRESS")) }
+);
 #[cfg(lifecycle_test)]
 target!(
     slot_a,

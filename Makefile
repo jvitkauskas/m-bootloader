@@ -72,11 +72,12 @@ build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
 
-# What changes the Rust without changing a file: a build with another RUST_OPT, or one that is a test build where the
-# last was not, starts the Rust again.
+# What changes the Rust without changing a file: a build with another RUST_OPT, one that is a test build where the
+# last was not, or one with another compiler or linker, starts the Rust again.
 build/rust/options: FORCE
 	@mkdir -p $(@D)
-	@echo 'RUST_OPT=$(RUST_OPT) TEST_REQUESTS=$(TEST_REQUESTS)' | cmp -s - $@ || echo 'RUST_OPT=$(RUST_OPT) TEST_REQUESTS=$(TEST_REQUESTS)' > $@
+	@{ echo 'RUST_OPT=$(RUST_OPT) TEST_REQUESTS=$(TEST_REQUESTS)'; $(RUSTC) -vV; $(TOOLCHAIN)/bin/ld.lld --version; } > $@.new 2>&1; \
+		cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 # Rust's core library for pi32v2, built once from the compiler's sources, as bitcode. -Clto=fat makes that the kind of
 # bitcode C's is: the linker keeps rustc's usual kind (for ThinLTO) apart from C's, and couldn't optimise across them.
 build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile build/rust/options
@@ -205,6 +206,8 @@ build/smk37/uboot-%.fwsc: build/smk37/uboot.boot build/smk37/installer.bin build
 
 define LOADER_template
 $$(eval $$(call RUST_template,build/loader-$(1)/mboot.o,loader_$(1)))
+# (what it tells a host its address is: rust/src/loader.rs)
+build/loader-$(1)/mboot.o: export LOADER_ADDRESS := $(2)
 build/loader-$(1)/target.ld: tools/target.ld.S
 	@mkdir -p $$(@D)
 	$(CLANG) -E -P -x c -DENTRY_SYMBOL=loader_entry -DRAM_ORIGIN=$(2) -DRAM_LENGTH=0x8000 -DLOADER_BUILD $$< -o $$@

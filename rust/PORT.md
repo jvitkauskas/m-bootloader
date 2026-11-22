@@ -143,7 +143,7 @@ What changed, and what it cost on the SMK-37, at `RUST_OPT=s`:
 | Change | Payload | Checked by the compiler now |
 |---|---|---|
 | As ported | 14,878 | |
-| A register is `Reg::at::<ADDRESS>()`, where each was an `unsafe` block | 14,864 | the address is among the chip's registers (§2.2), not RAM or flash |
+| A register is `Reg::at::<ADDRESS>()`, where each was an `unsafe` block | 14,864 | the address is in the ranges the chip's registers have (§2.2), not RAM or flash |
 | The formats' code reaches the flash through a trait | 14,720 | no function pointers, contexts or raw buffers between the formats and the driver |
 | MIDI mode's hooks are a trait, and take slices | 14,710 | the sizes of what is sent, read and programmed |
 | The unpacker works on slices | 14,759 | every read and write of the unpacker is inside the pack and the room given |

@@ -234,7 +234,7 @@ repository, and the tests skip them when absent.
 | `rust/src/platform.rs`, `board.rs`, `display.rs`, `hw.rs` | clock, SPI flash, keys, LEDs, screen, registers |
 | `rust/src/loader.rs` | the flash loader |
 | `rust/src/sdboot.rs` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
-| `rust/src/installer.rs`, `sfx.rs`, `src/installer_start.S` | the installer in the `.fwsc` packages |
+| `rust/src/installer.rs`, `sfx.rs`, `src/installer_start.S`, `sfx_start.S` | the installer in the `.fwsc` packages, and what unpacks it |
 | `rust/src/stage.rs` | MIDI mode as a program in RAM |
 | `rust/tests/` | the tests, and the simulated chip and flash they run the bootloader on (`sim.rs`, `nor.rs`) |
 | `tests/` | the tests of the packages and tools (Python), and two programs they and the build run |

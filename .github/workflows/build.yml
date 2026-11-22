@@ -52,6 +52,8 @@ jobs:
         run: make -j2
       - name: Public tests (private fixtures are absent)
         run: make test
+      - name: The programs that ask a test build for MIDI mode or the SD card item
+        run: make test-requests
       - name: Reproducibility
         run: make reproducible
       - name: Upload release artifacts and manifest only

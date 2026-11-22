@@ -2,7 +2,7 @@
 
 Version 1.0, 2026-10-16
 
-This document specifies how the JieLi AC791N (WL82 family, pi32v2 CPU) in the M-VAVE FM-1 and SMK-37 Pro / Elite boots from its SPI flash; the formats and encryption of the flash contents; the retained-RAM hand-overs between the mask ROM, the bootloader, staged updaters and the application; the required behaviour of the bootloader; the two boards (keys, LEDs, display); the bootloader's recovery menu; and the USB command protocol of the RAM flash loader that the host tool M-Flasher uploads in the chip's USB download mode. It describes interfaces, hardware transactions, data formats and observable behaviour, so that a compatible implementation can be written from it. m-bootloader implements both programs in C and pi32v2 assembly under the MIT licence.
+This document specifies how the JieLi AC791N (WL82 family, pi32v2 CPU) in the M-VAVE FM-1 and SMK-37 Pro / Elite boots from its SPI flash; the formats and encryption of the flash contents; the retained-RAM hand-overs between the mask ROM, the bootloader, staged updaters and the application; the required behaviour of the bootloader; the two boards (keys, LEDs, display); the bootloader's recovery menu; and the USB command protocol of the RAM flash loader that the host tool M-Flasher uploads in the chip's USB download mode. It describes interfaces, hardware transactions, data formats and observable behaviour, so that a compatible implementation can be written from it. m-bootloader implements both programs in Rust and pi32v2 assembly under the MIT licence.
 
 ## 1. Scope and requirements
 
