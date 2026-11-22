@@ -631,11 +631,12 @@ mod flash {
     }
 
     /// # Safety
-    /// `out` has room for `n` bytes. `ctx` is not used: the flash is the chip's.
+    /// `out` has room for `n` bytes, or `n` is 0. `ctx` is not used: the flash is the chip's.
     #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn flash_read(_ctx: *mut c_void, a: u32, out: *mut c_void, n: u32) -> bool {
-        read(a, unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) })
+        // (Nothing is made of `out` when there is nothing to read: C may pass a null pointer then.)
+        read(a, if n == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) } })
     }
 
     pub fn read(mut a: u32, out: &mut [u8]) -> bool {
@@ -677,11 +678,11 @@ mod flash {
     }
 
     /// # Safety
-    /// `data` has `n` bytes.
+    /// `data` has `n` bytes, or `n` is 0.
     #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn flash_program(_ctx: *mut c_void, a: u32, data: *const c_void, n: u32) -> bool {
-        program(a, unsafe { core::slice::from_raw_parts(data.cast(), n as usize) })
+        program(a, if n == 0 { &[] } else { unsafe { core::slice::from_raw_parts(data.cast(), n as usize) } })
     }
 
     pub fn program(mut a: u32, mut data: &[u8]) -> bool {
