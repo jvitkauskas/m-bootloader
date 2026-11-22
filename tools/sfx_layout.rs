@@ -8,6 +8,8 @@
 //!                                                   installer must come back byte for byte
 use mboot::upkr::{HEADER, PROBS, unpack_stage1};
 use std::cell::Cell;
+use std::fs::File;
+use std::io::Read;
 use std::process::exit;
 
 const LOAD: usize = 0x01c0_a800;
@@ -16,11 +18,14 @@ const WINDOW: usize = 0xc000;
 /// More than the least gap that works.
 const SAFETY: usize = 32;
 
+/// The file, of which no more is read than shows that it is too big.
 fn load(path: &str) -> Vec<u8> {
-    let data = std::fs::read(path).unwrap_or_else(|e| {
+    let mut data = Vec::new();
+    let read = File::open(path).and_then(|f| f.take(WINDOW as u64 + 1).read_to_end(&mut data));
+    if let Err(e) = read {
         eprintln!("{path}: {e}");
         exit(2)
-    });
+    }
     if data.len() > WINDOW {
         eprintln!("{path}: too big");
         exit(2);

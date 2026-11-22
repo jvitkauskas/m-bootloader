@@ -3,6 +3,8 @@
 //! overrun, hang or be accepted. Run on every build: upkr-test <pack> <what it unpacks to>
 use mboot::upkr::unpack_stage1;
 use std::cell::Cell;
+use std::fs::File;
+use std::io::Read;
 use std::process::exit;
 
 const ROOM: usize = 0x8000;
@@ -10,12 +12,14 @@ const ROOM: usize = 0x8000;
 const HEADER: usize = 8;
 const PROBS: usize = 641;
 
+/// The file's first `ROOM` bytes: no more of it is read.
 fn load(path: &str) -> Vec<u8> {
-    let mut data = std::fs::read(path).unwrap_or_else(|e| {
+    let mut data = Vec::new();
+    let read = File::open(path).and_then(|f| f.take(ROOM as u64).read_to_end(&mut data));
+    if let Err(e) = read {
         eprintln!("{path}: {e}");
         exit(1)
-    });
-    data.truncate(ROOM);
+    }
     data
 }
 

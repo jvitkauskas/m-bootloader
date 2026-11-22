@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 //! A way out of the middle of a run, for a test that stands in for a reset, a started application or a power cut:
-//! the code under test calls something that does not come back. It runs on a thread of its own, and leaving
-//! stops that thread where it is, for good. (A panic can't be the way out: it may not pass the functions that have
-//! C's calling convention, which the bootloader's entries and stage 0's functions do.)
+//! the code under test calls something that does not come back.
+//!
+//! Where only Rust's own functions lie between, the way out is a panic that `unwind` catches. A panic may not pass
+//! a function that has C's calling convention, which the bootloader's entries and stage 0's functions do: there
+//! the code runs on a thread of its own (`run`), and leaving stops that thread where it is, for good.
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::Mutex;
 use std::sync::mpsc::{Sender, channel};
@@ -41,7 +43,32 @@ pub fn run<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<
     }
 }
 
-/// Ends the run that this is called from: its `run` returns `Err(code)`, and nothing after this call happens.
+/// What `leave` throws to `unwind`.
+struct Left(i32);
+
+/// As `run`, where no function with C's calling convention lies between `f` and its `leave`: on this thread, which
+/// `leave` unwinds, so nothing of the run is left behind.
+pub fn unwind<T>(f: impl FnOnce() -> T) -> Result<T, i32> {
+    let before = OUT
+        .lock()
+        .unwrap()
+        .replace(Box::new(|code| resume_unwind(Box::new(Left(code)))));
+    assert!(before.is_none(), "a run inside a run");
+    let result = catch_unwind(AssertUnwindSafe(f));
+    // It came back, or left: there is no way out any more.
+    *OUT.lock().unwrap() = None;
+    match result {
+        Ok(value) => Ok(value),
+        Err(panic) => match panic.downcast::<Left>() {
+            Ok(left) => Err(left.0),
+            // A check failed in the run: it fails here too.
+            Err(panic) => resume_unwind(panic),
+        },
+    }
+}
+
+/// Ends the run that this is called from: its `run` or `unwind` returns `Err(code)`, and nothing after this call
+/// happens.
 pub fn leave(code: i32) -> ! {
     let out = OUT.lock().unwrap().take().expect("leave outside a run");
     out(code);
@@ -60,4 +87,13 @@ fn escape() {
     }
     assert!(run(|| deep(5)) == Err(5));
     assert!(run(|| deep(6)) == Err(6));
+    // By unwinding, with what the run borrows, and then on a thread again.
+    let mut steps = 0;
+    assert!(unwind(|| steps += 1) == Ok(()));
+    let left = unwind(|| {
+        steps += 1;
+        leave(4)
+    });
+    assert!(left == Err::<(), _>(4) && steps == 2);
+    assert!(run(|| deep(8)) == Err(8));
 }

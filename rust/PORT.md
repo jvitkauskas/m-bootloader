@@ -326,10 +326,10 @@ only. One change after it does change them, and makes them smaller ("The C names
   `rust/tests/mod.rs`: the registers, the reset, the card, USB. They were names for the linker, which the compiler
   could not check against their uses. One kind still is: under `import_early` a test supplies stage 0's functions
   the way stage 1 gets them from stage 0, by name.
-- **A reset in the middle of a boot, or a power cut in the middle of an install**, was `setjmp` and `longjmp`. A
-  panic can't pass the functions with C's calling convention that lie in between, so the run is on a thread of its
-  own, which stops for good where it leaves (`rust/tests/escape.rs`). A run of the MIDI update's test with
-  M-VAVE's packages leaves about 1,600 of them, and takes 14 seconds where the C took 11.
+- **A reset in the middle of a boot, or a power cut in the middle of an install**, was `setjmp` and `longjmp`
+  (`rust/tests/escape.rs`). A power cut unwinds the install, as a panic that the test catches. A panic can't pass
+  the functions with C's calling convention that lie between a boot's start and its reset, so a boot is on a
+  thread of its own, which stops for good where it leaves: some 70 of them by the end of a board's boots.
 - **Addresses.** The boots map the chip's RAM and its flash window where the chip has them. The flash loader's test
   is linked at fixed addresses below 4 GB (`-C relocation-model=static`), as its entry is given the ROM's functions
   in 32 bits; it checks that they fit.

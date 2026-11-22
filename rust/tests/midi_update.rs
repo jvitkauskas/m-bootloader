@@ -581,8 +581,8 @@ fn power_cuts(size: usize, key: u16, step: u32, real: bool) -> u32 {
         s.finish_seen = false;
         reply().size = 0;
         ask_upgrade();
-        // The run is on a thread of its own, which the cut stops where it is: what it is given is the thread's.
-        let run = escape::run(move || {
+        // The cut unwinds the run: nothing between here and the flash operation has C's calling convention.
+        let run = escape::unwind(move || {
             let mut written = false;
             mu_run(key, &mut written)
         });
