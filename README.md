@@ -195,7 +195,8 @@ packages for Linux arm64 and macOS, with their checksums in `SHA256SUMS`. `make 
 LLVM, as the linker generates the code from the compiler's bitcode. The build compiles Rust's `core` library itself,
 with cargo, from the sources in the compiler's package.
 
-`make RUST_OPT=z` builds it about 1% smaller, where the default is `s` ([rust/PORT.md](rust/PORT.md)).
+`make RUST_OPT=z` builds it about 1% smaller, where the default is `s` ([rust/PORT.md](rust/PORT.md)). The
+workflow here builds with `RUST_OPT=z`, so that is what gives the bytes of its artifacts and of a release.
 
 | Output | What |
 |---|---|

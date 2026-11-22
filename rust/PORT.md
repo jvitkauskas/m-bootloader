@@ -192,8 +192,9 @@ release `pi32v2-1.100.0-1` is built on that LLVM.
 | The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878 (before the unsafe code was reduced): the packer does better with repeats than with calls to them | no |
 | Variadic prologues pass the machine verifier | none: found while verifying outlined code | |
 
-- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`. Asking for `z` with a
-  linker that lacks the option, one before 23.1.6-2, fails at once.
+- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`; the workflow builds `z`,
+  so its artifacts and a release are `z`. Asking for `z` with a linker that lacks the option, one before
+  23.1.6-2, fails at once.
 - **How the two were checked.** pi32v2-isa's `tools/llvm/ctest.py`, which runs 3,328 calls in the simulator and
   compares them with JieLi's compiler, agrees on all of them at `-Oz`, `-Os` and `-O2`, with the outliner, and
   with both options. The machine verifier passes on this crate with the outliner on. The pi32v2 and inliner lit
