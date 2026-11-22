@@ -86,7 +86,10 @@ build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefi
 	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
 	CARGO_TARGET_DIR=build/rust/target CARGO_PROFILE_RELEASE_OPT_LEVEL=$(RUST_OPT) RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
 		$(CARGO) build --quiet --release --manifest-path rust/sysroot/Cargo.toml --target pi32v2-unknown-none -Zbuild-std=core
-	for f in core compiler_builtins; do cp build/rust/target/pi32v2-unknown-none/release/deps/lib$$f-*.rlib build/rust/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
+	@# (wherever this cargo keeps them: under deps/ up to 1.99, under build/<crate>/ from 1.100)
+	for f in core compiler_builtins; do \
+		set -- $$(find build/rust/target/pi32v2-unknown-none/release -name "lib$$f-*.rlib"); \
+		[ $$# = 1 ] && cp "$$1" build/rust/sysroot/$(RUST_LIB)/lib$$f.rlib || exit 1; done
 	touch $@
 # The library's one object, for the linker.
 build/rust/core.o: build/rust/sysroot.stamp
