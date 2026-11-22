@@ -23,7 +23,10 @@ pub extern "C" fn sfx_main(context: u32, end: u32) {
     // Safety: the image's own RAM, laid out as tools/sfx_layout.c checked; and this is entered once.
     unsafe {
         let (pack, pack_end) = (&raw const sfx_pack, &raw const sfx_pack_end);
-        let (room, pack) = (from_raw_parts(out.cast(), pack_end.offset_from_unsigned(out)), from_raw_parts(pack.cast(), pack_end.offset_from_unsigned(pack)));
+        let (room, pack) = (
+            from_raw_parts(out.cast(), pack_end.offset_from_unsigned(out)),
+            from_raw_parts(pack.cast(), pack_end.offset_from_unsigned(pack)),
+        );
         if unpack_stage1(room, pack, SCRATCH.get()) {
             core::mem::transmute::<usize, extern "C" fn(u32, u32)>(INSTALLER)(context, end);
         }

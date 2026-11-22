@@ -81,7 +81,11 @@ mod own {
             }
             core::ptr::copy_nonoverlapping(to, SCRATCH, size);
             let room = (&raw const __stage0_limit).offset_from_unsigned(to);
-            unpack_stage1(from_raw_parts(to.cast(), room), from_raw_parts(SCRATCH.cast(), size), &mut *SCRATCH.add(SCRATCH_PACK).cast::<[u8; PROBS]>())
+            unpack_stage1(
+                from_raw_parts(to.cast(), room),
+                from_raw_parts(SCRATCH.cast(), size),
+                &mut *SCRATCH.add(SCRATCH_PACK).cast::<[u8; PROBS]>(),
+            )
         }
     }
 
@@ -91,7 +95,11 @@ mod own {
         // Safety: stage 0's own data, which nothing has used yet.
         #[cfg(not(boot_sim))]
         unsafe {
-            core::ptr::write_bytes(&raw mut __stage0_bss_start, 0, (&raw const __stage0_bss_end).offset_from_unsigned(&raw const __stage0_bss_start))
+            core::ptr::write_bytes(
+                &raw mut __stage0_bss_start,
+                0,
+                (&raw const __stage0_bss_end).offset_from_unsigned(&raw const __stage0_bss_start),
+            )
         };
         hal_early();
         const DMA_PRIORITY: Reg = Reg::at::<0x13004>();
@@ -110,8 +118,6 @@ mod own {
             rom_download();
         }
         // Safety: stage 1, just unpacked and checked.
-        unsafe {
-            stage1_entry(device)
-        };
+        unsafe { stage1_entry(device) };
     }
 }

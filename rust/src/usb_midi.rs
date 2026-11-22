@@ -42,7 +42,26 @@ const RX_COUNT2: u32 = 23;
 const WAIT_LIMIT: u32 = 20000;
 const PACKET: usize = 64;
 
-static DEVICE_DESCRIPTOR: [u8; 18] = [18, 1, 0x10, 0x01, 0, 0, 0, PACKET as u8, 0x09, 0x12, 0x02, 0x00, 0x00, 0x02, 0, 1, 0, 1];
+static DEVICE_DESCRIPTOR: [u8; 18] = [
+    18,
+    1,
+    0x10,
+    0x01,
+    0,
+    0,
+    0,
+    PACKET as u8,
+    0x09,
+    0x12,
+    0x02,
+    0x00,
+    0x00,
+    0x02,
+    0,
+    1,
+    0,
+    1,
+];
 #[rustfmt::skip]
 static CONFIG_DESCRIPTOR: [u8; 101] = [
     9, 2, 101, 0, 2, 1, 0, 0x80, 50,
@@ -60,7 +79,11 @@ static CONFIG_DESCRIPTOR: [u8; 101] = [
     5, 0x25, 1, 1, 3,
 ];
 static LANGUAGE_STRING: [u8; 4] = [4, 3, 0x09, 0x04];
-const PRODUCT: &[u8] = if cfg!(smk) { b"SMK-37 Update" } else { b"FM-1 Update" };
+const PRODUCT: &[u8] = if cfg!(smk) {
+    b"SMK-37 Update"
+} else {
+    b"FM-1 Update"
+};
 /// The product's name as a string descriptor: UTF-16.
 static PRODUCT_STRING: [u8; 2 + 2 * PRODUCT.len()] = {
     let mut d = [0; 2 + 2 * PRODUCT.len()];
@@ -233,7 +256,9 @@ impl Usb {
             }
             // get descriptor
             0x8006 => {
-                let Some(d) = descriptor(value) else { return STALL };
+                let Some(d) = descriptor(value) else {
+                    return STALL;
+                };
                 if asked != 0 {
                     self.ep0_send(d, asked);
                     return None;
@@ -250,7 +275,14 @@ impl Usb {
                 }
             }
             0x8008 => {
-                self.ep0_send(if self.configuration != 0 { &[1] } else { &ZERO[..1] }, asked);
+                self.ep0_send(
+                    if self.configuration != 0 {
+                        &[1]
+                    } else {
+                        &ZERO[..1]
+                    },
+                    asked,
+                );
                 return None;
             }
             0x8000 | 0x8100 | 0x8200 => {
@@ -419,7 +451,11 @@ impl Usb {
                 }
                 let (now, rest) = data.split_at(count);
                 *event = [0; 4];
-                event[0] = if count == 3 && rest.is_empty() { 7 } else { 4 + (count as u8 % 3) };
+                event[0] = if count == 3 && rest.is_empty() {
+                    7
+                } else {
+                    4 + (count as u8 % 3)
+                };
                 event[1..1 + count].copy_from_slice(now);
                 data = rest;
                 n += 4;

@@ -5,13 +5,17 @@
 //! the menu that started it is still running. So nothing here keeps a reference to a global across a call that can
 //! reach a hook: each use takes it afresh. The work buffer is not one of them: `boot_main` takes it once and passes it
 //! down, and no hook has a way to it.
-use crate::board::{KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait};
-use crate::formats::{self, App, AppState, Config, Flash, Guard, Header, Request, Updater, Work, crc16, le16};
+use crate::board::{
+    KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait,
+};
 use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
+use crate::formats::{
+    self, App, AppState, Config, Flash, Guard, Header, Request, Updater, Work, crc16, le16,
+};
 use crate::hw::{Retained, Text, irq_off, sync_cpu};
 use crate::platform::{
-    Chip, flash_capacity, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
-    hal_reset, hal_xip,
+    Chip, flash_capacity, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us,
+    hal_efuse, hal_fault_clear, hal_reset, hal_xip,
 };
 use crate::sdboot::{sd_probe, sd_stage2};
 use crate::stage0::rom_download;
@@ -19,21 +23,43 @@ use crate::{Aligned, Global, contract, display, text};
 
 const SMK: bool = cfg!(smk);
 const BOARD: u32 = if SMK { 2 } else { 1 };
-const TITLE: Text = if SMK { text!("SMK-37 M-BOOTLOADER") } else { text!("FM-1 M-BOOTLOADER") };
-const CONTROLS: Text = if SMK { text!("< > MOVE SEQ PLAY OK") } else { text!("OCT-/+ MOVE PLAY OK") };
-const HOLD: Text = if SMK { text!("HOLD SEQ PLAY 3 S") } else { text!("HOLD PLAY 3 S") };
-const RELEASE: Text = if SMK { text!("RELEASE SEQ PLAY") } else { text!("RELEASE PLAY") };
+const TITLE: Text = if SMK {
+    text!("SMK-37 M-BOOTLOADER")
+} else {
+    text!("FM-1 M-BOOTLOADER")
+};
+const CONTROLS: Text = if SMK {
+    text!("< > MOVE SEQ PLAY OK")
+} else {
+    text!("OCT-/+ MOVE PLAY OK")
+};
+const HOLD: Text = if SMK {
+    text!("HOLD SEQ PLAY 3 S")
+} else {
+    text!("HOLD PLAY 3 S")
+};
+const RELEASE: Text = if SMK {
+    text!("RELEASE SEQ PLAY")
+} else {
+    text!("RELEASE PLAY")
+};
 const NONE: Text = text!("");
 /// The version, in stage 0's header.
 const VERSION: Text = unsafe { Text::at(0x01c0_2050) };
-const STATES: [Text; 4] = [text!("APP NOT FOUND"), text!("APP OK"), text!("APP BAD CRC"), text!("APP INCOMPLETE")];
+const STATES: [Text; 4] = [
+    text!("APP NOT FOUND"),
+    text!("APP OK"),
+    text!("APP BAD CRC"),
+    text!("APP INCOMPLETE"),
+];
 /// What survives a reset: docs/SPEC.md §6.1.
 const RETAINED: usize = 0x01c7_fd80;
 /// What the app is handed.
 const APP_CONTEXT: usize = 0x01c7_fe08;
 
 // M-VAVE's updater reads what it's given in words, and crashes if these aren't aligned (§6.4).
-static WORK: Global<Aligned<{ formats::WORK_SIZE }>> = Global::new(Aligned([0; formats::WORK_SIZE]));
+static WORK: Global<Aligned<{ formats::WORK_SIZE }>> =
+    Global::new(Aligned([0; formats::WORK_SIZE]));
 // These four keep their C names, by which tests/updater_context_test.py finds them in the linked image.
 #[cfg_attr(target_arch = "pi32v2", unsafe(export_name = "request"))]
 static REQUEST: Global<Aligned<80>> = Global::new(Aligned([0; 80]));
@@ -94,7 +120,10 @@ struct Line {
 
 impl Line {
     fn new(start: Text) -> Line {
-        let mut line = Line { text: [0; 20], len: 0 };
+        let mut line = Line {
+            text: [0; 20],
+            len: 0,
+        };
         line.append(start);
         line
     }
@@ -177,8 +206,16 @@ mod midi {
     use crate::platform::{self, flash_uid};
     use crate::usb_midi::{self, usb_midi_poll, usb_midi_start, usb_midi_stop};
 
-    const BACK: Text = if SMK { text!("SEQ PLAY: BACK") } else { text!("PLAY: BACK") };
-    const MENU_KEYS: Text = if SMK { text!("< > SEQ PLAY SEQ REC") } else { text!("OCT- OCT+ PLAY REC") };
+    const BACK: Text = if SMK {
+        text!("SEQ PLAY: BACK")
+    } else {
+        text!("PLAY: BACK")
+    };
+    const MENU_KEYS: Text = if SMK {
+        text!("< > SEQ PLAY SEQ REC")
+    } else {
+        text!("OCT- OCT+ PLAY REC")
+    };
     const BOOTLOADER: u8 = 1;
     // The menu came up by itself (no PLAY held at power-on: the app did not boot): it opens in MIDI mode, so a computer
     // can install or restart the unit with nobody at it (ALONE, for as long as it lasts). Only a key leaves it, any of
@@ -223,7 +260,13 @@ mod midi {
         fn unit_info() -> Unit {
             let mut uid = [0; 8];
             flash_uid(&mut uid);
-            Unit { jedec: JEDEC.read(), capacity: flash_capacity(), uid, kind: BOOTLOADER, version: VERSION }
+            Unit {
+                jedec: JEDEC.read(),
+                capacity: flash_capacity(),
+                uid,
+                kind: BOOTLOADER,
+                version: VERSION,
+            }
         }
 
         fn start_app() {
@@ -257,14 +300,26 @@ mod midi {
         let keys = board_keys();
         let mut up = UP.read();
         for (k, up) in up.iter_mut().enumerate() {
-            *up = if keys & 1 << k != 0 { 0 } else { (*up + 1).min(50) };
+            *up = if keys & 1 << k != 0 {
+                0
+            } else {
+                (*up + 1).min(50)
+            };
             if *up == 50 {
                 STUCK.set(STUCK.read() & !(1 << k));
             }
         }
         UP.set(up);
-        let counted = if ALONE.read() { !STUCK.read() } else { KEY_SELECT };
-        let held = if keys & counted != 0 { HELD.read() + 1 } else { 0 };
+        let counted = if ALONE.read() {
+            !STUCK.read()
+        } else {
+            KEY_SELECT
+        };
+        let held = if keys & counted != 0 {
+            HELD.read() + 1
+        } else {
+            0
+        };
         HELD.set(held);
         held >= 20
     }
@@ -292,7 +347,13 @@ mod midi {
             SHOWN.set(0);
         }
         if percent != SHOWN.read() || percent == 100 {
-            display::rect(12, if writing { 146 } else { 98 }, 216 * percent / 100, 8, GREEN);
+            display::rect(
+                12,
+                if writing { 146 } else { 98 },
+                216 * percent / 100,
+                8,
+                GREEN,
+            );
         }
         SHOWN.set(percent);
     }
@@ -302,7 +363,11 @@ mod midi {
         display::text(3, GREEN, text!("MIDI MODE"));
         // With the reason above it, why the app didn't start stays in view (§9.1).
         let state = app().state;
-        display::text(4, if state == AppState::Ok { GREEN } else { RED }, STATES[state as usize]);
+        display::text(
+            4,
+            if state == AppState::Ok { GREEN } else { RED },
+            STATES[state as usize],
+        );
         display::text(5, WHITE, text!("CONNECT USB AND"));
         display::text(6, WHITE, text!("OPEN AN INSTALLER."));
         if ALONE.read() {
@@ -439,7 +504,11 @@ mod asked {
         }
         let asked = retained[6];
         *retained = [0; 8];
-        if asked == SD || asked == MIDI { asked } else { 0 }
+        if asked == SD || asked == MIDI {
+            asked
+        } else {
+            0
+        }
     }
 }
 
@@ -463,7 +532,12 @@ fn menu(work: &mut Work, retained: &mut Retained) -> bool {
         formats::app_check(&Chip, app(), work);
     }
     let mut updates = 0;
-    formats::request_scan(&Chip, header().alignment, work.first_chunk_mut().unwrap(), Some(&mut updates));
+    formats::request_scan(
+        &Chip,
+        header().alignment,
+        work.first_chunk_mut().unwrap(),
+        Some(&mut updates),
+    );
     let card = sd_probe(60);
     let (mut selection, mut last, mut previous, mut stable) = (0, 0, 0, 0);
     let mut first_draw = true;
@@ -484,14 +558,21 @@ fn menu(work: &mut Work, retained: &mut Retained) -> bool {
         add(text!("DOWNLOAD MODE"), DOWNLOAD);
         #[cfg(any(not(boot_sim), midi_mode))]
         add(text!("MIDI MODE"), MIDI_MODE);
-        if EFFECTIVE_WIDTH.read() == WIDTH && app().base != 0 && matches!(state, AppState::BadCrc | AppState::Incomplete) {
+        if EFFECTIVE_WIDTH.read() == WIDTH
+            && app().base != 0
+            && matches!(state, AppState::BadCrc | AppState::Incomplete)
+        {
             add(text!("BOOT ANYWAY"), BOOT_ANYWAY);
         }
         if selection >= count {
             selection = 0;
         }
         heading();
-        display::text(3, if state == AppState::Ok { GREEN } else { RED }, STATES[state as usize]);
+        display::text(
+            3,
+            if state == AppState::Ok { GREEN } else { RED },
+            STATES[state as usize],
+        );
         let mut line = Line::new(NONE);
         if app().app_length != 0 {
             line.number(app().app_length, 10, 0);
@@ -499,7 +580,11 @@ fn menu(work: &mut Work, retained: &mut Retained) -> bool {
         }
         line.show(4, WHITE);
         let ram = formats::request_valid(retained.bytes::<8, _>());
-        line = Line::new(if ram { text!("UPDATE RAM ") } else { text!("UPDATE ") });
+        line = Line::new(if ram {
+            text!("UPDATE RAM ")
+        } else {
+            text!("UPDATE ")
+        });
         if updates != 0 {
             line.number(updates, 10, 0);
             line.append(text!(" FLASH"));
@@ -517,12 +602,24 @@ fn menu(work: &mut Work, retained: &mut Retained) -> bool {
         for (i, &(name, _)) in actions.iter().enumerate() {
             line = Line::new(NONE);
             if i < count {
-                line.append(if i == selection { text!("> ") } else { text!("  ") });
+                line.append(if i == selection {
+                    text!("> ")
+                } else {
+                    text!("  ")
+                });
                 line.append(name);
             }
             line.show(8 + i as u32, if i == selection { YELLOW } else { WHITE });
         }
-        display::text(13, YELLOW, if EFFECTIVE_WIDTH.read() < WIDTH { text!("SPI WIDTH FALLBACK") } else { NONE });
+        display::text(
+            13,
+            YELLOW,
+            if EFFECTIVE_WIDTH.read() < WIDTH {
+                text!("SPI WIDTH FALLBACK")
+            } else {
+                NONE
+            },
+        );
         display::text(14, GREY, CONTROLS);
         if first_draw {
             first_draw = false;
@@ -638,14 +735,36 @@ fn pointer<T>(p: &T) -> u32 {
 
 #[inline(never)]
 fn update(work: &mut Work, retained: &mut Retained, ram: bool) {
-    let mut updater = Updater { load: 0, size: 0, stream_end: 0, crc: 0 };
+    let mut updater = Updater {
+        load: 0,
+        size: 0,
+        stream_end: 0,
+        crc: 0,
+    };
     // Safety: the updater's context, which nothing else here uses.
-    let (clock, memory, meta) = unsafe { (&mut CLOCK_META.get().0, &mut MEMORY_META.get().0, &mut UPDATE_META.get().0) };
+    let (clock, memory, meta) = unsafe {
+        (
+            &mut CLOCK_META.get().0,
+            &mut MEMORY_META.get().0,
+            &mut UPDATE_META.get().0,
+        )
+    };
     contract::config(clock, memory, &CONFIG);
-    contract::updater(meta, app(), UNIT_KEY.read(), pointer(clock), if ram { 0x01c7_fdb0 } else { pointer(memory) });
+    contract::updater(
+        meta,
+        app(),
+        UNIT_KEY.read(),
+        pointer(clock),
+        if ram { 0x01c7_fdb0 } else { pointer(memory) },
+    );
     *retained.bytes::<2, 2>() = [0; 2];
     // Safety: where a staged updater is loaded and runs (§6.3), which is free until then.
-    let load = unsafe { core::slice::from_raw_parts_mut(formats::UPDATE_LOAD as usize as *mut u8, formats::UPDATE_MAX as usize) };
+    let load = unsafe {
+        core::slice::from_raw_parts_mut(
+            formats::UPDATE_LOAD as usize as *mut u8,
+            formats::UPDATE_MAX as usize,
+        )
+    };
     if formats::updater_decode(&Chip, request(), load, work, &mut updater) {
         #[cfg(boot_sim)]
         {
@@ -657,7 +776,10 @@ fn update(work: &mut Work, retained: &mut Retained, ram: bool) {
         // Safety: the updater that was just decoded and checked there.
         #[cfg(not(boot_sim))]
         unsafe {
-            core::mem::transmute::<usize, extern "C" fn(*mut u8, u32)>(updater.load as usize)(meta.as_mut_ptr(), updater.stream_end)
+            core::mem::transmute::<usize, extern "C" fn(*mut u8, u32)>(updater.load as usize)(
+                meta.as_mut_ptr(),
+                updater.stream_end,
+            )
         };
         REASON.set(Some(text!("UPDATE RETURNED")));
     } else {
@@ -694,7 +816,12 @@ fn xip_crc() -> bool {
     let app = app();
     app.files[..app.file_count as usize].iter().all(|r| {
         // Safety: mounting checked that the file is inside the flash, which is mapped from here.
-        let file = unsafe { core::slice::from_raw_parts((0x0200_0000 + r.address as usize) as *const u8, r.length as usize) };
+        let file = unsafe {
+            core::slice::from_raw_parts(
+                (0x0200_0000 + r.address as usize) as *const u8,
+                r.length as usize,
+            )
+        };
         crc16(0, file) == r.data_crc
     })
 }
@@ -719,7 +846,13 @@ pub unsafe extern "C" fn boot_main(_device: *const u32) {
             static __bss_end: u8;
         }
         // Safety: stage 1's own data, which nothing has used yet.
-        unsafe { core::ptr::write_bytes(&raw mut __bss_start, 0, (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start)) };
+        unsafe {
+            core::ptr::write_bytes(
+                &raw mut __bss_start,
+                0,
+                (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start),
+            )
+        };
     }
     #[cfg(test_requests)]
     asked::REQUEST.set(asked);
@@ -777,7 +910,13 @@ pub unsafe extern "C" fn boot_main(_device: *const u32) {
         if ok && ((bypass && EFFECTIVE_WIDTH.read() == WIDTH) || xip_crc()) {
             // What the app is handed: §6.5.
             *retained.bytes::<0xa0, _>() = header().bytes;
-            contract::app(retained.bytes::<{ APP_CONTEXT - RETAINED }, _>(), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
+            contract::app(
+                retained.bytes::<{ APP_CONTEXT - RETAINED }, _>(),
+                app().base,
+                UNIT_KEY.read(),
+                TRIM.read(),
+                &MAC.read(),
+            );
             *retained.bytes::<0xd8, 12>() = [0; 12];
             board_restore();
             display::release();
@@ -794,7 +933,9 @@ pub unsafe extern "C" fn boot_main(_device: *const u32) {
             // Safety: the app that was mounted and checked, at its entry.
             #[cfg(not(boot_sim))]
             unsafe {
-                core::mem::transmute::<usize, extern "C" fn(usize)>(app().entry as usize)(APP_CONTEXT)
+                core::mem::transmute::<usize, extern "C" fn(usize)>(app().entry as usize)(
+                    APP_CONTEXT,
+                )
             };
             REASON.set(Some(text!("APP EXITED")));
         } else if !ok {

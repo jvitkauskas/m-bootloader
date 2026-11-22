@@ -12,7 +12,8 @@ const REQUEST: u8 = if cfg!(test_request_sd) { 4 } else { 5 };
 pub extern "C" fn test_request_entry() -> ! {
     irq_off();
     // Safety: nothing else runs until the reset.
-    *unsafe { Retained::claim() }.bytes::<0, _>() = [b'M', b'B', b'T', b'E', b'S', b'T', REQUEST, 0];
+    *unsafe { Retained::claim() }.bytes::<0, _>() =
+        [b'M', b'B', b'T', b'E', b'S', b'T', REQUEST, 0];
     sync_cpu();
     POWER.set(bit(4));
     sync_cpu();

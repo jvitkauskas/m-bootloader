@@ -5,7 +5,11 @@ use crate::formats::{App, Config, Request, put_le16, put_le32, request_valid};
 pub fn config(clock: &mut [u8; 52], memory: &mut [u8; 60], c: &Config) {
     *clock = [0; 52];
     *memory = [0; 60];
-    put_le32(clock, 0, (c.high_current as u32) << 12 | (c.one_pin as u32) << 13 | (c.lsb_divider as u32) << 14);
+    put_le32(
+        clock,
+        0,
+        (c.high_current as u32) << 12 | (c.one_pin as u32) << 13 | (c.lsb_divider as u32) << 14,
+    );
     put_le32(clock, 4, c.oscillator_hz);
     put_le32(clock, 8, c.system_hz);
     clock[48] = c.reset_pin;
@@ -61,12 +65,24 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn contract_app(out: &mut [u8; 24], physical: u32, key: u16, trim: u16, mac: &[u8; 8]) {
+    pub extern "C" fn contract_app(
+        out: &mut [u8; 24],
+        physical: u32,
+        key: u16,
+        trim: u16,
+        mac: &[u8; 8],
+    ) {
         app(out, physical, key, trim, mac)
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn contract_updater(out: &mut [u8; 24], app: &App, key: u16, clock: u32, private_info: u32) {
+    pub extern "C" fn contract_updater(
+        out: &mut [u8; 24],
+        app: &App,
+        key: u16,
+        clock: u32,
+        private_info: u32,
+    ) {
         updater(out, app, key, clock, private_info)
     }
 

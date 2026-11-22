@@ -39,7 +39,14 @@ mod own {
         led_phase: u32,
     }
 
-    static BOARD: Global<Board> = Global::new(Board { saved: [[0; 8]; 2], phy: 0, smk: false, saved_valid: false, phy_active: false, led_phase: 0 });
+    static BOARD: Global<Board> = Global::new(Board {
+        saved: [[0; 8]; 2],
+        phy: 0,
+        smk: false,
+        saved_valid: false,
+        phy_active: false,
+        led_phase: 0,
+    });
 
     /// Safety, for every use: these entries call nothing that comes back into this module.
     fn board() -> &'static mut Board {
@@ -83,7 +90,11 @@ mod own {
             for i in 0..4 {
                 self.shift(if self.smk { SMK_WORDS[i] } else { FM_WORDS[i] });
                 hal_delay_us(10);
-                let (port, pin) = if self.smk { (7, 8) } else { (0, if i < 2 { 8 } else { 6 }) };
+                let (port, pin) = if self.smk {
+                    (7, 8)
+                } else {
+                    (0, if i < 2 { 8 } else { 6 })
+                };
                 if !gpio_read(port, pin) {
                     keys |= 1 << i;
                 }

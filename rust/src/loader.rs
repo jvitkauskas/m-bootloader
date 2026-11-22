@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 //! The flash loader that M-Flasher runs on the chip, as a plug-in of the ROM's download mode: docs/SPEC.md §10.
-use crate::formats::{CNor, Flash, Nor, be16, be32, crc16, le16, le32, put_be16, put_be32, put_le32, range, usb_begin, usb_stream};
+use crate::formats::{
+    CNor, Flash, Nor, be16, be32, crc16, le16, le32, put_be16, put_be32, put_le32, range,
+    usb_begin, usb_stream,
+};
 use core::ffi::c_void;
 
 /// What it answers to FC40, after "MFLR".
@@ -83,7 +86,11 @@ impl State {
         while k != 0 {
             let ok = match dma {
                 Some((_, finish)) => finish(),
-                None => self.io.nor.flash.read(a, &mut self.buffer[index][..k as usize]),
+                None => self
+                    .io
+                    .nor
+                    .flash
+                    .read(a, &mut self.buffer[index][..k as usize]),
             };
             if !ok {
                 return false;
@@ -121,7 +128,24 @@ impl State {
         let op = be16(c, 0);
         if !matches!(
             op,
-            0xfb00 | 0xfb01 | 0xfb02 | 0xfb04 | 0xfd05 | 0xfc09 | 0xfc0a | 0xfc0b | 0xfc0e | 0xfc12 | 0xfc14 | 0xfc40 | 0xfc41 | 0xfc42 | 0xfc43 | 0xfc44 | 0xfc45 | 0xfc46
+            0xfb00
+                | 0xfb01
+                | 0xfb02
+                | 0xfb04
+                | 0xfd05
+                | 0xfc09
+                | 0xfc0a
+                | 0xfc0b
+                | 0xfc0e
+                | 0xfc12
+                | 0xfc14
+                | 0xfc40
+                | 0xfc41
+                | 0xfc42
+                | 0xfc43
+                | 0xfc44
+                | 0xfc45
+                | 0xfc46
         ) {
             return 0;
         }
@@ -397,6 +421,16 @@ target!(target, loader_entry, 0x01c2_0000);
 #[cfg(loader_b)]
 target!(target, loader_entry, 0x01c2_8000);
 #[cfg(boot_sim)]
-target!(slot_a, loader_test_install_a, 0x01c2_0000, loader_test_state_a);
+target!(
+    slot_a,
+    loader_test_install_a,
+    0x01c2_0000,
+    loader_test_state_a
+);
 #[cfg(boot_sim)]
-target!(slot_b, loader_test_install_b, 0x01c2_8000, loader_test_state_b);
+target!(
+    slot_b,
+    loader_test_install_b,
+    0x01c2_8000,
+    loader_test_state_b
+);

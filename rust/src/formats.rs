@@ -25,7 +25,8 @@ pub trait Flash {
     fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool;
 
     fn read(&self, address: u32, dst: &mut [u8]) -> bool {
-        range(address, dst.len() as u32, self.capacity()) && (dst.is_empty() || self.read_inside(address, dst))
+        range(address, dst.len() as u32, self.capacity())
+            && (dst.is_empty() || self.read_inside(address, dst))
     }
 
     /// A line of the top-level directory, which is stored under the fixed key.
@@ -91,7 +92,14 @@ mod c_flash {
 
     impl Nor for CNor {
         fn program(&self, address: u32, src: &[u8]) -> bool {
-            unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
+            unsafe {
+                (self.program)(
+                    self.flash.ctx,
+                    address,
+                    src.as_ptr().cast(),
+                    src.len() as u32,
+                )
+            }
         }
 
         fn erase(&self, address: u32, size: u32) -> bool {
@@ -157,7 +165,11 @@ pub struct Header {
 }
 
 impl Header {
-    pub const EMPTY: Header = Header { bytes: [0; 32], alignment: 0, filesystem_size: 0 };
+    pub const EMPTY: Header = Header {
+        bytes: [0; 32],
+        alignment: 0,
+        filesystem_size: 0,
+    };
 }
 
 #[repr(u32)]
@@ -212,7 +224,8 @@ pub enum Guard {
 }
 
 // As C lays them out: C code and the tests share them.
-const _: () = assert!(size_of::<Config>() == 20 && size_of::<Record>() == 32 && size_of::<Header>() == 40);
+const _: () =
+    assert!(size_of::<Config>() == 20 && size_of::<Record>() == 32 && size_of::<Header>() == 40);
 const _: () = assert!(size_of::<App>() == 280 && size_of::<Updater>() == 16);
 
 /// Fields at constant offsets of an array: checked when compiled, with nothing to call.
@@ -298,7 +311,10 @@ pub fn usb_begin(key: u32) -> u16 {
 }
 
 pub fn usb_stream(mut state: u16, index: &mut u32, data: &mut [u8]) -> u16 {
-    const ENTROPY: [u8; 16] = [0xc3, 0xcf, 0xc0, 0xe8, 0xce, 0xd2, 0xb0, 0xae, 0xc4, 0xe3, 0xa3, 0xac, 0xd3, 0xf1, 0xc1, 0xd6];
+    const ENTROPY: [u8; 16] = [
+        0xc3, 0xcf, 0xc0, 0xe8, 0xce, 0xd2, 0xb0, 0xae, 0xc4, 0xe3, 0xa3, 0xac, 0xd3, 0xf1, 0xc1,
+        0xd6,
+    ];
     for b in data {
         state = crc16(state, &[ENTROPY[(*index & 15) as usize]]);
         *index = index.wrapping_add(1);
@@ -366,7 +382,14 @@ pub fn chipkey(prefix: &[u8; 34]) -> Option<u16> {
 }
 
 impl Record {
-    pub const EMPTY: Record = Record { address: 0, length: 0, data_crc: 0, index: 0, attribute: 0, name: [0; 17] };
+    pub const EMPTY: Record = Record {
+        address: 0,
+        length: 0,
+        data_crc: 0,
+        index: 0,
+        attribute: 0,
+        name: [0; 17],
+    };
 
     /// In place: a record is 32 bytes, and returning one by value costs two copies of it.
     pub fn parse(&mut self, raw: &Line) -> bool {
@@ -386,7 +409,9 @@ impl Record {
 
     /// The name is NUL-terminated, in 17 bytes.
     pub fn is(&self, name: &[u8]) -> bool {
-        self.name.strip_prefix(name).is_some_and(|rest| rest.first() == Some(&0))
+        self.name
+            .strip_prefix(name)
+            .is_some_and(|rest| rest.first() == Some(&0))
     }
 }
 
@@ -437,7 +462,10 @@ fn directory(f: &impl Flash, selected: &mut Record, raw: &mut Line) -> bool {
         let primary = info_version(f, selected.length, raw);
         let mut secondary = Record::EMPTY;
         if top_find(f, b"app_dir_head2", &mut secondary, raw) {
-            let newer = |p| !sentinel(secondary.length) && info_version(f, secondary.length, raw).is_some_and(|s| s > p);
+            let newer = |p| {
+                !sentinel(secondary.length)
+                    && info_version(f, secondary.length, raw).is_some_and(|s| s > p)
+            };
             if primary.is_none_or(newer) {
                 *selected = secondary;
             }
@@ -479,7 +507,10 @@ fn files(f: &impl Flash, app: &mut App, room: u32, raw: &mut Line) -> Option<boo
             if have_app {
                 return None;
             }
-            if app.entry == 0 || entry_offset < record.address || entry_offset - record.address >= record.length {
+            if app.entry == 0
+                || entry_offset < record.address
+                || entry_offset - record.address >= record.length
+            {
                 app.entry = 0;
             }
             have_app = true;
@@ -501,7 +532,10 @@ pub fn app_mount(f: &impl Flash, key: u16, app: &mut App, header: &mut Header) -
         return false;
     }
     let (mut raw, mut selected, mut area) = ([0; 32], Record::EMPTY, Record::EMPTY);
-    if !directory(f, &mut selected, &mut raw) || selected.address & 31 != 0 || !app_read(f, selected.address, key, 0, &mut raw) {
+    if !directory(f, &mut selected, &mut raw)
+        || selected.address & 31 != 0
+        || !app_read(f, selected.address, key, 0, &mut raw)
+    {
         return false;
     }
     if !area.parse(&raw) || area.attribute != 0x83 || !area.is(b"app_area_head") {
@@ -530,7 +564,11 @@ fn check(f: &impl Flash, app: &App, work: &mut Work) -> AppState {
     if app.base == 0 || app.base > f.capacity() || app.entry == 0 {
         return AppState::NotFound;
     }
-    let Some(files) = app.files.get(..app.file_count as usize).filter(|files| !files.is_empty()) else {
+    let Some(files) = app
+        .files
+        .get(..app.file_count as usize)
+        .filter(|files| !files.is_empty())
+    else {
         return AppState::NotFound;
     };
     let mut state = AppState::Ok;
@@ -588,7 +626,11 @@ pub fn uart_request(retained: &[u8; 19]) -> bool {
 }
 
 fn request_step(alignment: u8) -> u32 {
-    if alignment != 0 && alignment <= 16 { alignment as u32 * 256 } else { 4096 }
+    if alignment != 0 && alignment <= 16 {
+        alignment as u32 * 256
+    } else {
+        4096
+    }
 }
 
 fn request_mark(raw: &Request) -> bool {
@@ -597,7 +639,12 @@ fn request_mark(raw: &Request) -> bool {
 
 /// Selects the first magic/CRC match, then checks its nonzero CRC and type. With `count`, counts all magic/CRC matches
 /// independently of validity.
-pub fn request_scan(f: &impl Flash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
+pub fn request_scan(
+    f: &impl Flash,
+    alignment: u8,
+    request: &mut Request,
+    count: Option<&mut u32>,
+) -> bool {
     let mut raw = [0; 80];
     let step = request_step(alignment);
     let mut matches = 0;
@@ -659,7 +706,9 @@ fn lz4(input: &[u8], out: &mut [u8], mut produced: usize, block: usize) -> Optio
         if p == input.len() {
             return Some(produced == end);
         }
-        let &[low, high] = input.get(p..p + 2)? else { return None };
+        let &[low, high] = input.get(p..p + 2)? else {
+            return None;
+        };
         let distance = u16::from_le_bytes([low, high]) as usize;
         p += 2;
         if distance == 0 || distance > produced {
@@ -684,20 +733,39 @@ pub fn lz4_block(input: &[u8], out: &mut [u8], produced: usize, block: usize) ->
     lz4(input, out, produced, block) == Some(true)
 }
 
-pub fn updater_decode(f: &impl Flash, request: &Request, out: &mut [u8], work: &mut Work, u: &mut Updater) -> bool {
+pub fn updater_decode(
+    f: &impl Flash,
+    request: &Request,
+    out: &mut [u8],
+    work: &mut Work,
+    u: &mut Updater,
+) -> bool {
     let (mut raw, mut outer) = ([0; 32], Record::EMPTY);
     if !request_valid(request) || !f.read(le32(request, 72), &mut raw) || !outer.parse(&raw) {
         return false;
     }
     let (stream, length) = (outer.address, outer.length);
-    if length < 64 || !range(stream, length, f.capacity()) || !f.read(stream + 32, &mut raw) || !line_ok(&raw) {
+    if length < 64
+        || !range(stream, length, f.capacity())
+        || !f.read(stream + 32, &mut raw)
+        || !line_ok(&raw)
+    {
         return false;
     }
     let total = le32(&raw, 4);
-    if le32(&raw, 8) != UPDATE_LOAD || total == 0 || total > UPDATE_MAX || total as usize > out.len() {
+    if le32(&raw, 8) != UPDATE_LOAD
+        || total == 0
+        || total > UPDATE_MAX
+        || total as usize > out.len()
+    {
         return false;
     }
-    *u = Updater { load: UPDATE_LOAD, size: total, stream_end: stream + length, crc: le16(&raw, 2) };
+    *u = Updater {
+        load: UPDATE_LOAD,
+        size: total,
+        stream_end: stream + length,
+        crc: le16(&raw, 2),
+    };
     let (mut pos, mut produced) = (64, 0);
     while pos < length {
         if length - pos < 8 || !f.read(stream + pos, &mut raw[..8]) {
@@ -705,11 +773,19 @@ pub fn updater_decode(f: &impl Flash, request: &Request, out: &mut [u8], work: &
         }
         let (compressed, output) = (le32(&raw, 0), le32(&raw, 4));
         pos += 8;
-        if compressed == 0 || compressed > length - pos || output == 0 || !range(produced, output, total) {
+        if compressed == 0
+            || compressed > length - pos
+            || output == 0
+            || !range(produced, output, total)
+        {
             return false;
         }
-        let Some(block) = work.get_mut(..compressed as usize) else { return false };
-        if !f.read(stream + pos, block) || !lz4_block(block, out, produced as usize, output as usize) {
+        let Some(block) = work.get_mut(..compressed as usize) else {
+            return false;
+        };
+        if !f.read(stream + pos, block)
+            || !lz4_block(block, out, produced as usize, output as usize)
+        {
             return false;
         }
         pos += compressed;
@@ -758,7 +834,10 @@ pub fn guard(nor: &impl Nor, smk: bool, work: &mut Work) -> Guard {
     let base = f.capacity() - 4096;
     let (slot, rest): (&mut [u8; 16 + TRIM_SIZE], _) = work.split_first_chunk_mut().unwrap();
     let source: &mut [u8; TRIM_SIZE] = rest.first_chunk_mut().unwrap();
-    if (base < TRIM_AT + 4096 && TRIM_AT < base + 4096) || !f.read(base, slot) || !f.read(TRIM_AT, source) {
+    if (base < TRIM_AT + 4096 && TRIM_AT < base + 4096)
+        || !f.read(base, slot)
+        || !f.read(TRIM_AT, source)
+    {
         return Guard::Error;
     }
     let source_valid = source[TRIM_NAME..] == *b"trimdat\0";
@@ -773,7 +852,10 @@ pub fn guard(nor: &impl Nor, smk: bool, work: &mut Work) -> Guard {
         if source_valid {
             return Guard::Unchanged;
         }
-        if !nor.erase(TRIM_AT, 4096) || !program_pages(nor, TRIM_AT, saved) || !verify_bytes(f, TRIM_AT, saved) {
+        if !nor.erase(TRIM_AT, 4096)
+            || !program_pages(nor, TRIM_AT, saved)
+            || !verify_bytes(f, TRIM_AT, saved)
+        {
             return Guard::Error;
         }
         return Guard::Restored;
@@ -786,7 +868,11 @@ pub fn guard(nor: &impl Nor, smk: bool, work: &mut Work) -> Guard {
     put_le32(head, 8, TRIM_AT);
     put_le16(head, 12, TRIM_SIZE as u16);
     put_le16(head, 14, crc16(0, source));
-    if !program_pages(nor, base + 16, source) || !verify_bytes(f, base + 16, source) || !program_pages(nor, base, head) || !verify_bytes(f, base, head) {
+    if !program_pages(nor, base + 16, source)
+        || !verify_bytes(f, base + 16, source)
+        || !program_pages(nor, base, head)
+        || !verify_bytes(f, base, head)
+    {
         return Guard::Error;
     }
     Guard::BackedUp
@@ -821,7 +907,9 @@ pub fn request_retire(nor: &impl Nor, alignment: u8, stream_end: u32) -> u32 {
 }
 
 fn boot_allocation_safe(address: u32, length: u32, capacity: u32) -> bool {
-    address < capacity && length <= capacity - address && !(address < BOOT_AREA as u32 && address.wrapping_add(length) > 0xa0)
+    address < capacity
+        && length <= capacity - address
+        && !(address < BOOT_AREA as u32 && address.wrapping_add(length) > 0xa0)
 }
 
 /// The settings 1.2 and 1.3 require: value length, name, NUL, value (§5.3).
@@ -839,7 +927,9 @@ fn area_line(area: &[u8; BOOT_AREA], at: usize) -> Line {
 /// (§11.2); false leaves it as found.
 pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32) -> bool {
     let size = container.len();
-    let Some((start, payload)) = container.split_first_chunk::<16>() else { return false };
+    let Some((start, payload)) = container.split_first_chunk::<16>() else {
+        return false;
+    };
     if size < 0x80
         || size > BOOT_MAX
         || le16(start, 0) != 1
@@ -852,7 +942,13 @@ pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32)
         return false;
     }
     let (head, mut record, mut r) = (area_line(area, 0), area_line(area, 32), Record::EMPTY);
-    if !line_ok(&head) || !r.parse(&record) || !r.is(b"uboot.boot") || r.address != 0xa0 || r.length < 16 || r.length > BOOT_MAX as u32 {
+    if !line_ok(&head)
+        || !r.parse(&record)
+        || !r.is(b"uboot.boot")
+        || r.address != 0xa0
+        || r.length < 16
+        || r.length > BOOT_MAX as u32
+    {
         return false;
     }
     let (mut config, mut blob, mut have_config) = ([0; 32], [0; CONFIG_SIZE], false);
@@ -864,7 +960,12 @@ pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32)
         }
         if r.is(b"isd_config.ini") {
             // Only its chip-key record is kept, so that has to be good.
-            if have_config || r.address < 0x38d0 || r.length < CONFIG_KEY_SIZE as u32 || r.length > BOOT_AREA as u32 || r.address > BOOT_AREA as u32 - r.length {
+            if have_config
+                || r.address < 0x38d0
+                || r.length < CONFIG_KEY_SIZE as u32
+                || r.length > BOOT_AREA as u32
+                || r.address > BOOT_AREA as u32 - r.length
+            {
                 return false;
             }
             let (key, settings) = blob.split_at_mut(CONFIG_KEY_SIZE);
@@ -880,7 +981,9 @@ pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32)
         let sentinel = sentinel(r.length);
         if r.is(b"app_dir_head") || r.is(b"app_dir_head2") {
             // Directory lengths are sentinels or bank-info addresses.
-            if !boot_allocation_safe(r.address, 32, capacity) || (!sentinel && !boot_allocation_safe(r.length, 32, capacity)) {
+            if !boot_allocation_safe(r.address, 32, capacity)
+                || (!sentinel && !boot_allocation_safe(r.length, 32, capacity))
+            {
                 return false;
             }
         } else if !boot_allocation_safe(r.address, if sentinel { 32 } else { r.length }, capacity) {
@@ -991,18 +1094,36 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_usb_stream(state: u16, index: &mut u32, data: M, size: usize) -> u16 {
-        usb_stream(state, index, unsafe { from_raw_parts_mut(data.cast(), size) })
+    pub unsafe extern "C" fn core_usb_stream(
+        state: u16,
+        index: &mut u32,
+        data: M,
+        size: usize,
+    ) -> u16 {
+        usb_stream(state, index, unsafe {
+            from_raw_parts_mut(data.cast(), size)
+        })
     }
 
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn core_read(f: &CFlash, address: u32, dst: M, size: u32) -> bool {
-        f.read(address, unsafe { from_raw_parts_mut(dst.cast(), size as usize) })
+        f.read(address, unsafe {
+            from_raw_parts_mut(dst.cast(), size as usize)
+        })
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_app_read(f: &CFlash, base: u32, key: u16, offset: u32, dst: M, size: u32) -> bool {
-        app_read(f, base, key, offset, unsafe { from_raw_parts_mut(dst.cast(), size as usize) })
+    pub unsafe extern "C" fn core_app_read(
+        f: &CFlash,
+        base: u32,
+        key: u16,
+        offset: u32,
+        dst: M,
+        size: u32,
+    ) -> bool {
+        app_read(f, base, key, offset, unsafe {
+            from_raw_parts_mut(dst.cast(), size as usize)
+        })
     }
 
     #[unsafe(no_mangle)]
@@ -1026,8 +1147,17 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_top_find(f: &CFlash, name: *const c_char, r: &mut Record) -> bool {
-        top_find(f, unsafe { CStr::from_ptr(name) }.to_bytes(), r, &mut [0; 32])
+    pub unsafe extern "C" fn core_top_find(
+        f: &CFlash,
+        name: *const c_char,
+        r: &mut Record,
+    ) -> bool {
+        top_find(
+            f,
+            unsafe { CStr::from_ptr(name) }.to_bytes(),
+            r,
+            &mut [0; 32],
+        )
     }
 
     #[unsafe(no_mangle)]
@@ -1036,7 +1166,12 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_app_mount_header(f: &CFlash, key: u16, app: &mut App, header: Option<&mut Header>) -> bool {
+    pub extern "C" fn core_app_mount_header(
+        f: &CFlash,
+        key: u16,
+        app: &mut App,
+        header: Option<&mut Header>,
+    ) -> bool {
         let mut local = Header::EMPTY;
         app_mount(f, key, app, header.unwrap_or(&mut local))
     }
@@ -1057,19 +1192,49 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn core_request_scan(f: &CFlash, alignment: u8, request: &mut Request, count: Option<&mut u32>) -> bool {
+    pub extern "C" fn core_request_scan(
+        f: &CFlash,
+        alignment: u8,
+        request: &mut Request,
+        count: Option<&mut u32>,
+    ) -> bool {
         request_scan(f, alignment, request, count)
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_lz4_block(input: *const u8, in_size: u32, out: *mut u8, previous: u32, block: u32, capacity: u32) -> bool {
-        let (input, out) = unsafe { (from_raw_parts(input, in_size as usize), from_raw_parts_mut(out, capacity as usize)) };
+    pub unsafe extern "C" fn core_lz4_block(
+        input: *const u8,
+        in_size: u32,
+        out: *mut u8,
+        previous: u32,
+        block: u32,
+        capacity: u32,
+    ) -> bool {
+        let (input, out) = unsafe {
+            (
+                from_raw_parts(input, in_size as usize),
+                from_raw_parts_mut(out, capacity as usize),
+            )
+        };
         lz4_block(input, out, previous as usize, block as usize)
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_updater_decode(f: &CFlash, request: &Request, out: *mut u8, capacity: u32, work: &mut Work, u: &mut Updater) -> bool {
-        updater_decode(f, request, unsafe { from_raw_parts_mut(out, capacity as usize) }, work, u)
+    pub unsafe extern "C" fn core_updater_decode(
+        f: &CFlash,
+        request: &Request,
+        out: *mut u8,
+        capacity: u32,
+        work: &mut Work,
+        u: &mut Updater,
+    ) -> bool {
+        updater_decode(
+            f,
+            request,
+            unsafe { from_raw_parts_mut(out, capacity as usize) },
+            work,
+            u,
+        )
     }
 
     #[unsafe(no_mangle)]
@@ -1083,7 +1248,16 @@ pub mod c {
     }
 
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn core_boot_install(area: &mut [u8; BOOT_AREA], container: *const u8, size: u32, capacity: u32) -> bool {
-        boot_install(area, unsafe { from_raw_parts(container, size as usize) }, capacity)
+    pub unsafe extern "C" fn core_boot_install(
+        area: &mut [u8; BOOT_AREA],
+        container: *const u8,
+        size: u32,
+        capacity: u32,
+    ) -> bool {
+        boot_install(
+            area,
+            unsafe { from_raw_parts(container, size as usize) },
+            capacity,
+        )
     }
 }

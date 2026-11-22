@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 //! The update protocol itself: see the module above.
+use super::{Host, Outcome, SECTOR};
 use crate::Global;
 use crate::formats::{crc16, crc32, enc, le16, le32, put_le32};
-use super::{Host, Outcome, SECTOR};
 
 /// The first address written, and the end: never the boot area, nor the key area at 0xFF000. On the SMK-37, not its
 /// Bluetooth pairing and calibration either, at 0xC0000 to 0xC1FFF: a package's bytes for those are left unwritten.
@@ -127,7 +127,9 @@ fn unpack(frame: &[u8], decoded: &mut Decoded) -> usize {
         accumulator |= ((b & 0x7f) as u32) << bits;
         bits += 7;
         if bits >= 8 {
-            let Some(slot) = decoded.get_mut(out) else { return 0 };
+            let Some(slot) = decoded.get_mut(out) else {
+                return 0;
+            };
             *slot = accumulator as u8;
             out += 1;
             accumulator >>= 8;
@@ -164,7 +166,12 @@ fn take(decoded: &mut Decoded) -> Kind {
         };
     } else {
         let n = unpack(frame, decoded);
-        if n >= 7 && decoded[0] == 0 && decoded[1] == 0x59 && le16(decoded, 3) as usize == n - 7 && decoded[5] == 0 {
+        if n >= 7
+            && decoded[0] == 0
+            && decoded[1] == 0x59
+            && le16(decoded, 3) as usize == n - 7
+            && decoded[5] == 0
+        {
             let sum = decoded[6..n].iter().fold(0u8, |a, &b| a.wrapping_add(b));
             if sum == 0xff {
                 kind = Kind::Message(n);
@@ -199,7 +206,11 @@ fn ask<H: Host>(address: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
             let Kind::Message(n) = kind else { continue };
             if decoded[2] == 0x11 && n == 7 {
                 send_identity::<H>();
-            } else if decoded[2] == 0x30 && n == size + 15 && le32(decoded, 7) == address && le16(decoded, 11) as usize == size {
+            } else if decoded[2] == 0x30
+                && n == size + 15
+                && le32(decoded, 7) == address
+                && le16(decoded, 11) as usize == size
+            {
                 out.copy_from_slice(&decoded[14..14 + size]);
                 return true;
             }
@@ -226,21 +237,33 @@ struct Package {
 }
 
 /// Finds it from the package's header.
-fn find_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, package: &mut Package) -> Outcome {
+fn find_flash<H: Host>(
+    sector: &mut Sector,
+    decoded: &mut Decoded,
+    package: &mut Package,
+) -> Outcome {
     let (header, _) = sector.split_first_chunk_mut::<HEADER>().unwrap();
     if !ask_parts::<H>(0, header, decoded) {
         return Outcome::Lost;
     }
     enc(0xffff, &mut header[..0x40]);
     let count = le16(header, 8) as usize;
-    if count == 0 || count > 11 || crc16(0, &header[2..0x40]) != le16(header, 0) || crc16(0, &header[0x40..0x40 + count * ENTRY]) != le16(header, 2) {
+    if count == 0
+        || count > 11
+        || crc16(0, &header[2..0x40]) != le16(header, 0)
+        || crc16(0, &header[0x40..0x40 + count * ENTRY]) != le16(header, 2)
+    {
         return Outcome::BadPackage;
     }
     for entry in header[0x40..].chunks_exact_mut(ENTRY).take(count) {
         enc(0xffff, entry);
         let entry: &[u8; ENTRY] = (&*entry).try_into().unwrap();
         if le16(entry, 0) == 0 {
-            *package = Package { offset: le32(entry, 8), size: le32(entry, 12), crc: le16(entry, 4) };
+            *package = Package {
+                offset: le32(entry, 8),
+                size: le32(entry, 12),
+                crc: le16(entry, 4),
+            };
             if package.size <= FIRST || package.size > LIMIT || package.size % SECTOR as u32 != 0 {
                 return Outcome::BadPackage;
             }
@@ -251,7 +274,13 @@ fn find_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, package: &mut
 }
 
 /// The package's firmware must decrypt with this chip's key, and every byte must arrive intact.
-fn check_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, crcs: &mut Crcs, package: &Package, key: u16) -> Outcome {
+fn check_flash<H: Host>(
+    sector: &mut Sector,
+    decoded: &mut Decoded,
+    crcs: &mut Crcs,
+    package: &Package,
+    key: u16,
+) -> Outcome {
     let line: &mut [u8; 32] = sector.first_chunk_mut().unwrap();
     if !ask::<H>(package.offset + FIRST, line, decoded) {
         return Outcome::Lost;
@@ -270,7 +299,11 @@ fn check_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, crcs: &mut C
         H::progress(false, at * 100 / package.size);
         at += SECTOR as u32;
     }
-    if whole == package.crc { Outcome::Done } else { Outcome::BadPackage }
+    if whole == package.crc {
+        Outcome::Done
+    } else {
+        Outcome::BadPackage
+    }
 }
 
 fn same<H: Host>(mut at: u32, data: &Sector, decoded: &mut Decoded) -> bool {
@@ -284,7 +317,14 @@ fn same<H: Host>(mut at: u32, data: &Sector, decoded: &mut Decoded) -> bool {
     true
 }
 
-fn write_sector<H: Host>(offset: u32, at: u32, sector: &mut Sector, decoded: &mut Decoded, crcs: &Crcs, written: &mut bool) -> Outcome {
+fn write_sector<H: Host>(
+    offset: u32,
+    at: u32,
+    sector: &mut Sector,
+    decoded: &mut Decoded,
+    crcs: &Crcs,
+    written: &mut bool,
+) -> Outcome {
     if !ask_parts::<H>(offset + at, sector, decoded) {
         return Outcome::Lost;
     }
@@ -305,13 +345,26 @@ fn write_sector<H: Host>(offset: u32, at: u32, sector: &mut Sector, decoded: &mu
         }
         to += PACKET_MAX as u32;
     }
-    if same::<H>(at, sector, decoded) { Outcome::Done } else { Outcome::FlashError }
+    if same::<H>(at, sector, decoded) {
+        Outcome::Done
+    } else {
+        Outcome::FlashError
+    }
 }
 
-fn install<H: Host>(key: u16, sector: &mut Sector, decoded: &mut Decoded, written: &mut bool) -> Outcome {
+fn install<H: Host>(
+    key: u16,
+    sector: &mut Sector,
+    decoded: &mut Decoded,
+    written: &mut bool,
+) -> Outcome {
     // Safety: used only during an install, which is not entered twice.
     let crcs = unsafe { SECTOR_CRC.get() };
-    let mut package = Package { offset: 0, size: 0, crc: 0 };
+    let mut package = Package {
+        offset: 0,
+        size: 0,
+        crc: 0,
+    };
     let mut r = find_flash::<H>(sector, decoded, &mut package);
     if r == Outcome::Done {
         r = check_flash::<H>(sector, decoded, crcs, &package, key);
@@ -373,7 +426,13 @@ fn send_info<H: Host>(key: u16) {
 fn serve_read<H: Host>(cmd: u8, sector: &mut Sector, decoded: &mut Decoded, n: usize) {
     let capacity = H::unit_info().capacity;
     let (address, count) = (le32(decoded, 7), le32(decoded, 10) >> 8);
-    if n != 15 || decoded[6] != 0 || count == 0 || address >= capacity || count > capacity - address || (cmd == 0x23 && count as usize > PACKET_MAX) {
+    if n != 15
+        || decoded[6] != 0
+        || count == 0
+        || address >= capacity
+        || count > capacity - address
+        || (cmd == 0x23 && count as usize > PACKET_MAX)
+    {
         return send_refusal::<H>();
     }
     decoded.copy_within(6..14, 0);
@@ -404,7 +463,10 @@ fn load_app<H: Host>(size: usize, decoded: &mut Decoded) -> bool {
     if size < 16 || size > APP_MAX || !ask::<H>(size as u32 - 8, &mut trailer, decoded) {
         return false;
     }
-    if le32(&trailer, 0) != APP_MAGIC || (trailer[6] != 0 && trailer[6] != APP_BOARD) || trailer[7] != APP_FORMAT {
+    if le32(&trailer, 0) != APP_MAGIC
+        || (trailer[6] != 0 && trailer[6] != APP_BOARD)
+        || trailer[7] != APP_FORMAT
+    {
         return false;
     }
     let ram = app_ram(size);
@@ -447,7 +509,11 @@ pub fn run<H: Host>(key: u16, sector: &mut Sector, written: &mut bool) -> Outcom
                     return Outcome::Download;
                 }
                 // Stopped with the key, before anything was erased.
-                return if r == Outcome::Lost && !*written && H::cancel() { Outcome::Cancelled } else { r };
+                return if r == Outcome::Lost && !*written && H::cancel() {
+                    Outcome::Cancelled
+                } else {
+                    r
+                };
             }
             Kind::AskDownload => return Outcome::Download,
             Kind::AskRestart => return Outcome::Restart,
@@ -524,7 +590,13 @@ mod c {
         }
 
         fn unit_info() -> Unit {
-            let mut unit = Unit { jedec: 0, capacity: 0, uid: [0; 8], kind: 0, version: text!("") };
+            let mut unit = Unit {
+                jedec: 0,
+                capacity: 0,
+                uid: [0; 8],
+                kind: 0,
+                version: text!(""),
+            };
             // Safety: the hook fills it in, with a NUL-terminated string that stays.
             unsafe { mu_unit_info(&mut unit) };
             unit

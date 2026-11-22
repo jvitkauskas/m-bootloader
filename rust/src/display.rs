@@ -78,7 +78,12 @@ struct Display {
     pixels: Pixels,
 }
 
-static DISPLAY: Global<Display> = Global::new(Display { cs: (0, 0), dc: (0, 0), active: false, pixels: Pixels([0; CELL]) });
+static DISPLAY: Global<Display> = Global::new(Display {
+    cs: (0, 0),
+    dc: (0, 0),
+    active: false,
+    pixels: Pixels([0; CELL]),
+});
 
 /// Safety, for every use: these entries call nothing that comes back into this module.
 fn display() -> &'static mut Display {
@@ -240,10 +245,19 @@ impl Display {
             self.burst(0x36, &[0]);
             self.burst(0x3a, &[5]);
             self.burst(0xb2, &[12, 12, 0, 0x33, 0x33]);
-            for (command, value) in [(0xb7, 0x35), (0xbb, 0x32), (0xc2, 1), (0xc3, 0x15), (0xc4, 0x20), (0xc6, 0xf)] {
+            for (command, value) in [
+                (0xb7, 0x35),
+                (0xbb, 0x32),
+                (0xc2, 1),
+                (0xc3, 0x15),
+                (0xc4, 0x20),
+                (0xc6, 0xf),
+            ] {
                 self.burst(command, &[value]);
             }
-            const GAMMA: [u8; 14] = [0xd0, 8, 14, 9, 9, 5, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34];
+            const GAMMA: [u8; 14] = [
+                0xd0, 8, 14, 9, 9, 5, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34,
+            ];
             self.burst(0xd0, &[0xa4, 0xa1]);
             self.burst(0xe0, &GAMMA);
             self.burst(0xe1, &GAMMA);
@@ -266,7 +280,10 @@ impl Display {
                 break;
             }
             let ch = text.get(c).map_or(b' ', |b| b.to_ascii_uppercase());
-            let glyph = &GLYPHS[CHARACTERS.iter().position(|&known| known == ch).unwrap_or(0)];
+            let glyph = &GLYPHS[CHARACTERS
+                .iter()
+                .position(|&known| known == ch)
+                .unwrap_or(0)];
             let mut pixels = self.pixels.0.as_chunks_mut().0.iter_mut();
             for y in 0..16 {
                 for x in 0..12 {
@@ -340,7 +357,9 @@ pub unsafe extern "C" fn display_pixels(x: u32, y: u32, w: u32, h: u32, data: *c
     let d = display();
     // Checked before the size is worked out, which a wild width would overflow.
     if d.visible(x, y, w, h) {
-        d.pixels(x, y, w, h, unsafe { core::slice::from_raw_parts(data, (w * h * 2) as usize) })
+        d.pixels(x, y, w, h, unsafe {
+            core::slice::from_raw_parts(data, (w * h * 2) as usize)
+        })
     }
 }
 
@@ -349,7 +368,9 @@ pub unsafe extern "C" fn display_pixels(x: u32, y: u32, w: u32, h: u32, data: *c
 #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8, n: u32) {
-    display().row(row, fg, bg, unsafe { core::slice::from_raw_parts(text, n.min(20) as usize) })
+    display().row(row, fg, bg, unsafe {
+        core::slice::from_raw_parts(text, n.min(20) as usize)
+    })
 }
 
 /// # Safety
@@ -357,7 +378,12 @@ pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8
 #[cfg(not(target_arch = "pi32v2"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn display_text(row: u32, fg: u16, text: *const core::ffi::c_char) {
-    display().row(row, fg, 0, unsafe { core::ffi::CStr::from_ptr(text) }.to_bytes())
+    display().row(
+        row,
+        fg,
+        0,
+        unsafe { core::ffi::CStr::from_ptr(text) }.to_bytes(),
+    )
 }
 
 #[unsafe(no_mangle)]

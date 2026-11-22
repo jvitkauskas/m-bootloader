@@ -593,7 +593,13 @@ mod flash {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn flash_dma_start(a: u32, out: *mut c_void, n: u32) -> bool {
         let (capacity, width) = (CAPACITY.read(), READ_WIDTH.read());
-        if failed().read() || dma_active().read() || n == 0 || n > 65535 || a > capacity || n > capacity - a {
+        if failed().read()
+            || dma_active().read()
+            || n == 0
+            || n > 65535
+            || a > capacity
+            || n > capacity - a
+        {
             return false;
         }
         command(match width {
@@ -604,7 +610,9 @@ mod flash {
         address24(a);
         if width > 1 {
             let mut dummy = core::mem::MaybeUninit::<u32>::uninit();
-            SPI_CON.modify(|v| v & !(bit(3) | 3 << 10) | (if width == 4 { 2 } else { 1 }) << 10 | bit(12));
+            SPI_CON.modify(|v| {
+                v & !(bit(3) | 3 << 10) | (if width == 4 { 2 } else { 1 }) << 10 | bit(12)
+            });
             // §3.4: eight dummy clocks are a separate wide DMA receive.
             dma_receive(dummy.as_mut_ptr().cast(), width);
             if !dma_wait() {
@@ -634,9 +642,21 @@ mod flash {
     /// `out` has room for `n` bytes, or `n` is 0. `ctx` is not used: the flash is the chip's.
     #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn flash_read(_ctx: *mut c_void, a: u32, out: *mut c_void, n: u32) -> bool {
+    pub unsafe extern "C" fn flash_read(
+        _ctx: *mut c_void,
+        a: u32,
+        out: *mut c_void,
+        n: u32,
+    ) -> bool {
         // (Nothing is made of `out` when there is nothing to read: C may pass a null pointer then.)
-        read(a, if n == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) } })
+        read(
+            a,
+            if n == 0 {
+                &mut []
+            } else {
+                unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) }
+            },
+        )
     }
 
     pub fn read(mut a: u32, out: &mut [u8]) -> bool {
@@ -646,7 +666,9 @@ mod flash {
         }
         for part in out.chunks_mut(4096) {
             // Safety: the read is finished before `part` is used again.
-            if !unsafe { flash_dma_start(a, part.as_mut_ptr().cast(), part.len() as u32) } || !flash_dma_finish() {
+            if !unsafe { flash_dma_start(a, part.as_mut_ptr().cast(), part.len() as u32) }
+                || !flash_dma_finish()
+            {
                 return false;
             }
             a += part.len() as u32;
@@ -681,8 +703,20 @@ mod flash {
     /// `data` has `n` bytes, or `n` is 0.
     #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn flash_program(_ctx: *mut c_void, a: u32, data: *const c_void, n: u32) -> bool {
-        program(a, if n == 0 { &[] } else { unsafe { core::slice::from_raw_parts(data.cast(), n as usize) } })
+    pub unsafe extern "C" fn flash_program(
+        _ctx: *mut c_void,
+        a: u32,
+        data: *const c_void,
+        n: u32,
+    ) -> bool {
+        program(
+            a,
+            if n == 0 {
+                &[]
+            } else {
+                unsafe { core::slice::from_raw_parts(data.cast(), n as usize) }
+            },
+        )
     }
 
     pub fn program(mut a: u32, mut data: &[u8]) -> bool {
@@ -711,7 +745,12 @@ mod flash {
     #[unsafe(no_mangle)]
     pub extern "C" fn flash_erase(_ctx: *mut c_void, a: u32, n: u32) -> bool {
         let capacity = CAPACITY.read();
-        if (n != 4096 && n != 65536) || a & (n - 1) != 0 || a > capacity || n > capacity - a || !unprotect() {
+        if (n != 4096 && n != 65536)
+            || a & (n - 1) != 0
+            || a > capacity
+            || n > capacity - a
+            || !unprotect()
+        {
             return false;
         }
         wren();
@@ -746,7 +785,12 @@ mod flash {
         ENC_KEY.write(key as u32);
         CACHE_CON.clear(bit(8) | bit(9));
         // The cache's tags (§3.6).
-        for (from, to) in [(0, 0x4000), (0x8000, 0xa000), (0xa000, 0xa200), (0xb000, 0xb200)] {
+        for (from, to) in [
+            (0, 0x4000),
+            (0x8000, 0xa000),
+            (0xa000, 0xa200),
+            (0xb000, 0xb200),
+        ] {
             let mut a = from;
             while a < to {
                 CACHE_TAGS.add(a).write(0);

@@ -53,7 +53,11 @@ mod first {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn __umodsi3(a: u32, b: u32) -> u32 {
-        if b != 0 { a.wrapping_sub(__udivsi3(a, b).wrapping_mul(b)) } else { 0 }
+        if b != 0 {
+            a.wrapping_sub(__udivsi3(a, b).wrapping_mul(b))
+        } else {
+            0
+        }
     }
 }
 
@@ -73,7 +77,11 @@ mod second {
     /// # Safety
     /// As C's.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn memmove(to: *mut c_void, from: *const c_void, n: usize) -> *mut c_void {
+    pub unsafe extern "C" fn memmove(
+        to: *mut c_void,
+        from: *const c_void,
+        n: usize,
+    ) -> *mut c_void {
         let (d, s) = (to.cast::<MaybeUninit<u8>>(), from.cast::<MaybeUninit<u8>>());
         unsafe {
             if d as usize > s as usize {
@@ -94,7 +102,12 @@ mod second {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32 {
         for i in 0..n {
-            let (x, y) = unsafe { (a.cast::<u8>().add(i).read_volatile(), b.cast::<u8>().add(i).read_volatile()) };
+            let (x, y) = unsafe {
+                (
+                    a.cast::<u8>().add(i).read_volatile(),
+                    b.cast::<u8>().add(i).read_volatile(),
+                )
+            };
             if x != y {
                 return x as i32 - y as i32;
             }
@@ -125,11 +138,19 @@ mod second {
     #[unsafe(no_mangle)]
     pub extern "C" fn __divsi3(a: i32, b: i32) -> i32 {
         let q = __udivsi3(a.unsigned_abs(), b.unsigned_abs());
-        (if (a < 0) != (b < 0) { q.wrapping_neg() } else { q }) as i32
+        (if (a < 0) != (b < 0) {
+            q.wrapping_neg()
+        } else {
+            q
+        }) as i32
     }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn __modsi3(a: i32, b: i32) -> i32 {
-        if b != 0 { a.wrapping_sub(__divsi3(a, b).wrapping_mul(b)) } else { 0 }
+        if b != 0 {
+            a.wrapping_sub(__divsi3(a, b).wrapping_mul(b))
+        } else {
+            0
+        }
     }
 }

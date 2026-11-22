@@ -6,13 +6,18 @@ use crate::display::{self, GREEN, RED, WHITE, YELLOW};
 use crate::hw::{Retained, Text, irq_off, sync_cpu};
 use crate::midi_update::{self, Host, Outcome, Unit, mu_messages};
 use crate::platform::{
-    self, flash_capacity, flash_erase, flash_init, flash_jedec, flash_release, flash_uid, hal_delay_us, hal_early, hal_efuse, hal_reset,
+    self, flash_capacity, flash_erase, flash_init, flash_jedec, flash_release, flash_uid,
+    hal_delay_us, hal_early, hal_efuse, hal_reset,
 };
 use crate::usb_midi::{self, usb_midi_poll, usb_midi_start, usb_midi_stop};
 use crate::{Aligned, Global, text};
 
 const BOARD: u32 = if cfg!(smk) { 2 } else { 1 };
-const TITLE: Text = if cfg!(smk) { text!("SMK-37 M-FLASHER") } else { text!("FM-1 M-FLASHER") };
+const TITLE: Text = if cfg!(smk) {
+    text!("SMK-37 M-FLASHER")
+} else {
+    text!("FM-1 M-FLASHER")
+};
 /// The LSB clock: from the bootloader that started us, or from hal_clock_b().
 const LSB_MHZ: u32 = if cfg!(stage_ota) { 60 } else { 48 };
 /// After this long with no message from a host, the unit goes back to its firmware.
@@ -20,7 +25,8 @@ const NO_HOST_MS: u32 = 300_000;
 const STAGE: u8 = 2;
 const NONE: Text = text!("");
 
-static SECTOR: Global<Aligned<{ midi_update::SECTOR }>> = Global::new(Aligned([0; midi_update::SECTOR]));
+static SECTOR: Global<Aligned<{ midi_update::SECTOR }>> =
+    Global::new(Aligned([0; midi_update::SECTOR]));
 static SCREEN: Global<bool> = Global::new(false);
 static WAITED: Global<u32> = Global::new(0);
 static SEEN: Global<u32> = Global::new(0);
@@ -62,7 +68,13 @@ impl Host for Stage {
     fn unit_info() -> Unit {
         let mut uid = [0; 8];
         flash_uid(&mut uid);
-        Unit { jedec: flash_jedec(), capacity: flash_capacity(), uid, kind: STAGE, version: text!(env!("STAGE_VERSION")) }
+        Unit {
+            jedec: flash_jedec(),
+            capacity: flash_capacity(),
+            uid,
+            kind: STAGE,
+            version: text!(env!("STAGE_VERSION")),
+        }
     }
 
     fn start_app() {
@@ -115,8 +127,24 @@ pub extern "C" fn mu_progress(writing: bool, percent: u32) {
     // A pass's start draws the screen for it: the bar covers rows 9 and 10.
     if percent == 0 {
         clear_rows(3);
-        show(3, YELLOW, if writing { text!("WRITING") } else { text!("CHECKING") });
-        show(5, if writing { YELLOW } else { WHITE }, if writing { text!("DO NOT SWITCH OFF") } else { text!("NOTHING ERASED YET") });
+        show(
+            3,
+            YELLOW,
+            if writing {
+                text!("WRITING")
+            } else {
+                text!("CHECKING")
+            },
+        );
+        show(
+            5,
+            if writing { YELLOW } else { WHITE },
+            if writing {
+                text!("DO NOT SWITCH OFF")
+            } else {
+                text!("NOTHING ERASED YET")
+            },
+        );
         display::progress(0, GREEN);
         SHOWN.set(0);
     }
@@ -156,7 +184,13 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     }
     irq_off();
     // Safety: this image's own data, which nothing has used yet.
-    unsafe { core::ptr::write_bytes(&raw mut __bss_start, 0, (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start)) };
+    unsafe {
+        core::ptr::write_bytes(
+            &raw mut __bss_start,
+            0,
+            (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start),
+        )
+    };
     // Safety: no reference into the retained area is kept across anything else that runs, such as an app.
     let mut retained = unsafe { Retained::claim() };
     hal_early();
@@ -181,7 +215,10 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
         let mut written = false;
         // Safety: the one use of this buffer.
         let r = midi_update::run::<Stage>(key, unsafe { &mut SECTOR.get().0 }, &mut written);
-        if matches!(r, Outcome::Download | Outcome::Done | Outcome::Restart | Outcome::Cancelled) {
+        if matches!(
+            r,
+            Outcome::Download | Outcome::Done | Outcome::Restart | Outcome::Cancelled
+        ) {
             hal_delay_us(200_000);
             usb_midi_stop();
             flash_release();
@@ -204,7 +241,15 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
                 _ => text!("FLASH ERROR"),
             },
         );
-        show(5, if stay { RED } else { WHITE }, if stay { text!("INSTALL AGAIN") } else { text!("OPEN THE WEB PAGE.") });
+        show(
+            5,
+            if stay { RED } else { WHITE },
+            if stay {
+                text!("INSTALL AGAIN")
+            } else {
+                text!("OPEN THE WEB PAGE.")
+            },
+        );
         if !stay {
             show_way_out();
         }

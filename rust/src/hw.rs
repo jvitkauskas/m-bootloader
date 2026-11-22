@@ -8,7 +8,8 @@ pub struct Reg(u32);
 
 /// Where the chip has registers (docs/SPEC.md §2.2), and the cache's tags (§3.6): not its RAM, nor the flash.
 const fn is_register(address: u32) -> bool {
-    address.is_multiple_of(4) && matches!(address, 0x1_0000..0x2_0000 | 0x4_0000..0x6_0000 | 0x1ee_e000..0x1ee_f000 | 0x1f0_0000..0x1f0_c000)
+    address.is_multiple_of(4)
+        && matches!(address, 0x1_0000..0x2_0000 | 0x4_0000..0x6_0000 | 0x1ee_e000..0x1ee_f000 | 0x1f0_0000..0x1f0_c000)
 }
 
 #[cfg(platform_sim)]

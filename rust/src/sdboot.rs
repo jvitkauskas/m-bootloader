@@ -37,7 +37,13 @@ struct Card {
     spc: u32,
 }
 
-static CARD: Global<Card> = Global::new(Card { block: [0; 512], hc: false, fat_lba: 0, data_lba: 0, spc: 0 });
+static CARD: Global<Card> = Global::new(Card {
+    block: [0; 512],
+    hc: false,
+    fat_lba: 0,
+    data_lba: 0,
+    spc: 0,
+});
 
 fn x(b: u8) -> u8 {
     SPI1_CON.set(bit(14));
@@ -142,7 +148,11 @@ impl Card {
     }
 
     fn read_cluster_sector(&mut self, c: u32, s: u32) -> bool {
-        rd(self.hc, self.data_lba + (c - 2) * self.spc + s, &mut self.block)
+        rd(
+            self.hc,
+            self.data_lba + (c - 2) * self.spc + s,
+            &mut self.block,
+        )
     }
 
     fn next(&mut self, c: u32) -> u32 {
@@ -155,7 +165,13 @@ impl Card {
 
     /// Finds an 8.3 name in a directory; `kind` is the entry's folder and volume-label bits. The entry's first cluster
     /// and size go to `found`.
-    fn find(&mut self, mut c: u32, name: &[u8; 11], kind: u8, found: &mut (u32, u32)) -> Option<Text> {
+    fn find(
+        &mut self,
+        mut c: u32,
+        name: &[u8; 11],
+        kind: u8,
+        found: &mut (u32, u32),
+    ) -> Option<Text> {
         while cluster_ok(c) {
             for s in 0..self.spc {
                 if !self.read_cluster_sector(c, s) {
@@ -166,7 +182,10 @@ impl Card {
                         return Some(NO_MENU);
                     }
                     if entry[..11] == *name && entry[11] & 0x18 == kind {
-                        *found = (le16(entry, 26) as u32 | (le16(entry, 20) as u32) << 16, le32(entry, 28));
+                        *found = (
+                            le16(entry, 26) as u32 | (le16(entry, 20) as u32) << 16,
+                            le32(entry, 28),
+                        );
                         return None;
                     }
                 }
@@ -195,7 +214,9 @@ impl Card {
         self.fat_lba = base + le16(b, 14) as u32;
         self.data_lba = self.fat_lba + (b[16] as u32) * le32(b, 36);
         let mut found = (0, 0);
-        let error = self.find(le32(b, 44), b"MBOOT      ", 0x10, &mut found).or_else(|| self.find(found.0, b"MENU    BIN", 0, &mut found));
+        let error = self
+            .find(le32(b, 44), b"MBOOT      ", 0x10, &mut found)
+            .or_else(|| self.find(found.0, b"MENU    BIN", 0, &mut found));
         if error.is_some() {
             return error;
         }
@@ -204,14 +225,21 @@ impl Card {
             return Some(BAD_MENU);
         }
         // Safety: this RAM is the image's to load into (§11.5), in whole sectors.
-        let image = unsafe { core::slice::from_raw_parts_mut(STAGE2_ADDRESS as *mut u8, size.next_multiple_of(512) as usize) };
+        let image = unsafe {
+            core::slice::from_raw_parts_mut(
+                STAGE2_ADDRESS as *mut u8,
+                size.next_multiple_of(512) as usize,
+            )
+        };
         let mut blocks = image.as_chunks_mut::<512>().0.iter_mut();
         'file: loop {
             if !cluster_ok(c) {
                 return Some(BAD_MENU);
             }
             for s in 0..self.spc {
-                let Some(block) = blocks.next() else { break 'file };
+                let Some(block) = blocks.next() else {
+                    break 'file;
+                };
                 if !rd(self.hc, self.data_lba + (c - 2) * self.spc + s, block) {
                     return Some(READ_ERROR);
                 }

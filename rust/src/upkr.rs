@@ -66,7 +66,12 @@ fn unpack(out: &Bytes, input: &Bytes, probs: &mut [u8; PROBS]) -> usize {
     for p in probs.iter_mut() {
         *p = 128;
     }
-    let mut s = Upkr { input, at: 0, probs, state: 0 };
+    let mut s = Upkr {
+        input,
+        at: 0,
+        probs,
+        state: 0,
+    };
     let (mut at, mut offset, mut after_match) = (0usize, 0, false);
     loop {
         let base = (at & 1) << 8;
@@ -136,7 +141,11 @@ pub fn unpack_stage1(out: &Bytes, pack: &Bytes, probs: &mut [u8; PROBS]) -> bool
     for b in out {
         crc ^= (b.get() as u32) << 8;
         for _ in 0..8 {
-            crc = (if crc & 0x8000 != 0 { crc << 1 ^ 0x1021 } else { crc << 1 }) & 0xffff;
+            crc = (if crc & 0x8000 != 0 {
+                crc << 1 ^ 0x1021
+            } else {
+                crc << 1
+            }) & 0xffff;
         }
     }
     crc == want
@@ -148,8 +157,19 @@ pub fn unpack_stage1(out: &Bytes, pack: &Bytes, probs: &mut [u8; PROBS]) -> bool
 /// `out` has room for `capacity` bytes and `pack` holds `pack_size`, and nothing else uses either meanwhile.
 #[cfg(not(target_arch = "pi32v2"))]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn stage1_unpack(out: *mut u8, capacity: u32, pack: *const u8, pack_size: u32, probs: &mut [u8; PROBS]) -> bool {
+pub unsafe extern "C" fn stage1_unpack(
+    out: *mut u8,
+    capacity: u32,
+    pack: *const u8,
+    pack_size: u32,
+    probs: &mut [u8; PROBS],
+) -> bool {
     use core::slice::from_raw_parts;
-    let (out, pack) = unsafe { (from_raw_parts(out.cast(), capacity as usize), from_raw_parts(pack.cast(), pack_size as usize)) };
+    let (out, pack) = unsafe {
+        (
+            from_raw_parts(out.cast(), capacity as usize),
+            from_raw_parts(pack.cast(), pack_size as usize),
+        )
+    };
     unpack_stage1(out, pack, probs)
 }
