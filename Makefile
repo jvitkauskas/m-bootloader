@@ -21,9 +21,10 @@ CARGO ?= cargo
 RUST_SRC := $(wildcard rust/src/*.rs rust/src/*/*.rs) VERSION
 # What the RAM stage tells a host its version is.
 export STAGE_VERSION := $(shell cat VERSION)
-# Rust's optimisation level. z is smaller (rust/PORT.md), but only with -inline-minsize-hint-threshold, which the
-# linker and rustc have from pi32v2-llvm 23.1.6-2. Without it z is far bigger, and does not fit.
-RUST_OPT ?= s
+# Rust's optimisation level: z, the smallest (rust/PORT.md), with -inline-minsize-hint-threshold, which the linker and
+# rustc have from pi32v2-llvm 23.1.6-2 (without it z is far bigger, and does not fit). RUST_OPT=s builds without the
+# option, about 1% bigger.
+RUST_OPT ?= z
 ifeq ($(RUST_OPT),z)
 LINK += -mllvm -inline-minsize-hint-threshold=50
 RUST_HINT := -C llvm-args=-inline-minsize-hint-threshold=50

@@ -15,9 +15,6 @@ jobs:
   build:
     # The pi32v2 Rust compiler's package is for x86-64 with glibc 2.39 or later.
     runs-on: ubuntu-24.04
-    env:
-      # What is built, tested and released here: the Rust at its smallest (README, "Build").
-      RUST_OPT: z
     steps:
       - uses: actions/checkout@v4
         with:

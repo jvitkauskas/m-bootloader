@@ -59,21 +59,22 @@ stage 1 calls (`stage0.keep`, read from stage 1's object).
 
 ## Sizes
 
-Bytes. The package is the M-UPGRADE stream of the self-extracting installer.
+Bytes. The package is the M-UPGRADE stream of the self-extracting installer. The Rust is the default build,
+`RUST_OPT=z`.
 
 | | Limit | FM-1, C | FM-1, Rust | SMK-37, C | SMK-37, Rust |
 |---|---|---|---|---|---|
-| Stage 0 | | 2,752 | 2,836 | 2,752 | 2,836 |
-| Stage 1, unpacked | | 15,408 | 15,852 | 16,052 | 16,632 |
-| **Payload** | 16,112 | 13,717 | 14,239 | 14,182 | **14,768** |
-| **RAM** (stages and data) | 29,440 | 26,456 | 26,872 | 27,104 | **27,656** |
-| **Package** | 20,224 | 17,607 | 18,370 | 18,141 | **18,985** |
-| RAM stage | 23,324 | 8,436 | 8,456 | 8,516 | 8,584 |
-| Flash loader | 32,768 | 6,016 | 5,324 | 6,016 | 5,324 |
+| Stage 0 | | 2,752 | 2,776 | 2,752 | 2,776 |
+| Stage 1, unpacked | | 15,408 | 15,736 | 16,052 | 16,492 |
+| **Payload** | 16,112 | 13,717 | 14,112 | 14,182 | **14,608** |
+| **RAM** (stages and data) | 29,440 | 26,456 | 26,696 | 27,104 | **27,456** |
+| **Package** | 20,224 | 17,607 | 18,182 | 18,141 | **18,796** |
+| RAM stage | 23,324 | 8,436 | 8,468 | 8,516 | 8,600 |
+| Flash loader | 32,768 | 6,016 | 5,376 | 6,016 | 5,376 |
 
-The SMK-37 is the tight board. It keeps 1,344 bytes of payload, 1,784 of RAM and 1,239 of package, where the C had
+The SMK-37 is the tight board. It keeps 1,504 bytes of payload, 1,984 of RAM and 1,428 of package, where the C had
 1,930, 2,336 and 2,083. The C here is `main` built with the 23.1.6-1 toolchain. The Rust is built with the releases
-above.
+above. At `RUST_OPT=s` the SMK-37's payload is 14,768, its RAM 27,656 and its package 18,985.
 
 ### As each module moved (SMK-37)
 
@@ -91,6 +92,7 @@ above.
 | + `installer.c`, `stage.c`, `loader.c` | 14,991 | 27,824 | 19,179 |
 | the linker optimises stage 0 too | 14,878 | 27,712 | 19,167 |
 | less unsafe code (below) | 14,768 | 27,656 | 18,985 |
+| `z` with the inlining option (below), the default | 14,608 | 27,456 | 18,796 |
 
 Data-handling code cost most (`core.c`, `midi_update.c`, `sdboot.c`: about +17% of stage 1's share). Register code came out level.
 `boot.c` made the whole smaller, because the last C in stage 1 went with it and nothing crossed a language border any
@@ -102,7 +104,7 @@ Each line is a measurement on this code.
 
 | Choice | Effect | Used |
 |---|---|---|
-| `opt-level="s"`, not plain `"z"` | at `z`, FM-1 stage 1 is 17,304 against 15,944 and stage 0 is 3,256 against 2,892; the SMK-37 does not link | `s`, or `z` with the compiler change below |
+| `opt-level="s"`, not plain `"z"` | at `z`, FM-1 stage 1 is 17,304 against 15,944 and stage 0 is 3,256 against 2,892; the SMK-37 does not link | `z` with the compiler change below; `s` is the other that fits |
 | The linker's whole-program optimisation, not rustc's (`-C lto` on a staticlib) | stage 1: 16,744 against 18,104. Stage 0: 2,780 against 2,892. Loader: 5,316 against 6,100 | the linker's |
 | Full LTO bitcode (`-Clto=fat`), not rustc's default ThinLTO bitcode | with half of `core.c` ported, stage 1 was 16,320 against 16,912: the linker does not optimise across the two kinds, so nothing inlined between C and Rust | full |
 | A global that isn't all zeros | the USB state held an empty slice (a non-null pointer), which put its 216 bytes in the image | all zeros |
@@ -134,7 +136,7 @@ in the code that goes into each image (`-Zunpretty=expanded`):
 | Installer | 128 | 39 | 37 | 11 |
 | Flash loader | 133 | 62 | 38 | 16 |
 
-What changed, and what it cost on the SMK-37:
+What changed, and what it cost on the SMK-37, at `RUST_OPT=s`:
 
 | Change | Payload | Checked by the compiler now |
 |---|---|---|
@@ -188,13 +190,12 @@ release `pi32v2-1.100.0-1` is built on that LLVM.
 
 | Change | Effect here (SMK-37) | Used here |
 |---|---|---|
-| `-inline-minsize-hint-threshold=50`: in size-minimum code, callees that ask to be inlined get a threshold of their own | At `z`: payload 14,608 against 14,768 at `s`, RAM 27,456 against 27,656, package 18,796 against 18,985. Stage 0 is 2,776 against 2,836 | `make RUST_OPT=z`, with that LLVM |
+| `-inline-minsize-hint-threshold=50`: in size-minimum code, callees that ask to be inlined get a threshold of their own | At `z`: payload 14,608 against 14,768 at `s`, RAM 27,456 against 27,656, package 18,796 against 18,985. Stage 0 is 2,776 against 2,836 | the default |
 | The machine outliner for pi32v2 (`-enable-machine-outliner`) | Stage 1 16,576 against 16,744, but its payload 15,168 against 14,878 (before the unsafe code was reduced): the packer does better with repeats than with calls to them | no |
 | Variadic prologues pass the machine verifier | none: found while verifying outlined code | |
 
-- **`RUST_OPT=z`** passes the option to the linker and to rustc. The default stays `s`; the workflow builds `z`,
-  so its artifacts and a release are `z`. Asking for `z` with a linker that lacks the option, one before
-  23.1.6-2, fails at once.
+- **`RUST_OPT=z`**, the default, passes the option to the linker and to rustc. Asking for `z` with a linker that
+  lacks the option, one before 23.1.6-2, fails at once. `RUST_OPT=s` builds without it.
 - **How the two were checked.** pi32v2-isa's `tools/llvm/ctest.py`, which runs 3,328 calls in the simulator and
   compares them with JieLi's compiler, agrees on all of them at `-Oz`, `-Os` and `-O2`, with the outliner, and
   with both options. The machine verifier passes on this crate with the outliner on. The pi32v2 and inliner lit
@@ -226,7 +227,7 @@ Not done:
   boards' packs: stage 1 came back byte for byte, the installer unpacked in place as its package carries it, and
   packs that were cut, damaged or given too little room were refused. Stage 0 as a whole did not run there, and
   nothing else did.
-- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,881). Its requests were not tried.
+- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,725). Its requests were not tried.
 - **USB MIDI** (`usb_midi.rs`) has no test at all, as in C.
 - **m-apps** builds its drivers from this repository's `src/*.c`, which are gone here.
 - **Elite builds** differ from the Pro only in the package's model name, as before.
