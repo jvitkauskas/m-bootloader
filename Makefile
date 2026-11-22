@@ -79,9 +79,13 @@ build/boot_version.h: FORCE VERSION tools/version.py
 	python3 tools/version.py $@
 FORCE:
 
+# What changes the Rust without changing a file: a build with another RUST_OPT starts the Rust again.
+build/rust/options: FORCE
+	@mkdir -p $(@D)
+	@echo 'RUST_OPT=$(RUST_OPT)' | cmp -s - $@ || echo 'RUST_OPT=$(RUST_OPT)' > $@
 # Rust's core library for pi32v2, built once from the compiler's sources, as bitcode. -Clto=fat makes that the kind of
 # bitcode C's is: the linker keeps rustc's usual kind (for ThinLTO) apart from C's, and couldn't optimise across them.
-build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile
+build/rust/sysroot.stamp: rust/sysroot/Cargo.toml rust/sysroot/src/lib.rs Makefile build/rust/options
 	@mkdir -p build/rust/sysroot/$(RUST_LIB)
 	$(CARGO) clean --quiet --manifest-path rust/sysroot/Cargo.toml --target-dir build/rust/target
 	CARGO_TARGET_DIR=build/rust/target CARGO_PROFILE_RELEASE_OPT_LEVEL=$(RUST_OPT) RUSTC_BOOTSTRAP=1 RUSTC=$(RUSTC) RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort $(RUST_HINT) --remap-path-prefix=$(CURDIR)=. -Clto=fat" \
