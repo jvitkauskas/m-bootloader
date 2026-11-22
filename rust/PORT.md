@@ -1,7 +1,8 @@
 # m-bootloader in Rust
 
 Every C source of version 2.4 (`main` at `121cfbe`) was replaced with Rust. It builds every product, passes every
-test, and stays inside every size limit. **Nothing of it has run on a unit.**
+test, and stays inside every size limit. **It has had its first runs on an FM-1 and an SMK-37 Pro** ("On
+hardware", below).
 
 ## What changed
 
@@ -203,7 +204,7 @@ release `pi32v2-1.100.0-1` is built on that LLVM.
   neither option is on by default.
 - **The `z` build here:** `make RUST_OPT=z test`, `sanitize` and `reproducible` pass. Its unpacker returned both
   boards' stage 1 in the simulator. Its clock set-up calls `settle` as the C does, where the `s` build inlines the
-  loops. It has not run on a unit either.
+  loops. On hardware it has run on both units ("On hardware").
 - **The outliner on unpacked code:** the flash loader 5,272 against 5,316, pi32v2-isa's `ctest.c` 3,318 against
   3,520.
 
@@ -218,16 +219,80 @@ Not done:
 3. **Making the inlining option the target's default** in rustc or LLVM. It would change C built at `-Oz` wherever
    that has `inline` functions, so I left it a switch.
 
+## On hardware
+
+One FM-1 with the older flash chip and one SMK-37 Pro, on 2026-11-22, with `2.4-7b67881` and then, from its
+packages, `2.4-46af0f5`, which is the same code at `z`. The tables are the `s` build of `2.4-7b67881` on the FM-1;
+the `z` build, which is the default now, and the SMK-37 follow them.
+
+By programs: M-Flasher 0.12.1, and a script speaking §11.6 over USB MIDI with commands that only read. The screen
+was read with a camera.
+
+| What | Result |
+|---|---|
+| The flash loader, in the second slot from download mode, the flash untouched | Identity, flash ID and unique ID as the released loader gives them. M-Flasher then found it running and used it: 1 MiB read at 855 KB/s, the chip's CRC-32 matching, and a backup byte for byte the released loader's. Its rows on the screen. |
+| The flash loader writing, alone in the first slot | M-Flasher restored a backup with other firmware through it (197 sectors erased and programmed, 788 KiB, in 11 s, the chip's CRC-32 matching), then the first state again. Read back in a new session with the released loader, the flash was byte for byte as before the test. |
+| The flash loader's refusals, sent as SCSI commands | A write with a wrong CRC (refusal 2, cleared once read), one of 4,352 bytes (1, and the next command answered), one past the end (3), an erase off a sector's start (3), a read whose lengths disagree (7): each refused, and the flash's CRC-32 the same afterwards. A 16,384-byte read and a sector's CRC-16 right. Not sent: a chip erase, an efuse burn, an erase past the end (§12.5). |
+| The RAM stage, from download mode | On USB as "FM-1 Update". Identity, info and the CRC-32 of the whole flash right; 2,048 reads of 512 bytes, each as the backup has it; reads past the end refused; the download-mode request. Its text on the screen. |
+| The bootloader, installed with M-Flasher | The stock firmware (016) started. Nothing outside the boot area changed. |
+| Firmware with one bit flipped, with a sector erased, and with its first sector erased | Not started. MIDI mode opened by itself, showing `APP BAD CRC`, `APP INCOMPLETE` and `APP NOT FOUND`, and answered: identity, info, the CRC-32 and reads of the flash as it then was. |
+| A RAM app over MIDI, from that MIDI mode | m-apps' `hello` was loaded in 10 parts and started with the 60 MHz clock; when it returned after its 10 s, the screen was drawn again and MIDI mode answered. |
+| The restart request, from that MIDI mode | The unit left USB in 0.2 s and came back. |
+| A test build, MIDI mode by request | The menu's screen (version, `APP OK`, `MIDI MODE`). The same reads and refusals as the RAM stage, against a new backup. The download-mode request. |
+| A test build, the SD card item by request | `/MBOOT/MENU.BIN` of the card in the unit (m-apps' launcher) was loaded and started. |
+
+By hand, on the same unit with the build that is not a test build (for what was tried by hand later, with `z` and
+on both units, see the end of this section):
+
+- the menu;
+- REC for download mode;
+- Felucca installed through MIDI mode;
+- the SD card item: m-apps' apps, back from an app to the launcher, and back to the bootloader's menu.
+
+Starting looked as fast as with 2.4's C.
+
+`BOOT ANYWAY`, by hand, started firmware that had one bit flipped.
+
+**The `z` build** went through the tests by programs on the same unit, and passed each: its flash loader (the reads,
+the refusals, a sector written and written back), its RAM stage (the reads, a RAM app), and its bootloader installed
+(the firmware started; with the firmware damaged in the three ways, the three verdicts, MIDI mode by itself with
+its reads, a RAM app, the restart request). By hand, `BOOT ANYWAY` was tried with it.
+
+**The SMK-37 Pro** (another flash chip, Felucca's firmware) had the `z` build only, by programs only, and each test
+passed: the flash loader (the reads, the refusals, a sector written and written back), the RAM stage (its text on
+the SMK-37's panel, the reads, a RAM app), and the bootloader installed. With that, the firmware started, nothing
+outside the boot area changed, and M-Flasher still found the calibration and its copy. With the firmware damaged
+in the three ways: the three verdicts on the panel, MIDI mode by itself with its reads, a RAM app, the restart
+request. (Its firmware, which M-Flasher names SLOOP 2.7.1, is on USB as Felucca.)
+
+Its calibration guard (§9.3), with one sector erased through the flash loader each time, as M-Flasher does not
+write factory data from a changed image: with the calibration erased, the next start put it back from the copy;
+with the copy erased, the next start made it again. Each time the flash came back byte for byte as it was.
+
+**By hand, afterwards, with the `z` build** (reported by the owner, each as passed):
+
+- on the SMK-37, what was tried by hand on the FM-1: the menu, REC for download mode, the SD card item;
+- the bootloader installed from its M-UPGRADE package, on the FM-1 and on the SMK-37: the installer and its
+  self-extracting wrapper, which nothing else here had run;
+- Baud Girl installed from its web installer, with the bootloader present;
+- on the FM-1, M-VAVE's own update from V15 to V16 through M-UPGRADE, which puts the stock bootloader back, and
+  from V16 to V15.
+
+Not tried: M-VAVE's own update on the SMK-37, as there is no other version of its firmware to update to and
+M-UPGRADE refuses the version a unit has. Not reported: the RAM stage's M-UPGRADE packages, and the `s` build on the
+SMK-37.
+
 ## What is not known
 
-- **Hardware.** Not run on a unit. The clock set-up's `nop` loops and `wait_mask` compile to the same instructions
-  as the C (compared in the disassembly). The USB controller's access spacing, the SPI and DMA paths, and everything
-  timing-related have not been compared instruction for instruction.
+- **Timing.** The clock set-up's `nop` loops and `wait_mask` compile to the same instructions as the C (compared
+  in the disassembly). The USB controller's access spacing, the SPI and DMA paths, and everything else
+  timing-related have not been compared instruction for instruction; on the two units they worked.
 - **The unpacker on the target.** The Rust unpacker, linked by itself, ran in pi32v2-isa's simulator on both
   boards' packs: stage 1 came back byte for byte, the installer unpacked in place as its package carries it, and
   packs that were cut, damaged or given too little room were refused. Stage 0 as a whole did not run there, and
   nothing else did.
-- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,725). Its requests were not tried.
-- **USB MIDI** (`usb_midi.rs`) has no test at all, as in C.
+- **A test build** (`TEST_REQUESTS=1`) builds and fits (SMK-37 payload 14,725). Its requests were tried on the FM-1
+  only.
+- **USB MIDI** (`usb_midi.rs`) has no test here, as in C: what is known of it is from the two units.
 - **m-apps** builds its drivers from this repository's `src/*.c`, which are gone here.
 - **Elite builds** differ from the Pro only in the package's model name, as before.
