@@ -8,10 +8,10 @@ simulated chip and flash in `tests/boot_sim.c`, `tests/boot_sim.h` and
 the wide-read check and the clean-up after an updater returns come from the
 second implementation.
 
-The menu font in `src/display.c` is the MIT font supplied by the
+The menu font in `rust/src/display.rs` is the MIT font supplied by the
 specification's author in [docs/SPEC.md](docs/SPEC.md) Appendix A.
 
-`src/usb_midi.c` was written from hardware facts (register addresses, bit
+`rust/src/usb_midi.rs`, C until 2.4, was written from hardware facts (register addresses, bit
 meanings and the order the controller needs them in) found in JieLi's AC79 SDK
 (Apache-2.0) and in felucca-bsp's `chip/fm1_usb.h` (MPL-2.0). No code was taken
 from either. Its descriptors follow the USB-MIDI 1.0 specification.

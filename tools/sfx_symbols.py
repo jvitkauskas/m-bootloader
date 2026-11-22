@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """The addresses of sfx_pack and sfx_pack_end in a linked self-extracting installer, for sfx-layout check: the pack
-src/sfx.c unpacks, as the linker placed it. Usage: sfx_symbols.py <llvm-nm> <sfx.elf>"""
+rust/src/sfx.rs unpacks, as the linker placed it. Usage: sfx_symbols.py <llvm-nm> <sfx.elf>"""
 import subprocess
 import sys
 

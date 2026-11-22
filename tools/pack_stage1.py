@@ -12,7 +12,7 @@ HEADER = 8
 
 
 def call_filter(data):
-    """Make relative calls absolute, so repeated calls look alike. Undone in src/upkr.c."""
+    """Make relative calls absolute, so repeated calls look alike. Undone in rust/src/upkr.rs."""
     out, at = bytearray(data), 0
     while at+4 <= len(out):
         if out[at] == 0xbf and out[at+1] == 0xea:

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Entry of the RAM stage (src/stage.c). It never returns, so it leaves the caller's stack at once,
+/* Entry of the RAM stage (rust/src/stage.rs). It never returns, so it leaves the caller's stack at once,
  * and passes on r0 and r1 untouched. */
 .section .entry,"ax",@progbits
 .global stage_entry

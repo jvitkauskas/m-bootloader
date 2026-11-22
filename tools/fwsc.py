@@ -2,7 +2,7 @@
 """Build M-UPGRADE packages (.fwsc) that install this bootloader (docs/SPEC.md §5.6).
 
 A package holds one file, ota.bin: the updater M-UPGRADE has the unit's
-firmware store and the bootloader run. Ours is the installer (src/installer.c),
+firmware store and the bootloader run. Ours is the installer (rust/src/installer.rs),
 which writes only the bootloader. No M-VAVE firmware is in the package. Its
 identity is the model and a version the unit does not have (M-UPGRADE refuses
 an equal one); the unit keeps reporting its firmware's version afterwards.
@@ -216,7 +216,7 @@ def updater_code(stream):
 
 def package(variant, container, installer, version='099', staged=None):
     """The package for variant: identity, header, and ota.bin with the installer, or with staged, the installer
-    self-extracting (src/sfx.c), which the build has checked unpacks to it."""
+    self-extracting (rust/src/sfx.rs), which the build has checked unpacks to it."""
     board = VARIANTS[variant][0]
     if validate(container) != board or installer.count(container) != 1:
         raise ValueError('installer does not carry this board\'s bootloader')
