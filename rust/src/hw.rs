@@ -109,12 +109,24 @@ pub fn irq_off() {
     }
 }
 
-/// `N` bytes of the retained area, which survives a reset (docs/SPEC.md §6.1), from `OFFSET`: inside the area, or this
-/// does not compile.
-pub fn retained<const OFFSET: usize, const N: usize>() -> &'static mut [u8; N] {
-    const { assert!(OFFSET + N <= 0x280) };
-    // Safety: RAM that is this program's to read and write. No caller keeps two of these at once.
-    unsafe { &mut *((0x01c7_fd80 + OFFSET) as *mut [u8; N]) }
+/// The retained area, which survives a reset and is shared with the ROM and the firmware (docs/SPEC.md §6.1). An
+/// entry claims it, and what is borrowed from it lasts no longer than the next use of it: two references into the
+/// area can't be alive at once.
+pub struct Retained(());
+
+impl Retained {
+    /// # Safety
+    /// Nothing else, here or in another image, uses the area while a reference from this is alive.
+    pub unsafe fn claim() -> Retained {
+        Retained(())
+    }
+
+    /// `N` bytes of the area from `OFFSET`: inside it, or this does not compile.
+    pub fn bytes<const OFFSET: usize, const N: usize>(&mut self) -> &mut [u8; N] {
+        const { assert!(OFFSET <= 0x280 && N <= 0x280 - OFFSET) };
+        // Safety: RAM that is this program's to read and write, as whoever claimed it has said.
+        unsafe { &mut *((0x01c7_fd80 + OFFSET) as *mut [u8; N]) }
+    }
 }
 
 /// Text for the screen: NUL-terminated, as the C that is left takes it. One word, where a `&str` is two.

@@ -14,14 +14,16 @@ pub use own::*;
 #[cfg(any(stage0, boot_sim))]
 mod own {
     use crate::board::{KEY_RECOVERY, board_hold, board_init};
-    use crate::hw::{Reg, retained, sync_cpu};
+    use crate::hw::{Reg, Retained, sync_cpu};
     use crate::platform::{hal_clock_a, hal_early, hal_fault, hal_reset, p33_read, p33_write};
 
     const SMK: bool = cfg!(smk);
     /// Restarts the chip in its ROM's USB download mode (§4.2).
     #[unsafe(no_mangle)]
     pub extern "C" fn rom_download() -> ! {
-        *retained::<0, _>() = *b"usb_update_mode\0";
+        // Safety: whoever calls this holds no reference into the retained area, and the ROM reads it after the reset.
+        let mut retained = unsafe { Retained::claim() };
+        *retained.bytes::<0, _>() = *b"usb_update_mode\0";
         sync_cpu();
         hal_reset()
     }
@@ -108,7 +110,6 @@ mod own {
             rom_download();
         }
         // Safety: stage 1, just unpacked and checked.
-        #[allow(unused_unsafe)]
         unsafe {
             stage1_entry(device)
         };

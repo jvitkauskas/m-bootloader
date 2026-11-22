@@ -3,7 +3,7 @@
 //! (docs/SPEC.md §11.7). M-UPGRADE's route stages it like an updater, and the installed bootloader, stock or ours,
 //! runs it (`stage_ota`). From download mode, M-Flasher's run-ram starts it, which leaves the flash alone.
 use crate::display::{self, GREEN, RED, WHITE, YELLOW};
-use crate::hw::{Text, irq_off, retained, sync_cpu};
+use crate::hw::{Retained, Text, irq_off, sync_cpu};
 use crate::midi_update::{self, Host, Outcome, Unit, mu_messages};
 use crate::platform::{
     self, flash_capacity, flash_erase, flash_init, flash_jedec, flash_release, flash_uid, hal_delay_us, hal_early, hal_efuse, hal_reset,
@@ -157,6 +157,8 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     irq_off();
     // Safety: this image's own data, which nothing has used yet.
     unsafe { core::ptr::write_bytes(&raw mut __bss_start, 0, (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start)) };
+    // Safety: no reference into the retained area is kept across anything else that runs, such as an app.
+    let mut retained = unsafe { Retained::claim() };
     hal_early();
     // The bootloader that started us has set the 60 MHz LSB clock (§3.2).
     #[cfg(stage_ota)]
@@ -168,7 +170,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     #[cfg(stage_ota)]
     if flash_capacity() != 0 {
         crate::installer::retire_flash_request(_stream_end);
-        *retained::<8, 2>() = [0; 2];
+        *retained.bytes::<8, 2>() = [0; 2];
         sync_cpu();
     }
     let key = (hal_efuse(1, 3) >> 8) as u16;
@@ -184,7 +186,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
             usb_midi_stop();
             flash_release();
             if r == Outcome::Download {
-                *retained::<0, _>() = *b"usb_update_mode\0";
+                *retained.bytes::<0, _>() = *b"usb_update_mode\0";
                 sync_cpu();
             }
             hal_reset();

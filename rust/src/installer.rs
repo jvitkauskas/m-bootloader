@@ -4,7 +4,7 @@
 //! checks them, retires the update request, in RAM and in flash, and resets into the new bootloader.
 use crate::display::{self, GREEN, RED, WHITE, YELLOW};
 use crate::formats::{self, BOOT_AREA, Header};
-use crate::hw::{Text, irq_off, retained, sync_cpu};
+use crate::hw::{Retained, Text, irq_off, sync_cpu};
 use crate::platform::{
     self, flash_capacity, flash_erase, flash_init, flash_release, hal_delay_us, hal_early, hal_fault_clear, hal_reset, hal_timer_clock,
 };
@@ -111,7 +111,9 @@ pub extern "C" fn installer_main(_context: *mut u8, stream_end: u32) -> ! {
     if flash_capacity() != 0 {
         retire_flash_request(stream_end);
     }
-    *retained::<8, 2>() = [0; 2];
+    // Safety: nothing else runs until the reset.
+    let mut retained = unsafe { Retained::claim() };
+    *retained.bytes::<8, 2>() = [0; 2];
     sync_cpu();
     if screen {
         display::text(6, WHITE, text!(""));

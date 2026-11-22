@@ -3,11 +3,12 @@
 //!
 //! Its data is a set of globals, as in C, and for one reason: MIDI mode calls back in (the `mu_` hooks below) while
 //! the menu that started it is still running. So nothing here keeps a reference to a global across a call that can
-//! reach a hook: each use takes it afresh.
+//! reach a hook: each use takes it afresh. The work buffer is not one of them: `boot_main` takes it once and passes it
+//! down, and no hook has a way to it.
 use crate::board::{KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait};
 use crate::formats::{self, App, AppState, Config, Flash, Guard, Header, Request, Updater, Work, crc16, le16};
 use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
-use crate::hw::{Text, irq_off, retained, sync_cpu};
+use crate::hw::{Retained, Text, irq_off, sync_cpu};
 use crate::platform::{
     Chip, flash_capacity, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
     hal_reset, hal_xip,
@@ -55,10 +56,6 @@ static SCREEN_READY: Global<bool> = Global::new(false);
 static REASON: Global<Option<Text>> = Global::new(None);
 
 // Safety, for these: see the top of the file.
-fn work() -> &'static mut Work {
-    unsafe { &mut WORK.get().0 }
-}
-
 fn request() -> &'static mut Request {
     unsafe { &mut REQUEST.get().0 }
 }
@@ -137,14 +134,14 @@ impl Line {
 }
 
 #[inline(never)]
-fn identify() {
+fn identify(work: &mut Work) {
     JEDEC.set(flash_jedec());
     let capacity = flash_capacity();
     let mut mac = [255; 8];
     UNIT_KEY.set((hal_efuse(1, 3) >> 8) as u16);
     let (r2, r3) = (hal_efuse(0, 2), hal_efuse(0, 3));
     TRIM.set((r2 | r3 & 0xfff2_38fc) as u16);
-    let (page, _) = work().split_first_chunk_mut::<256>().unwrap();
+    let (page, _) = work.split_first_chunk_mut::<256>().unwrap();
     if capacity >= 256 && Chip.read(capacity - 256, page) {
         mac = *page[64..].first_chunk().unwrap();
         let nonzero = page[..8].iter().any(|&b| b != 0);
@@ -235,11 +232,11 @@ mod midi {
     }
 
     /// MIDI mode's protocol, until it ends. The simulated chip's tests have their own.
-    fn run(written: &mut bool) -> Outcome {
+    fn run(work: &mut Work, written: &mut bool) -> Outcome {
         #[cfg(not(boot_sim))]
-        return midi_update::run::<Menu>(UNIT_KEY.read(), work(), written);
+        return midi_update::run::<Menu>(UNIT_KEY.read(), work, written);
         #[cfg(boot_sim)]
-        return midi_update::mu_run(UNIT_KEY.read(), work(), written);
+        return midi_update::mu_run(UNIT_KEY.read(), work, written);
     }
 
     #[unsafe(no_mangle)]
@@ -343,7 +340,7 @@ mod midi {
     }
 
     /// Only returns if nothing was written.
-    pub fn mode() {
+    pub fn mode(work: &mut Work) {
         let mut written = false;
         screen();
         // (With nobody there, PLAY may be stuck: nothing waits for it.)
@@ -355,7 +352,7 @@ mod midi {
         board_init(SMK);
         usb_midi_start();
         let r = loop {
-            let r = run(&mut written);
+            let r = run(work, &mut written);
             if r == Outcome::Download {
                 download_screen();
             }
@@ -456,17 +453,17 @@ const MIDI_MODE: u8 = 5;
 
 /// Whether to start the app without checking it.
 #[inline(never)]
-fn menu() -> bool {
+fn menu(work: &mut Work, retained: &mut Retained) -> bool {
     board_init(SMK);
     if !screen() {
         rom_download();
     }
     display::text(13, YELLOW, text!("CHECKING"));
     if MOUNTED.read() {
-        formats::app_check(&Chip, app(), work());
+        formats::app_check(&Chip, app(), work);
     }
     let mut updates = 0;
-    formats::request_scan(&Chip, header().alignment, work().first_chunk_mut().unwrap(), Some(&mut updates));
+    formats::request_scan(&Chip, header().alignment, work.first_chunk_mut().unwrap(), Some(&mut updates));
     let card = sd_probe(60);
     let (mut selection, mut last, mut previous, mut stable) = (0, 0, 0, 0);
     let mut first_draw = true;
@@ -501,7 +498,7 @@ fn menu() -> bool {
             line.append(text!(" B"));
         }
         line.show(4, WHITE);
-        let ram = formats::request_valid(retained::<8, _>());
+        let ram = formats::request_valid(retained.bytes::<8, _>());
         line = Line::new(if ram { text!("UPDATE RAM ") } else { text!("UPDATE ") });
         if updates != 0 {
             line.number(updates, 10, 0);
@@ -535,7 +532,7 @@ fn menu() -> bool {
                 midi::AUTO.set(false);
                 midi::ALONE.set(true);
                 midi::STUCK.set(board_keys());
-                midi::mode();
+                midi::mode(work);
                 midi::ALONE.set(false);
                 // Every key down now is taken as held, not pressed: the one that left, or a stuck one. Nothing waits
                 // for them to come up, so a key that stays down can't keep the menu away.
@@ -593,7 +590,7 @@ fn menu() -> bool {
         }
         #[cfg(any(not(boot_sim), midi_mode))]
         if action == MIDI_MODE {
-            midi::mode();
+            midi::mode(work);
             (last, previous, stable) = (0, 0, 0);
             first_draw = true;
             continue;
@@ -625,7 +622,7 @@ fn menu() -> bool {
         }
         if XIP_ATTEMPTED.read() {
             if action == BOOT_ANYWAY {
-                *retained::<0, _>() = *b"BOOTANY\0";
+                *retained.bytes::<0, _>() = *b"BOOTANY\0";
             }
             hal_reset();
         }
@@ -640,16 +637,16 @@ fn pointer<T>(p: &T) -> u32 {
 }
 
 #[inline(never)]
-fn update(ram: bool) {
+fn update(work: &mut Work, retained: &mut Retained, ram: bool) {
     let mut updater = Updater { load: 0, size: 0, stream_end: 0, crc: 0 };
     // Safety: the updater's context, which nothing else here uses.
     let (clock, memory, meta) = unsafe { (&mut CLOCK_META.get().0, &mut MEMORY_META.get().0, &mut UPDATE_META.get().0) };
     contract::config(clock, memory, &CONFIG);
     contract::updater(meta, app(), UNIT_KEY.read(), pointer(clock), if ram { 0x01c7_fdb0 } else { pointer(memory) });
-    *retained::<2, 2>() = [0; 2];
+    *retained.bytes::<2, 2>() = [0; 2];
     // Safety: where a staged updater is loaded and runs (§6.3), which is free until then.
     let load = unsafe { core::slice::from_raw_parts_mut(formats::UPDATE_LOAD as usize as *mut u8, formats::UPDATE_MAX as usize) };
-    if formats::updater_decode(&Chip, request(), load, work(), &mut updater) {
+    if formats::updater_decode(&Chip, request(), load, work, &mut updater) {
         #[cfg(boot_sim)]
         {
             unsafe extern "C" {
@@ -667,7 +664,7 @@ fn update(ram: bool) {
         REASON.set(Some(text!("UPDATER REFUSED")));
     }
     if ram {
-        *retained::<8, 2>() = [0; 2];
+        *retained.bytes::<8, 2>() = [0; 2];
     }
     sync_cpu();
     // §6.2: the updater may have changed both the SPI path and the contents.
@@ -683,7 +680,7 @@ fn update(ram: bool) {
         *app() = App::EMPTY;
     }
     if MOUNTED.read() {
-        formats::app_check(&Chip, app(), work());
+        formats::app_check(&Chip, app(), work);
     }
     if screen() {
         clear_rows(2, 14);
@@ -703,12 +700,18 @@ fn xip_crc() -> bool {
 }
 
 /// Stage 1's entry, from stage 0, with the ROM's boot-device descriptor.
+///
+/// # Safety
+/// Entered once, from stage 0 (or a test's stand-in for it), and not again while it runs: stage 1's data and the
+/// retained area are its own from here.
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".entry")]
-pub extern "C" fn boot_main(_device: *const u32) {
-    let mut bypass = contract::consume_bypass(retained::<0, _>());
+pub unsafe extern "C" fn boot_main(_device: *const u32) {
+    // Safety: as above. Every reference into the retained area ends before another image is called.
+    let mut retained = unsafe { Retained::claim() };
+    let mut bypass = contract::consume_bypass(retained.bytes::<0, _>());
     #[cfg(test_requests)]
-    let asked = asked::consume(retained::<0, _>());
+    let asked = asked::consume(retained.bytes::<0, _>());
     #[cfg(not(boot_sim))]
     {
         unsafe extern "C" {
@@ -727,11 +730,13 @@ pub extern "C" fn boot_main(_device: *const u32) {
     midi::AUTO.set(!want_menu);
     board_restore();
     let mut flash_ok = flash_init(1, 1);
-    identify();
+    // Safety: as above. Nothing else reaches the buffer: MIDI mode's hooks have no way to it.
+    let work = unsafe { &mut WORK.get().0 };
+    identify(work);
     flash_ok = flash_ok && flash_capacity() == 0x10_0000 && flash_init(WIDTH, BAUD);
     EFFECTIVE_WIDTH.set(flash_read_width());
     MOUNTED.set(flash_ok && formats::app_mount(&Chip, UNIT_KEY.read(), app(), header()));
-    let guarded = formats::guard(&Chip, SMK, work());
+    let guarded = formats::guard(&Chip, SMK, work);
     if !flash_ok {
         REASON.set(Some(text!("FLASH ERROR")));
     } else if guarded == Guard::Error {
@@ -741,25 +746,25 @@ pub extern "C" fn boot_main(_device: *const u32) {
     let mut updates_done = false;
     loop {
         if core::mem::take(&mut need_menu) {
-            bypass = menu() || bypass;
+            bypass = menu(work, &mut retained) || bypass;
         }
         if !updates_done {
             updates_done = true;
-            let choice = contract::update_choice(retained::<8, _>(), MOUNTED.read());
+            let choice = contract::update_choice(retained.bytes::<8, _>(), MOUNTED.read());
             let mut found = choice == 1;
             if found {
-                *request() = *retained::<8, _>();
+                *request() = *retained.bytes::<8, _>();
             } else if choice == 2 {
                 found = formats::request_scan(&Chip, header().alignment, request(), None);
             }
             if found {
-                update(choice == 1);
+                update(work, &mut retained, choice == 1);
                 if app().state != AppState::Ok {
                     need_menu = true;
                     continue;
                 }
-            } else if MOUNTED.read() && formats::uart_request(retained::<0, _>()) {
-                *retained::<0, 4>() = [0; 4];
+            } else if MOUNTED.read() && formats::uart_request(retained.bytes::<0, _>()) {
+                *retained.bytes::<0, 4>() = [0; 4];
                 hal_reset();
             }
         }
@@ -771,9 +776,9 @@ pub extern "C" fn boot_main(_device: *const u32) {
         let ok = hal_xip(app().base, UNIT_KEY.read(), EFFECTIVE_WIDTH.read(), BAUD);
         if ok && ((bypass && EFFECTIVE_WIDTH.read() == WIDTH) || xip_crc()) {
             // What the app is handed: §6.5.
-            *retained::<0xa0, _>() = header().bytes;
-            contract::app(retained::<{ APP_CONTEXT - RETAINED }, _>(), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
-            *retained::<0xd8, 12>() = [0; 12];
+            *retained.bytes::<0xa0, _>() = header().bytes;
+            contract::app(retained.bytes::<{ APP_CONTEXT - RETAINED }, _>(), app().base, UNIT_KEY.read(), TRIM.read(), &MAC.read());
+            *retained.bytes::<0xd8, 12>() = [0; 12];
             board_restore();
             display::release();
             SCREEN_READY.set(false);
@@ -801,7 +806,7 @@ pub extern "C" fn boot_main(_device: *const u32) {
         flash_init(EFFECTIVE_WIDTH.read(), BAUD);
         EFFECTIVE_WIDTH.set(flash_read_width());
         if MOUNTED.read() {
-            formats::app_check(&Chip, app(), work());
+            formats::app_check(&Chip, app(), work);
         }
         need_menu = true;
     }
@@ -812,8 +817,10 @@ pub extern "C" fn boot_main(_device: *const u32) {
 pub mod test {
     use super::*;
 
+    /// # Safety
+    /// No `boot_main` is running: the test has left it.
     #[unsafe(no_mangle)]
-    pub extern "C" fn boot_test_reset() {
+    pub unsafe extern "C" fn boot_test_reset() {
         unsafe {
             WORK.get().0.fill(0);
             *REQUEST.get() = Aligned([0; 80]);
