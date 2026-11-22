@@ -45,7 +45,7 @@ static unsigned t_app_calls, t_update_calls, t_resets, t_sd_calls;
 static bool t_sd_card, t_sd_leaves_spi_off;
 static const char *t_sd_result;
 
-/* The card is on the panel's bus, which the simulated chip doesn't model; these stand in for src/sdboot.c. */
+/* The card is on the panel's bus, which the simulated chip doesn't model; these stand in for rust/src/sdboot.rs. */
 bool sd_probe(unsigned lsb_mhz)
 {
     (void)lsb_mhz;

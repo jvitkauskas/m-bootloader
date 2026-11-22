@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* The menu's MIDI mode by default (src/boot.c midi_auto): boot.c built with MIDI_MODE on the boot simulator, the
+/* The menu's MIDI mode by default (rust/src/boot.rs, AUTO): boot.rs built with midi_mode on the boot simulator, the
  * USB MIDI side stubbed (no installer connects: the MIDI loop only polls its cancel). Built for the FM-1 and, with
  * BOARD_SMK, for the SMK-37 (its own binary and output line).
  * Without any fixture, on a blank flash (APP NOT FOUND, the menu comes up by itself) and on a synthetic app:
@@ -19,7 +19,7 @@
  * With the board's flash dump (argv[1], else testdata/<board>-stock.bin, 1 MiB) as an extra, its app damaged (one
  * bit in app.bin: APP BAD CRC): the same, and BOOT ANYWAY still reached. A missing dump is a SKIP of the extra only;
  * with REQUIRE_FIXTURES set in the environment it fails.
- * Not here: USB and the clocks. The simulator has no USB controller, and src/usb_midi.c doesn't build for the host,
+ * Not here: USB and the clocks. The simulator has no USB controller, and rust/src/usb_midi.rs isn't built for it,
  * so what an exiting app leaves in them is for hardware (docs/SPEC.md §12.5). */
 #define MIDI_MODE 1
 /* The RAM app mu_start_app() calls is t_ram_app (below), under the name MU_APP_RAM has here. */
@@ -290,8 +290,8 @@ static void t_midi_reasons(void)
 
 /* A synthetic app on a blank flash (the layout of tests/core_test.c's synthetic banks), for the chip key 980F the
  * simulator's efuse gives: the header, the application directory pointing at a bank at 0x10000, and the bank's area
- * head and app.bin, its 32 zero bytes the entry. Stored bytes, worked out apart from src/core.c from §5.1 and §5.2
- * (CRC16/XMODEM and ENC, checked against §5.1's vectors), so a wrong CRC or cipher in core.c can't pass here. */
+ * head and app.bin, its 32 zero bytes the entry. Stored bytes, worked out apart from rust/src/formats.rs from §5.1
+ * and §5.2 (CRC16/XMODEM and ENC, checked against §5.1's vectors), so a wrong CRC or cipher there can't pass here. */
 static const struct {
     uint32_t address;
     uint8_t bytes[32];

@@ -4,7 +4,8 @@
 //! Its data is a set of globals, as in C, and for one reason: MIDI mode calls back in (the `mu_` hooks below) while
 //! the menu that started it is still running. So nothing here keeps a reference to a global across a call that can
 //! reach a hook: each use takes it afresh. The work buffer is not one of them: `boot_main` takes it once and passes it
-//! down, and no hook has a way to it.
+//! down, and no hook has a way to it. MIDI mode has it while a RAM app runs: the app is loaded, whole, into its own
+//! RAM, from 0x01C30000 up to the retained area (`midi_update`), and is given nothing of the bootloader's.
 use crate::board::{
     KEY_NEXT, KEY_PREV, KEY_SELECT, board_hold, board_init, board_keys, board_restore, board_wait,
 };

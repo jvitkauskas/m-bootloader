@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* The self-extracting installer (src/sfx.c): its entry at 0x01C0A800, the pack at SFX_PACK (tools/sfx_layout.c
+/* The self-extracting installer (rust/src/sfx.rs): its entry at 0x01C0A800, the pack at SFX_PACK (tools/sfx_layout.c
  * place), the unpacker after it. objcopy fills the gap with zeros, which the stream's LZ4 takes to almost nothing. */
 ENTRY(sfx_entry)
 MEMORY { ram (rwx) : ORIGIN = 0x1c0a800, LENGTH = 0xc000 }

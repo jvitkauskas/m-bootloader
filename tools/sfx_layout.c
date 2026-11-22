@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: MIT */
-/* The self-extracting installer's layout (docs/SPEC.md §6.3), worked out with the unpacker the unit runs (src/upkr.c),
- * built for the host:
+/* The self-extracting installer's layout (docs/SPEC.md §6.3), worked out with the unpacker the unit runs
+ * (rust/src/upkr.rs), built for the host:
  *   sfx-layout place installer.bin installer.pack   where the pack starts, as an address, so that unpacking it in place
  *                                                   at 0x01C0A800 never writes over what is still to be read
- *   sfx-layout check installer.bin sfx.bin pack end  the image as the unit gets it, unpacked as src/sfx.c does it, from
- *                                                   the linked sfx_pack to sfx_pack_end (addresses): the installer
- *                                                   must come back byte for byte */
+ *   sfx-layout check installer.bin sfx.bin pack end  the image as the unit gets it, unpacked as rust/src/sfx.rs does
+ *                                                   it, from the linked sfx_pack to sfx_pack_end (addresses): the
+ *                                                   installer must come back byte for byte */
 #include "upkr.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "%s: the pack %s-%s is not in the image\n", argv[3], argv[4], argv[5]);
             return 1;
         }
-        /* as src/sfx.c calls it: room to the pack's end, the pack from sfx_pack to sfx_pack_end */
+        /* as rust/src/sfx.rs calls it: room to the pack's end, the pack from sfx_pack to sfx_pack_end */
         memset(ram, 0, sizeof(ram));
         memcpy(ram, image, n);
         if (at+STAGE1_HEADER <= end && (image[at+2] | (uint32_t)image[at+3] << 8) == size

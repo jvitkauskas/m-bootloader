@@ -14,6 +14,13 @@ pub const PROBS: usize = 641;
 const HAS_OFFSET: usize = 512;
 const OFFSET: usize = 513;
 const LENGTH: usize = 577;
+/// The bits of a number at most: `number()` reads contexts up to `2 * NUMBER_BITS` past its first.
+const NUMBER_BITS: u32 = 31;
+// Every context is inside the table, so no stream can make an index into it fail: the last is 639.
+const _: () = assert!(
+    LENGTH + 2 * (NUMBER_BITS as usize) == PROBS - 2
+        && OFFSET + 2 * (NUMBER_BITS as usize) < LENGTH
+);
 
 struct Upkr<'a> {
     input: &'a Bytes,
@@ -50,7 +57,7 @@ impl Upkr<'_> {
     fn number(&mut self, mut context: usize) -> u32 {
         let (mut n, mut at) = (0, 0);
         while self.bit(context) != 0 {
-            if at > 30 {
+            if at >= NUMBER_BITS {
                 return 0;
             }
             n |= self.bit(context + 1) << at;
