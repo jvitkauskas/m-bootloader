@@ -9,13 +9,16 @@
 #[cfg(not(stage1))]
 mod first {
     use core::ffi::c_void;
+    use core::mem::MaybeUninit;
 
     /// # Safety
     /// As C's.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn memcpy(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void {
+        let (dst, src) = (d.cast::<MaybeUninit<u8>>(), s.cast::<MaybeUninit<u8>>());
         for i in 0..n {
-            unsafe { d.cast::<u8>().add(i).write_volatile(*s.cast::<u8>().add(i)) };
+            // (As bytes that may not be initialised: the compiler copies structs with their padding.)
+            unsafe { dst.add(i).write_volatile(src.add(i).read()) };
         }
         d
     }
@@ -65,20 +68,21 @@ use first::__udivsi3;
 mod second {
     use super::__udivsi3;
     use core::ffi::{c_char, c_void};
+    use core::mem::MaybeUninit;
 
     /// # Safety
     /// As C's.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn memmove(to: *mut c_void, from: *const c_void, n: usize) -> *mut c_void {
-        let (d, s) = (to.cast::<u8>(), from.cast::<u8>());
+        let (d, s) = (to.cast::<MaybeUninit<u8>>(), from.cast::<MaybeUninit<u8>>());
         unsafe {
             if d as usize > s as usize {
                 for i in (0..n).rev() {
-                    d.add(i).write_volatile(*s.add(i));
+                    d.add(i).write_volatile(s.add(i).read());
                 }
             } else {
                 for i in 0..n {
-                    d.add(i).write_volatile(*s.add(i));
+                    d.add(i).write_volatile(s.add(i).read());
                 }
             }
         }
