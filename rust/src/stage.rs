@@ -4,13 +4,12 @@
 //! runs it (`stage_ota`). From download mode, M-Flasher's run-ram starts it, which leaves the flash alone.
 use crate::display::{self, GREEN, RED, WHITE, YELLOW};
 use crate::hw::{Text, irq_off, retained, sync_cpu};
-use crate::midi_update::{self, Outcome, Unit, mu_messages, mu_run};
+use crate::midi_update::{self, Host, Outcome, Unit, mu_messages};
 use crate::platform::{
-    flash_capacity, flash_erase, flash_init, flash_jedec, flash_program, flash_read, flash_release, flash_uid, hal_delay_us, hal_early, hal_efuse, hal_reset,
+    self, flash_capacity, flash_erase, flash_init, flash_jedec, flash_release, flash_uid, hal_delay_us, hal_early, hal_efuse, hal_reset,
 };
-use crate::usb_midi::{usb_midi_poll, usb_midi_send, usb_midi_start, usb_midi_stop};
+use crate::usb_midi::{self, usb_midi_poll, usb_midi_start, usb_midi_stop};
 use crate::{Aligned, Global, text};
-use core::ffi::c_void;
 
 const BOARD: u32 = if cfg!(smk) { 2 } else { 1 };
 const TITLE: Text = if cfg!(smk) { text!("SMK-37 M-FLASHER") } else { text!("FM-1 M-FLASHER") };
@@ -28,11 +27,47 @@ static SEEN: Global<u32> = Global::new(0);
 /// An install stopped partway: restarting now would leave no firmware, and stock has no way back.
 static STAY: Global<bool> = Global::new(false);
 
-/// # Safety
-/// `data` holds `size` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mu_send(data: *const u8, size: u32) {
-    unsafe { usb_midi_send(data, size) }
+/// The hooks of `midi_update`: what it needs of the unit.
+struct Stage;
+
+impl Host for Stage {
+    fn send(message: &[u8]) {
+        usb_midi::send(message)
+    }
+
+    fn idle() {
+        mu_idle()
+    }
+
+    fn cancel() -> bool {
+        mu_cancel()
+    }
+
+    fn read(address: u32, out: &mut [u8]) -> bool {
+        platform::read(address, out)
+    }
+
+    fn erase(address: u32) -> bool {
+        flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
+    }
+
+    fn program(address: u32, data: &[u8]) -> bool {
+        platform::program(address, data)
+    }
+
+    fn progress(writing: bool, percent: u32) {
+        mu_progress(writing, percent)
+    }
+
+    fn unit_info() -> Unit {
+        let mut uid = [0; 8];
+        flash_uid(&mut uid);
+        Unit { jedec: flash_jedec(), capacity: flash_capacity(), uid, kind: STAGE, version: text!(env!("STAGE_VERSION")) }
+    }
+
+    fn start_app() {
+        mu_start_app()
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -52,34 +87,6 @@ pub extern "C" fn mu_cancel() -> bool {
         WAITED.set(WAITED.read() + 1);
     }
     !STAY.read() && WAITED.read() >= NO_HOST_MS
-}
-
-/// # Safety
-/// `out` has room for `size` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mu_read(address: u32, out: *mut c_void, size: u32) -> bool {
-    unsafe { flash_read(core::ptr::null_mut(), address, out, size) }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_erase(address: u32) -> bool {
-    flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
-}
-
-/// # Safety
-/// `data` holds `size` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mu_program(address: u32, data: *const c_void, size: u32) -> bool {
-    unsafe { flash_program(core::ptr::null_mut(), address, data, size) }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_unit_info(unit: &mut Unit) {
-    unit.jedec = flash_jedec();
-    unit.capacity = flash_capacity();
-    flash_uid(&mut unit.uid);
-    unit.kind = STAGE;
-    unit.version = text!(env!("STAGE_VERSION")).as_ptr().cast();
 }
 
 fn show(row: u32, color: u16, text: Text) {
@@ -171,7 +178,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     loop {
         let mut written = false;
         // Safety: the one use of this buffer.
-        let r = mu_run(key, unsafe { &mut SECTOR.get().0 }, &mut written);
+        let r = midi_update::run::<Stage>(key, unsafe { &mut SECTOR.get().0 }, &mut written);
         if matches!(r, Outcome::Download | Outcome::Done | Outcome::Restart | Outcome::Cancelled) {
             hal_delay_us(200_000);
             usb_midi_stop();

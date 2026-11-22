@@ -2,8 +2,7 @@
 //! The update protocol itself: see the module above.
 use crate::Global;
 use crate::formats::{crc16, crc32, enc, le16, le32, put_le32};
-use super::{Outcome, SECTOR, Unit};
-use core::ffi::{CStr, c_void};
+use super::{Host, Outcome, SECTOR};
 
 /// The first address written, and the end: never the boot area, nor the key area at 0xFF000. On the SMK-37, not its
 /// Bluetooth pairing and calibration either, at 0xC0000 to 0xC1FFF: a package's bytes for those are left unwritten.
@@ -33,37 +32,6 @@ const APP_MAGIC: u32 = 0x3150_5041; // "APP1"
 const APP_FORMAT: u8 = 1;
 const RUNS_APPS: u8 = 1;
 
-// The hooks: what runs this (the bootloader's menu, or the RAM stage) provides them.
-unsafe extern "C" {
-    /// One whole F0..F7 message.
-    fn mu_send(data: *const u8, size: u32);
-    /// Runs USB, and takes about a millisecond.
-    safe fn mu_idle();
-    safe fn mu_cancel() -> bool;
-    fn mu_read(address: u32, out: *mut c_void, size: u32) -> bool;
-    safe fn mu_erase(address: u32) -> bool;
-    fn mu_program(address: u32, data: *const c_void, size: u32) -> bool;
-    /// Each pass counts 0 to 100: reading the package to check it, then writing it.
-    safe fn mu_progress(writing: bool, percent: u32);
-    fn mu_unit_info(unit: *mut Unit);
-    /// Runs the app loaded in RAM with USB stopped, then starts USB and what the app may have changed.
-    safe fn mu_start_app();
-}
-
-fn read(address: u32, out: &mut [u8]) -> bool {
-    unsafe { mu_read(address, out.as_mut_ptr().cast(), out.len() as u32) }
-}
-
-fn program(address: u32, data: &[u8]) -> bool {
-    unsafe { mu_program(address, data.as_ptr().cast(), data.len() as u32) }
-}
-
-fn unit_info() -> Unit {
-    let mut unit = Unit { jedec: 0, capacity: 0, uid: [0; 8], kind: 0, version: c"".as_ptr() };
-    unsafe { mu_unit_info(&mut unit) };
-    unit
-}
-
 fn app_ram(size: usize) -> &'static mut [u8] {
     // Safety: RAM that is the app's to be loaded into.
     unsafe { core::slice::from_raw_parts_mut(super::app_ram(), size) }
@@ -73,7 +41,7 @@ type Decoded = [u8; PACKET_MAX + 16];
 type Sector = [u8; SECTOR];
 type Crcs = [u16; MAX_SECTORS];
 
-// What the receiver shares with the rest: mu_rx() runs inside mu_idle(), so nothing here is borrowed across a hook.
+// What the receiver shares with the rest: mu_rx() runs inside the host's idle(), so nothing here is borrowed across a hook.
 static FRAME: Global<[u8; FRAME_MAX]> = Global::new([0; FRAME_MAX]);
 static FRAME_SIZE: Global<usize> = Global::new(0);
 static COLLECTING: Global<bool> = Global::new(false);
@@ -111,7 +79,7 @@ pub extern "C" fn mu_rx(b: u8) {
 }
 
 /// Sends cmd with its body, 8-to-7 packed.
-fn send_message(cmd: u8, body: &[u8]) {
+fn send_message<H: Host>(cmd: u8, body: &[u8]) {
     let size = body.len();
     let head = [0, 0x59, cmd, size as u8, (size >> 8) as u8, 0];
     // Safety: used only here, and mu_send() doesn't come back in.
@@ -139,17 +107,17 @@ fn send_message(cmd: u8, body: &[u8]) {
         bits = if bits > 7 { bits - 7 } else { 0 };
     }
     wire[n] = 0xf7;
-    unsafe { mu_send(wire.as_ptr(), n as u32 + 1) };
+    H::send(&wire[..=n]);
 }
 
-fn send_identity() {
+fn send_identity<H: Host>() {
     let mut id = [0; 27];
     id[..IDENTITY.len()].copy_from_slice(IDENTITY);
-    send_message(0x11, &id);
+    send_message::<H>(0x11, &id);
 }
 
-fn send_refusal() {
-    send_message(0, &[1]);
+fn send_refusal<H: Host>() {
+    send_message::<H>(0, &[1]);
 }
 
 /// The bytes of a frame, 7-to-8: how many, or 0 if they don't fit.
@@ -211,26 +179,26 @@ fn take(decoded: &mut Decoded) -> Kind {
 }
 
 /// Asks the host for the package's bytes from `address`, to fill `out`.
-fn ask(address: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
+fn ask<H: Host>(address: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
     let size = out.len();
     let a = address.to_le_bytes();
     let request = [0, a[0], a[1], a[2], a[3], size as u8, (size >> 8) as u8, 0];
     for _ in 0..TRIES {
-        send_message(0x30, &request);
+        send_message::<H>(0x30, &request);
         for _ in 0..TRY_MS {
-            mu_idle();
+            H::idle();
             let kind = take(decoded);
             // Until something is erased, the key and the soft key still get out.
             if kind == Kind::AskDownload {
                 DOWNLOAD_ASKED.set(true);
                 return false;
             }
-            if !ERASING.read() && mu_cancel() {
+            if !ERASING.read() && H::cancel() {
                 return false;
             }
             let Kind::Message(n) = kind else { continue };
             if decoded[2] == 0x11 && n == 7 {
-                send_identity();
+                send_identity::<H>();
             } else if decoded[2] == 0x30 && n == size + 15 && le32(decoded, 7) == address && le16(decoded, 11) as usize == size {
                 out.copy_from_slice(&decoded[14..14 + size]);
                 return true;
@@ -240,9 +208,9 @@ fn ask(address: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
     false
 }
 
-fn ask_parts(mut offset: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
+fn ask_parts<H: Host>(mut offset: u32, out: &mut [u8], decoded: &mut Decoded) -> bool {
     for part in out.chunks_mut(PACKET_MAX) {
-        if !ask(offset, part, decoded) {
+        if !ask::<H>(offset, part, decoded) {
             return false;
         }
         offset += PACKET_MAX as u32;
@@ -258,9 +226,9 @@ struct Package {
 }
 
 /// Finds it from the package's header.
-fn find_flash(sector: &mut Sector, decoded: &mut Decoded, package: &mut Package) -> Outcome {
+fn find_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, package: &mut Package) -> Outcome {
     let (header, _) = sector.split_first_chunk_mut::<HEADER>().unwrap();
-    if !ask_parts(0, header, decoded) {
+    if !ask_parts::<H>(0, header, decoded) {
         return Outcome::Lost;
     }
     enc(0xffff, &mut header[..0x40]);
@@ -283,9 +251,9 @@ fn find_flash(sector: &mut Sector, decoded: &mut Decoded, package: &mut Package)
 }
 
 /// The package's firmware must decrypt with this chip's key, and every byte must arrive intact.
-fn check_flash(sector: &mut Sector, decoded: &mut Decoded, crcs: &mut Crcs, package: &Package, key: u16) -> Outcome {
+fn check_flash<H: Host>(sector: &mut Sector, decoded: &mut Decoded, crcs: &mut Crcs, package: &Package, key: u16) -> Outcome {
     let line: &mut [u8; 32] = sector.first_chunk_mut().unwrap();
-    if !ask(package.offset + FIRST, line, decoded) {
+    if !ask::<H>(package.offset + FIRST, line, decoded) {
         return Outcome::Lost;
     }
     enc(key, line);
@@ -294,21 +262,21 @@ fn check_flash(sector: &mut Sector, decoded: &mut Decoded, crcs: &mut Crcs, pack
     }
     let (mut whole, mut at) = (0, 0);
     while at < package.size {
-        if !ask_parts(package.offset + at, sector, decoded) {
+        if !ask_parts::<H>(package.offset + at, sector, decoded) {
             return Outcome::Lost;
         }
         whole = crc16(whole, sector);
         crcs[at as usize / SECTOR] = crc16(0, sector);
-        mu_progress(false, at * 100 / package.size);
+        H::progress(false, at * 100 / package.size);
         at += SECTOR as u32;
     }
     if whole == package.crc { Outcome::Done } else { Outcome::BadPackage }
 }
 
-fn same(mut at: u32, data: &Sector, decoded: &mut Decoded) -> bool {
+fn same<H: Host>(mut at: u32, data: &Sector, decoded: &mut Decoded) -> bool {
     let got: &mut [u8; PACKET_MAX] = decoded.first_chunk_mut().unwrap();
     for part in data.chunks_exact(PACKET_MAX) {
-        if !read(at, got) || got != part {
+        if !H::read(at, got) || got != part {
             return false;
         }
         at += PACKET_MAX as u32;
@@ -316,73 +284,73 @@ fn same(mut at: u32, data: &Sector, decoded: &mut Decoded) -> bool {
     true
 }
 
-fn write_sector(offset: u32, at: u32, sector: &mut Sector, decoded: &mut Decoded, crcs: &Crcs, written: &mut bool) -> Outcome {
-    if !ask_parts(offset + at, sector, decoded) {
+fn write_sector<H: Host>(offset: u32, at: u32, sector: &mut Sector, decoded: &mut Decoded, crcs: &Crcs, written: &mut bool) -> Outcome {
+    if !ask_parts::<H>(offset + at, sector, decoded) {
         return Outcome::Lost;
     }
     if crc16(0, sector) != crcs[at as usize / SECTOR] {
         return Outcome::BadPackage;
     }
-    if same(at, sector, decoded) {
+    if same::<H>(at, sector, decoded) {
         return Outcome::Done;
     }
     *written = true;
-    if !mu_erase(at) {
+    if !H::erase(at) {
         return Outcome::FlashError;
     }
     let mut to = at;
     for part in sector.chunks_exact(PACKET_MAX) {
-        if !program(to, part) {
+        if !H::program(to, part) {
             return Outcome::FlashError;
         }
         to += PACKET_MAX as u32;
     }
-    if same(at, sector, decoded) { Outcome::Done } else { Outcome::FlashError }
+    if same::<H>(at, sector, decoded) { Outcome::Done } else { Outcome::FlashError }
 }
 
-fn install(key: u16, sector: &mut Sector, decoded: &mut Decoded, written: &mut bool) -> Outcome {
+fn install<H: Host>(key: u16, sector: &mut Sector, decoded: &mut Decoded, written: &mut bool) -> Outcome {
     // Safety: used only during an install, which is not entered twice.
     let crcs = unsafe { SECTOR_CRC.get() };
     let mut package = Package { offset: 0, size: 0, crc: 0 };
-    let mut r = find_flash(sector, decoded, &mut package);
+    let mut r = find_flash::<H>(sector, decoded, &mut package);
     if r == Outcome::Done {
-        r = check_flash(sector, decoded, crcs, &package, key);
+        r = check_flash::<H>(sector, decoded, crcs, &package, key);
     }
     if r != Outcome::Done {
         return r;
     }
     // The firmware's first sector goes last: until then, what's in flash can't pass as firmware.
-    mu_progress(false, 100);
-    mu_progress(true, 0);
+    H::progress(false, 100);
+    H::progress(true, 0);
     *written = true;
     ERASING.set(true);
-    if !mu_erase(FIRST) {
+    if !H::erase(FIRST) {
         return Outcome::FlashError;
     }
     let mut at = FIRST + SECTOR as u32;
     while at < package.size {
         if !KEEP.contains(&at) {
-            r = write_sector(package.offset, at, sector, decoded, crcs, written);
+            r = write_sector::<H>(package.offset, at, sector, decoded, crcs, written);
             if r != Outcome::Done {
                 return r;
             }
-            mu_progress(true, at * 100 / package.size);
+            H::progress(true, at * 100 / package.size);
         }
         at += SECTOR as u32;
     }
-    r = write_sector(package.offset, FIRST, sector, decoded, crcs, written);
+    r = write_sector::<H>(package.offset, FIRST, sector, decoded, crcs, written);
     if r != Outcome::Done {
         return r;
     }
-    mu_progress(true, 100);
+    H::progress(true, 100);
     // The host's "success" isn't needed: it only has to see that we finished.
-    ask(FINISH, &mut sector[..8], decoded);
+    ask::<H>(FINISH, &mut sector[..8], decoded);
     Outcome::Done
 }
 
 /// What's answering: a bootloader or a RAM stage, not a firmware or its update loader.
-fn send_info(key: u16) {
-    let unit = unit_info();
+fn send_info<H: Host>(key: u16) {
+    let unit = H::unit_info();
     let mut info = [0; 64];
     *info.first_chunk_mut().unwrap() = *b"MBOOT\x01";
     info[6] = unit.kind;
@@ -393,55 +361,54 @@ fn send_info(key: u16) {
     put_le32(&mut info, 14, unit.jedec);
     info[18..26].copy_from_slice(&unit.uid);
     let mut n = 28;
-    // Safety: the hook gives a NUL-terminated string.
-    for &b in unsafe { CStr::from_ptr(unit.version) }.to_bytes().iter().take(info.len() - 1 - n) {
+    for &b in unit.version.as_bytes().iter().take(info.len() - 1 - n) {
         info[n] = b;
         n += 1;
     }
-    send_message(0x12, &info[..n + 1]);
+    send_message::<H>(0x12, &info[..n + 1]);
 }
 
 /// Sends count bytes of raw flash from address, or the CRC-32 the chip computes of them. Both body layouts start with
 /// what stock firmware's read uses: provider (0, the flash), address, count.
-fn serve_read(cmd: u8, sector: &mut Sector, decoded: &mut Decoded, n: usize) {
-    let capacity = unit_info().capacity;
+fn serve_read<H: Host>(cmd: u8, sector: &mut Sector, decoded: &mut Decoded, n: usize) {
+    let capacity = H::unit_info().capacity;
     let (address, count) = (le32(decoded, 7), le32(decoded, 10) >> 8);
     if n != 15 || decoded[6] != 0 || count == 0 || address >= capacity || count > capacity - address || (cmd == 0x23 && count as usize > PACKET_MAX) {
-        return send_refusal();
+        return send_refusal::<H>();
     }
     decoded.copy_within(6..14, 0);
     if cmd == 0x23 {
         let end = 8 + count as usize;
-        if !read(address, &mut decoded[8..end]) {
-            return send_refusal();
+        if !H::read(address, &mut decoded[8..end]) {
+            return send_refusal::<H>();
         }
-        return send_message(cmd, &decoded[..end]);
+        return send_message::<H>(cmd, &decoded[..end]);
     }
     let (mut crc, mut at) = (u32::MAX, 0);
     while at < count {
         let part = &mut sector[..((count - at) as usize).min(SECTOR)];
-        if !read(address + at, part) {
-            return send_refusal();
+        if !H::read(address + at, part) {
+            return send_refusal::<H>();
         }
         crc = crc32(crc, part);
-        mu_idle();
+        H::idle();
         at += SECTOR as u32;
     }
     put_le32(decoded, 8, !crc);
-    send_message(cmd, &decoded[..12]);
+    send_message::<H>(cmd, &decoded[..12]);
 }
 
 /// The trailer comes first, so a wrong app costs one request.
-fn load_app(size: usize, decoded: &mut Decoded) -> bool {
+fn load_app<H: Host>(size: usize, decoded: &mut Decoded) -> bool {
     let mut trailer = [0; 8];
-    if size < 16 || size > APP_MAX || !ask(size as u32 - 8, &mut trailer, decoded) {
+    if size < 16 || size > APP_MAX || !ask::<H>(size as u32 - 8, &mut trailer, decoded) {
         return false;
     }
     if le32(&trailer, 0) != APP_MAGIC || (trailer[6] != 0 && trailer[6] != APP_BOARD) || trailer[7] != APP_FORMAT {
         return false;
     }
     let ram = app_ram(size);
-    if !ask_parts(0, ram, decoded) {
+    if !ask_parts::<H>(0, ram, decoded) {
         return false;
     }
     // The file's own trailer, not only the one asked for first.
@@ -450,20 +417,20 @@ fn load_app(size: usize, decoded: &mut Decoded) -> bool {
 }
 
 /// The body is "RUN", a zero and the app's size. The answer echoes it, once the app is loaded.
-fn run_app(n: usize, decoded: &mut Decoded) {
+fn run_app<H: Host>(n: usize, decoded: &mut Decoded) {
     let body: [u8; 8] = decoded[6..14].try_into().unwrap();
-    if n != 15 || le32(&body, 0) != RUN_MAGIC || !load_app(le32(&body, 4) as usize, decoded) {
-        return send_refusal();
+    if n != 15 || le32(&body, 0) != RUN_MAGIC || !load_app::<H>(le32(&body, 4) as usize, decoded) {
+        return send_refusal::<H>();
     }
-    send_message(0x25, &body);
-    mu_start_app();
+    send_message::<H>(0x25, &body);
+    H::start_app();
     FRAME_READY.set(false);
     COLLECTING.set(false);
 }
 
-/// Answers the updater's protocol until a package is installed or mu_cancel() says stop. Whether flash was changed is
+/// Answers the updater's protocol until a package is installed or the host's cancel() says stop. Whether flash was changed is
 /// in `written`.
-pub fn run(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
+pub fn run<H: Host>(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
     // Safety: the one use of it, for as long as this runs, and this is not entered twice.
     let decoded = unsafe { DECODED.get() };
     FRAME_READY.set(false);
@@ -472,41 +439,104 @@ pub fn run(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
     DOWNLOAD_ASKED.set(false);
     *written = false;
     loop {
-        mu_idle();
+        H::idle();
         match take(decoded) {
             Kind::AskUpgrade => {
-                let r = install(key, sector, decoded, written);
+                let r = install::<H>(key, sector, decoded, written);
                 if DOWNLOAD_ASKED.read() {
                     return Outcome::Download;
                 }
                 // Stopped with the key, before anything was erased.
-                return if r == Outcome::Lost && !*written && mu_cancel() { Outcome::Cancelled } else { r };
+                return if r == Outcome::Lost && !*written && H::cancel() { Outcome::Cancelled } else { r };
             }
             Kind::AskDownload => return Outcome::Download,
             Kind::AskRestart => return Outcome::Restart,
             Kind::Message(n) => match decoded[2] {
-                0x11 if n == 7 => send_identity(),
-                0x12 if n == 7 => send_info(key),
-                cmd @ (0x23 | 0x24) => serve_read(cmd, sector, decoded, n),
+                0x11 if n == 7 => send_identity::<H>(),
+                0x12 if n == 7 => send_info::<H>(key),
+                cmd @ (0x23 | 0x24) => serve_read::<H>(cmd, sector, decoded, n),
                 0x25 => {
-                    run_app(n, decoded);
+                    run_app::<H>(n, decoded);
                     if DOWNLOAD_ASKED.read() {
                         return Outcome::Download;
                     }
                 }
                 0x30 => {}
-                _ => send_refusal(),
+                _ => send_refusal::<H>(),
             },
             Kind::Nothing => {}
         }
-        if mu_cancel() {
+        if H::cancel() {
             return Outcome::Cancelled;
         }
     }
 }
 
-/// The C interface (include/midi_update.h): `sector` is SECTOR bytes of scratch.
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_run(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
-    run(key, sector, written)
+/// The C interface (include/midi_update.h), for the tests: `sector` is SECTOR bytes of scratch, and the hooks are C's.
+#[cfg(not(target_arch = "pi32v2"))]
+mod c {
+    use super::super::Unit;
+    use super::*;
+    use crate::text;
+    use core::ffi::c_void;
+
+    unsafe extern "C" {
+        fn mu_send(data: *const u8, size: u32);
+        safe fn mu_idle();
+        safe fn mu_cancel() -> bool;
+        fn mu_read(address: u32, out: *mut c_void, size: u32) -> bool;
+        safe fn mu_erase(address: u32) -> bool;
+        fn mu_program(address: u32, data: *const c_void, size: u32) -> bool;
+        safe fn mu_progress(writing: bool, percent: u32);
+        fn mu_unit_info(unit: *mut Unit);
+        safe fn mu_start_app();
+    }
+
+    struct Hooks;
+
+    impl Host for Hooks {
+        fn send(message: &[u8]) {
+            unsafe { mu_send(message.as_ptr(), message.len() as u32) }
+        }
+
+        fn idle() {
+            mu_idle()
+        }
+
+        fn cancel() -> bool {
+            mu_cancel()
+        }
+
+        fn read(address: u32, out: &mut [u8]) -> bool {
+            unsafe { mu_read(address, out.as_mut_ptr().cast(), out.len() as u32) }
+        }
+
+        fn erase(address: u32) -> bool {
+            mu_erase(address)
+        }
+
+        fn program(address: u32, data: &[u8]) -> bool {
+            unsafe { mu_program(address, data.as_ptr().cast(), data.len() as u32) }
+        }
+
+        fn progress(writing: bool, percent: u32) {
+            mu_progress(writing, percent)
+        }
+
+        fn unit_info() -> Unit {
+            let mut unit = Unit { jedec: 0, capacity: 0, uid: [0; 8], kind: 0, version: text!("") };
+            // Safety: the hook fills it in, with a NUL-terminated string that stays.
+            unsafe { mu_unit_info(&mut unit) };
+            unit
+        }
+
+        fn start_app() {
+            mu_start_app()
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn mu_run(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
+        run::<Hooks>(key, sector, written)
+    }
 }

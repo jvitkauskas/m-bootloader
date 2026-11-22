@@ -9,7 +9,7 @@ use crate::formats::{self, App, AppState, Config, Flash, Guard, Header, Request,
 use crate::display::{GREEN, GREY, RED, WHITE, YELLOW};
 use crate::hw::{Text, irq_off, retained, sync_cpu};
 use crate::platform::{
-    Chip,    flash_capacity, flash_erase, flash_init, flash_jedec, flash_program, flash_read, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
+    Chip,    flash_capacity, flash_erase, flash_init, flash_jedec, flash_read_width, flash_release, hal_delay_us, hal_efuse, hal_fault_clear,
     hal_reset, hal_xip,
 };
 use crate::sdboot::{sd_probe, sd_stage2};
@@ -176,10 +176,9 @@ fn release_select() {
 mod midi {
     use super::*;
     use crate::board::board_keys;
-    use crate::midi_update::{self, Outcome, Unit, mu_run};
-    use crate::platform::flash_uid;
-    use crate::usb_midi::{usb_midi_poll, usb_midi_send, usb_midi_start, usb_midi_stop};
-    use core::ffi::c_void;
+    use crate::midi_update::{self, Host, Outcome, Unit};
+    use crate::platform::{self, flash_uid};
+    use crate::usb_midi::{self, usb_midi_poll, usb_midi_start, usb_midi_stop};
 
     const BACK: Text = if SMK { text!("SEQ PLAY: BACK") } else { text!("PLAY: BACK") };
     const MENU_KEYS: Text = if SMK { text!("< > SEQ PLAY SEQ REC") } else { text!("OCT- OCT+ PLAY REC") };
@@ -192,11 +191,55 @@ mod midi {
     pub static ALONE: Global<bool> = Global::new(false);
     pub static STUCK: Global<u32> = Global::new(0);
 
-    /// # Safety
-    /// `data` holds `size` bytes.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn mu_send(data: *const u8, size: u32) {
-        unsafe { usb_midi_send(data, size) }
+    /// The hooks of `midi_update`: what it needs of the unit, from the menu.
+    pub struct Menu;
+
+    impl Host for Menu {
+        fn send(message: &[u8]) {
+            usb_midi::send(message)
+        }
+
+        fn idle() {
+            mu_idle()
+        }
+
+        fn cancel() -> bool {
+            mu_cancel()
+        }
+
+        fn read(address: u32, out: &mut [u8]) -> bool {
+            platform::read(address, out)
+        }
+
+        fn erase(address: u32) -> bool {
+            flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
+        }
+
+        fn program(address: u32, data: &[u8]) -> bool {
+            platform::program(address, data)
+        }
+
+        fn progress(writing: bool, percent: u32) {
+            mu_progress(writing, percent)
+        }
+
+        fn unit_info() -> Unit {
+            let mut uid = [0; 8];
+            flash_uid(&mut uid);
+            Unit { jedec: JEDEC.read(), capacity: flash_capacity(), uid, kind: BOOTLOADER, version: VERSION }
+        }
+
+        fn start_app() {
+            mu_start_app()
+        }
+    }
+
+    /// MIDI mode's protocol, until it ends. The simulated chip's tests have their own.
+    fn run(written: &mut bool) -> Outcome {
+        #[cfg(not(boot_sim))]
+        return midi_update::run::<Menu>(UNIT_KEY.read(), work(), written);
+        #[cfg(boot_sim)]
+        return midi_update::mu_run(UNIT_KEY.read(), work(), written);
     }
 
     #[unsafe(no_mangle)]
@@ -227,34 +270,6 @@ mod midi {
         let held = if keys & counted != 0 { HELD.read() + 1 } else { 0 };
         HELD.set(held);
         held >= 20
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_unit_info(unit: &mut Unit) {
-        unit.jedec = JEDEC.read();
-        unit.capacity = flash_capacity();
-        flash_uid(&mut unit.uid);
-        unit.kind = BOOTLOADER;
-        unit.version = VERSION.as_ptr().cast();
-    }
-
-    /// # Safety
-    /// `out` has room for `size` bytes.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn mu_read(address: u32, out: *mut c_void, size: u32) -> bool {
-        unsafe { flash_read(core::ptr::null_mut(), address, out, size) }
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_erase(address: u32) -> bool {
-        flash_erase(core::ptr::null_mut(), address, midi_update::SECTOR as u32)
-    }
-
-    /// # Safety
-    /// `data` holds `size` bytes.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn mu_program(address: u32, data: *const c_void, size: u32) -> bool {
-        unsafe { flash_program(core::ptr::null_mut(), address, data, size) }
     }
 
     fn frame(y: u32) {
@@ -340,7 +355,7 @@ mod midi {
         board_init(SMK);
         usb_midi_start();
         let r = loop {
-            let r = mu_run(UNIT_KEY.read(), work(), &mut written);
+            let r = run(&mut written);
             if r == Outcome::Download {
                 download_screen();
             }

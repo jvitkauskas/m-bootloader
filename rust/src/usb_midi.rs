@@ -449,12 +449,8 @@ pub extern "C" fn usb_midi_configured() -> bool {
 }
 
 /// Sends one whole F0..F7 message, polling until it has gone or the host has gone.
-///
-/// # Safety
-/// `data` holds `size` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn usb_midi_send(data: *const u8, size: u32) {
-    usb().send(unsafe { core::slice::from_raw_parts(data, size as usize) })
+pub fn send(message: &[u8]) {
+    usb().send(message)
 }
 
 #[unsafe(no_mangle)]

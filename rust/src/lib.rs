@@ -51,8 +51,13 @@ pub mod usb_midi {
     unsafe extern "C" {
         pub safe fn usb_midi_start();
         pub safe fn usb_midi_poll();
-        pub fn usb_midi_send(data: *const u8, size: u32);
+        fn usb_midi_send(data: *const u8, size: u32);
         pub safe fn usb_midi_stop();
+    }
+
+    pub fn send(message: &[u8]) {
+        // Safety: the tests' own, which takes a message and its size.
+        unsafe { usb_midi_send(message.as_ptr(), message.len() as u32) }
     }
 }
 
