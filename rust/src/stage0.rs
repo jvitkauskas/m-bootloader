@@ -80,7 +80,7 @@ mod own {
                 return false;
             }
             core::ptr::copy_nonoverlapping(to, SCRATCH, size);
-            let room = (&raw const __stage0_limit).offset_from_unsigned(to);
+            let room = crate::hw::distance(to, &raw const __stage0_limit);
             unpack_stage1(
                 from_raw_parts(to.cast(), room),
                 from_raw_parts(SCRATCH.cast(), size),
@@ -98,7 +98,7 @@ mod own {
             core::ptr::write_bytes(
                 &raw mut __stage0_bss_start,
                 0,
-                (&raw const __stage0_bss_end).offset_from_unsigned(&raw const __stage0_bss_start),
+                crate::hw::distance(&raw const __stage0_bss_start, &raw const __stage0_bss_end),
             )
         };
         hal_early();

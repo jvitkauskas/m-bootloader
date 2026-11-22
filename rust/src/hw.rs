@@ -89,6 +89,12 @@ pub fn dma_address(p: *mut u8) -> u32 {
     return p as u32;
 }
 
+/// The bytes from `start` up to `end`, for two of the linker's symbols. They are not one object to Rust, so the
+/// distance is taken from their addresses and not by subtracting the pointers.
+pub fn distance<T, U>(start: *const T, end: *const U) -> usize {
+    end.addr() - start.addr()
+}
+
 pub const fn bit(n: u32) -> u32 {
     1 << n
 }
@@ -146,8 +152,9 @@ impl Text {
 
     /// # Safety
     /// A NUL-terminated string is at `address`, for as long as the program runs.
-    pub const unsafe fn at(address: usize) -> Text {
-        Text(core::ptr::NonNull::new(core::ptr::without_provenance_mut(address)).unwrap())
+    pub unsafe fn at(address: usize) -> Text {
+        // (The cast that is for memory Rust did not make: a pointer made without provenance may not be read through.)
+        Text(core::ptr::NonNull::new(core::ptr::with_exposed_provenance_mut(address)).unwrap())
     }
 
     pub const fn as_ptr(self) -> *const u8 {

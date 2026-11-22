@@ -24,8 +24,8 @@ pub extern "C" fn sfx_main(context: u32, end: u32) {
     unsafe {
         let (pack, pack_end) = (&raw const sfx_pack, &raw const sfx_pack_end);
         let (room, pack) = (
-            from_raw_parts(out.cast(), pack_end.offset_from_unsigned(out)),
-            from_raw_parts(pack.cast(), pack_end.offset_from_unsigned(pack)),
+            from_raw_parts(out.cast(), crate::hw::distance(out, pack_end)),
+            from_raw_parts(pack.cast(), crate::hw::distance(pack, pack_end)),
         );
         if unpack_stage1(room, pack, SCRATCH.get()) {
             core::mem::transmute::<usize, extern "C" fn(u32, u32)>(INSTALLER)(context, end);

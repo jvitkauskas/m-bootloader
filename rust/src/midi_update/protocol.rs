@@ -492,7 +492,10 @@ fn run_app<H: Host>(n: usize, decoded: &mut Decoded) {
 
 /// Answers the updater's protocol until a package is installed or the host's cancel() says stop. Whether flash was changed is
 /// in `written`.
-pub fn run<H: Host>(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
+///
+/// # Safety
+/// Not entered again while it runs: its buffers are borrowed across the host's hooks, so no hook may call it.
+pub unsafe fn run<H: Host>(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
     // Safety: the one use of it, for as long as this runs, and this is not entered twice.
     let decoded = unsafe { DECODED.get() };
     FRAME_READY.set(false);
@@ -609,6 +612,7 @@ mod c {
 
     #[unsafe(no_mangle)]
     pub extern "C" fn mu_run(key: u16, sector: &mut Sector, written: &mut bool) -> Outcome {
-        run::<Hooks>(key, sector, written)
+        // Safety: the tests' hooks don't call this.
+        unsafe { run::<Hooks>(key, sector, written) }
     }
 }

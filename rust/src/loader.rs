@@ -368,7 +368,7 @@ macro_rules! target {
                         static mut __bss_start: u8;
                         static __bss_end: u8;
                     }
-                    core::ptr::write_bytes(&raw mut __bss_start, 0, (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start));
+                    core::ptr::write_bytes(&raw mut __bss_start, 0, crate::hw::distance(&raw const __bss_start, &raw const __bss_end));
                 }
                 // Keep ROM's watchdog policy; B never takes A's power/exception path.
                 hal_fault_clear();

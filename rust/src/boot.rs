@@ -45,7 +45,10 @@ const RELEASE: Text = if SMK {
 };
 const NONE: Text = text!("");
 /// The version, in stage 0's header.
-const VERSION: Text = unsafe { Text::at(0x01c0_2050) };
+fn version() -> Text {
+    // Safety: src/startup.S has it there, NUL-terminated.
+    unsafe { Text::at(0x01c0_2050) }
+}
 const STATES: [Text; 4] = [
     text!("APP NOT FOUND"),
     text!("APP OK"),
@@ -265,7 +268,7 @@ mod midi {
                 capacity: flash_capacity(),
                 uid,
                 kind: BOOTLOADER,
-                version: VERSION,
+                version: version(),
             }
         }
 
@@ -277,7 +280,8 @@ mod midi {
     /// MIDI mode's protocol, until it ends. The simulated chip's tests have their own.
     fn run(work: &mut Work, written: &mut bool) -> Outcome {
         #[cfg(not(boot_sim))]
-        return midi_update::run::<Menu>(UNIT_KEY.read(), work, written);
+        // Safety: no hook of `Menu` comes back here.
+        return unsafe { midi_update::run::<Menu>(UNIT_KEY.read(), work, written) };
         #[cfg(boot_sim)]
         return midi_update::mu_run(UNIT_KEY.read(), work, written);
     }
@@ -454,7 +458,7 @@ mod midi {
 /// The screen's first rows: what this is, and why it is showing.
 fn heading() {
     display::text(0, YELLOW, TITLE);
-    display::text(1, GREY, VERSION);
+    display::text(1, GREY, version());
     display::text(2, RED, REASON.read().unwrap_or(NONE));
 }
 
@@ -850,7 +854,7 @@ pub unsafe extern "C" fn boot_main(_device: *const u32) {
             core::ptr::write_bytes(
                 &raw mut __bss_start,
                 0,
-                (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start),
+                crate::hw::distance(&raw const __bss_start, &raw const __bss_end),
             )
         };
     }

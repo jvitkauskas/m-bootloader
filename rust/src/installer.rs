@@ -56,7 +56,7 @@ fn install(screen: bool) -> Option<Text> {
         (
             &mut AREA.get().0,
             &mut CHECK.get().0,
-            core::slice::from_raw_parts(start, end.offset_from_unsigned(start)),
+            core::slice::from_raw_parts(start, crate::hw::distance(start, end)),
         )
     };
     if !flash_init(1, 1) || flash_capacity() != 0x10_0000 {
@@ -114,7 +114,7 @@ pub extern "C" fn installer_main(_context: *mut u8, stream_end: u32) -> ! {
         core::ptr::write_bytes(
             &raw mut __bss_start,
             0,
-            (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start),
+            crate::hw::distance(&raw const __bss_start, &raw const __bss_end),
         )
     };
     // Watchdog off, as §6.3 says it already is: never reset mid-write.

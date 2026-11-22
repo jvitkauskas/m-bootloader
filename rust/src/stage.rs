@@ -188,7 +188,7 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
         core::ptr::write_bytes(
             &raw mut __bss_start,
             0,
-            (&raw const __bss_end).offset_from_unsigned(&raw const __bss_start),
+            crate::hw::distance(&raw const __bss_start, &raw const __bss_end),
         )
     };
     // Safety: no reference into the retained area is kept across anything else that runs, such as an app.
@@ -213,8 +213,8 @@ pub extern "C" fn stage_main(_context: *mut u8, _stream_end: u32) -> ! {
     usb_midi_start();
     loop {
         let mut written = false;
-        // Safety: the one use of this buffer.
-        let r = midi_update::run::<Stage>(key, unsafe { &mut SECTOR.get().0 }, &mut written);
+        // Safety: the one use of this buffer, and no hook of `Stage` comes back here.
+        let r = unsafe { midi_update::run::<Stage>(key, &mut SECTOR.get().0, &mut written) };
         if matches!(
             r,
             Outcome::Download | Outcome::Done | Outcome::Restart | Outcome::Cancelled
