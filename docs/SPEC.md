@@ -1036,7 +1036,7 @@ Stock firmware's update service uses this frame as well, and on some versions it
 
 ### 11.7 The RAM stage
 
-The stage (`src/stage.c`) is MIDI mode without the bootloader, for a unit running firmware without m-bootloader. It's the same protocol and flash rules, and it needs no keys.
+The stage (`rust/src/stage.rs`) is MIDI mode without the bootloader, for a unit running firmware without m-bootloader. It's the same protocol and flash rules, and it needs no keys.
 
 * **Started through the update route** (`stage*.fwsc`, linked for `0x01C0A800`). The package holds only `ota.bin`, as m-bootloader's do. The firmware stores it, and the installed bootloader, stock or ours, runs it as a staged updater (§6.3). It retires the request first (§6.2), so whatever happens next, the next start runs the firmware.
 * **Started by M-Flasher's `run-ram`** (`stage-ram.bin`, linked for `0x01C28000`), from download mode. This writes nothing to flash.

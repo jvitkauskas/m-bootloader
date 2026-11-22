@@ -127,7 +127,7 @@ def members(image):
 
 containers = {board: Path('build', board, 'uboot.boot').read_bytes() for board in ('fm1', 'smk37')}
 installers = {board: Path('build', board, 'installer.bin').read_bytes() for board in ('fm1', 'smk37')}
-# What the packages carry: the installer self-extracting (src/sfx.c), checked to unpack in place to it.
+# What the packages carry: the installer self-extracting (rust/src/sfx.rs), checked to unpack in place to it.
 self_extracting = {board: Path('build', board, 'installer-sfx.bin').read_bytes() for board in ('fm1', 'smk37')}
 for board in self_extracting:
     assert self_extracting[board] != installers[board] and containers[board] not in self_extracting[board]

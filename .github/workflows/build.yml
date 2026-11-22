@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # The pi32v2 Rust compiler's package is for x86-64 with glibc 2.39 or later.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,10 +26,23 @@ jobs:
         id: toolchain
         uses: jvitkauskas/pi32v2-isa/.github/actions/setup-pi32v2@66ac37bb2ae40e5dbbd5588a6a7c2d7baf829d7f
         with:
-          version: pi32v2-23.1.5-5
+          version: pi32v2-23.1.6-2
       - name: Point the build at the toolchain
         shell: bash
         run: echo "TOOLCHAIN=${{ steps.toolchain.outputs.path }}" >> "$GITHUB_ENV"
+      - name: Set up the pi32v2 Rust compiler, built on the toolchain's LLVM (checks the package's SHA-256)
+        shell: bash
+        env:
+          RELEASE: pi32v2-1.100.0-1
+          SHA256: efc89e3cd13b38a22d6698b3d965c0a754bda31c0299afc9b4d73f0a73595690
+        run: |
+          name=pi32v2-rust-${RELEASE#pi32v2-}-linux-x64
+          cd "$RUNNER_TEMP"
+          curl -fsSLo "$name.tar.xz" "https://github.com/jvitkauskas/pi32v2-rust/releases/download/$RELEASE/$name.tar.xz"
+          echo "$SHA256  $name.tar.xz" | sha256sum -c
+          tar -xJf "$name.tar.xz"
+          "$name/bin/rustc" -vV
+          echo "PI32V2_RUST=$RUNNER_TEMP/$name" >> "$GITHUB_ENV"
       - name: Install the Upkr packer, at a fixed commit
         shell: bash
         run: |

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
-/* The self-extracting installer's first byte (src/sfx.c), and its pack. The jump keeps r0 and r1, and the caller's
- * stack and return address, for sfx_main. */
+/* The self-extracting installer's first byte (rust/src/sfx.rs), and its pack. The jump keeps r0 and r1, and the
+ * caller's stack and return address, for sfx_main. */
 .section .entry,"ax",@progbits
 .global sfx_entry
 .type sfx_entry,@function

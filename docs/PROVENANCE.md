@@ -119,7 +119,18 @@ tags, the amendments and the mentions of models, and lost no technical value.
 - **`src/usb_midi.c`** was added after 1.0 for MIDI mode. It was written from
   the register facts in JieLi's SDK and in felucca-bsp (MPL-2.0), with no code
   taken from either. The stock bootloader has no USB code, so this part does
-  not reimplement it.
+  not reimplement it. It is now `rust/src/usb_midi.rs`.
+- **The Rust, after 2.4.** Every C source was translated to Rust on 2026-11-21,
+  one file or a few at a time, by a Claude Code session (Claude Fable 5.2)
+  working from the C and its tests, with the tests kept passing at each step.
+  Nothing went into the specification for it. That session's exposure was not
+  recorded either. It ran the tests that read M-VAVE's packages and images of
+  units, and it had worked on the pi32v2 compilers. On 2026-11-22 the same
+  session reduced the Rust's unsafe code. Three of those changes (the owners
+  of the work buffer and of the retained area, and how the runtime copies
+  bytes) follow experiments by a Codex session (GPT-6.2 Sol) that was asked
+  for a second opinion and given the repository; its exposure was not
+  recorded.
 
 ## Changing the specification
 

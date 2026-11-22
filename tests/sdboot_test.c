@@ -1,7 +1,17 @@
 /* SPDX-License-Identifier: MIT */
-/* src/sdboot.c against a simulated SPI card holding generated FAT32 images. */
+/* rust/src/sdboot.rs against a simulated SPI card holding generated FAT32 images. */
 #define _DEFAULT_SOURCE
-#include "../src/sdboot.c"
+#include "sdboot.h"
+#include "core.h"
+#include "platform.h"
+#include <string.h>
+#define SPI1 0x11d00u
+/* The two halves of a session, which the tests run by themselves. */
+bool sd_test_init(void);
+const char *sd_test_load(void);
+#define init sd_test_init
+#define load sd_test_load
+#define NO_MENU "NO /MBOOT/MENU.BIN"
 #include <assert.h>
 #include <stdio.h>
 #include <sys/mman.h>
