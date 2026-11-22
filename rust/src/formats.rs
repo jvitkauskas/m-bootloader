@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 //! Flash formats, checksums, ciphers, updater decoding and calibration rules. Portable: nothing here touches hardware.
-use core::ffi::c_void;
-
 pub const MAX_FILES: usize = 8;
 pub const WORK_SIZE: usize = 4096;
 pub const UPDATE_LOAD: u32 = 0x01c0_a800;
@@ -49,51 +47,60 @@ pub trait Nor: Flash {
     fn erase(&self, address: u32, size: u32) -> bool;
 }
 
-/// A flash as C has it (include/core.h): the tests' flashes, and the loader's.
-#[repr(C)]
-pub struct CFlash {
-    pub ctx: *mut c_void,
-    pub capacity: u32,
-    pub read: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, u32) -> bool,
+/// Flashes as C has them (include/core.h): the tests', and the loader's, which the ROM's callbacks reach.
+#[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
+mod c_flash {
+    use super::{Flash, Nor};
+    use core::ffi::c_void;
+
+    /// A flash as C has it (include/core.h): the tests' flashes, and the loader's.
+    #[repr(C)]
+    pub struct CFlash {
+        pub ctx: *mut c_void,
+        pub capacity: u32,
+        pub read: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, u32) -> bool,
+    }
+
+    #[repr(C)]
+    pub struct CNor {
+        pub flash: CFlash,
+        pub program: unsafe extern "C" fn(*mut c_void, u32, *const c_void, u32) -> bool,
+        pub erase: unsafe extern "C" fn(*mut c_void, u32, u32) -> bool,
+    }
+
+    // Safety, for these: whoever made the struct gave it functions that take what they are given here.
+    impl Flash for CFlash {
+        fn capacity(&self) -> u32 {
+            self.capacity
+        }
+
+        fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
+            unsafe { (self.read)(self.ctx, address, dst.as_mut_ptr().cast(), dst.len() as u32) }
+        }
+    }
+
+    impl Flash for CNor {
+        fn capacity(&self) -> u32 {
+            self.flash.capacity
+        }
+
+        fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
+            self.flash.read_inside(address, dst)
+        }
+    }
+
+    impl Nor for CNor {
+        fn program(&self, address: u32, src: &[u8]) -> bool {
+            unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
+        }
+
+        fn erase(&self, address: u32, size: u32) -> bool {
+            unsafe { (self.erase)(self.flash.ctx, address, size) }
+        }
+    }
 }
-
-#[repr(C)]
-pub struct CNor {
-    pub flash: CFlash,
-    pub program: unsafe extern "C" fn(*mut c_void, u32, *const c_void, u32) -> bool,
-    pub erase: unsafe extern "C" fn(*mut c_void, u32, u32) -> bool,
-}
-
-// Safety, for these: whoever made the struct gave it functions that take what they are given here.
-impl Flash for CFlash {
-    fn capacity(&self) -> u32 {
-        self.capacity
-    }
-
-    fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
-        unsafe { (self.read)(self.ctx, address, dst.as_mut_ptr().cast(), dst.len() as u32) }
-    }
-}
-
-impl Flash for CNor {
-    fn capacity(&self) -> u32 {
-        self.flash.capacity
-    }
-
-    fn read_inside(&self, address: u32, dst: &mut [u8]) -> bool {
-        self.flash.read_inside(address, dst)
-    }
-}
-
-impl Nor for CNor {
-    fn program(&self, address: u32, src: &[u8]) -> bool {
-        unsafe { (self.program)(self.flash.ctx, address, src.as_ptr().cast(), src.len() as u32) }
-    }
-
-    fn erase(&self, address: u32, size: u32) -> bool {
-        unsafe { (self.erase)(self.flash.ctx, address, size) }
-    }
-}
+#[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
+pub use c_flash::{CFlash, CNor};
 
 #[repr(C)]
 pub struct Config {
@@ -913,7 +920,7 @@ pub fn boot_install(area: &mut [u8; BOOT_AREA], container: &[u8], capacity: u32)
 #[cfg(not(target_arch = "pi32v2"))]
 pub mod c {
     use super::*;
-    use core::ffi::{CStr, c_char};
+    use core::ffi::{CStr, c_char, c_void};
     use core::slice::{from_raw_parts, from_raw_parts_mut};
     type P = *const c_void;
     type M = *mut c_void;

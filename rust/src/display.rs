@@ -3,7 +3,6 @@
 use crate::Global;
 use crate::hw::{Reg, Text, bit, dma_address, sync_cpu};
 use crate::platform::{gpio_level, gpio_output, hal_delay_us, hal_fault, hal_fault_clear};
-use core::ffi::{CStr, c_char};
 
 const SPI1_CON: Reg = Reg::at::<0x11d00>();
 const SPI1_BAUD: Reg = SPI1_CON.add(4);
@@ -186,6 +185,7 @@ impl Display {
     }
 
     /// `data` holds two bytes for each pixel.
+    #[cfg(not(target_arch = "pi32v2"))]
     fn pixels(&mut self, x: u32, y: u32, w: u32, h: u32, data: &[u8]) {
         if !self.visible(x, y, w, h) {
             return;
@@ -334,6 +334,7 @@ pub extern "C" fn display_rect(x: u32, y: u32, w: u32, h: u32, color: u16) {
 ///
 /// # Safety
 /// `data` holds `w * h * 2` bytes.
+#[cfg(not(target_arch = "pi32v2"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn display_pixels(x: u32, y: u32, w: u32, h: u32, data: *const u8) {
     let d = display();
@@ -345,6 +346,7 @@ pub unsafe extern "C" fn display_pixels(x: u32, y: u32, w: u32, h: u32, data: *c
 
 /// # Safety
 /// `text` holds `n` bytes.
+#[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8, n: u32) {
     display().row(row, fg, bg, unsafe { core::slice::from_raw_parts(text, n.min(20) as usize) })
@@ -352,9 +354,10 @@ pub unsafe extern "C" fn display_row(row: u32, fg: u16, bg: u16, text: *const u8
 
 /// # Safety
 /// `text` is NUL-terminated.
+#[cfg(not(target_arch = "pi32v2"))]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn display_text(row: u32, fg: u16, text: *const c_char) {
-    display().row(row, fg, 0, unsafe { CStr::from_ptr(text) }.to_bytes())
+pub unsafe extern "C" fn display_text(row: u32, fg: u16, text: *const core::ffi::c_char) {
+    display().row(row, fg, 0, unsafe { core::ffi::CStr::from_ptr(text) }.to_bytes())
 }
 
 #[unsafe(no_mangle)]

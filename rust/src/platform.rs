@@ -632,6 +632,7 @@ mod flash {
 
     /// # Safety
     /// `out` has room for `n` bytes. `ctx` is not used: the flash is the chip's.
+    #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn flash_read(_ctx: *mut c_void, a: u32, out: *mut c_void, n: u32) -> bool {
         read(a, unsafe { core::slice::from_raw_parts_mut(out.cast(), n as usize) })
@@ -677,6 +678,7 @@ mod flash {
 
     /// # Safety
     /// `data` has `n` bytes.
+    #[cfg(any(not(target_arch = "pi32v2"), loader_a, loader_b))]
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn flash_program(_ctx: *mut c_void, a: u32, data: *const c_void, n: u32) -> bool {
         program(a, unsafe { core::slice::from_raw_parts(data.cast(), n as usize) })
