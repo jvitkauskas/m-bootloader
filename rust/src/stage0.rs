@@ -68,7 +68,8 @@ mod own {
     /// The pack lies where stage 1 runs, so it moves out of the way first.
     #[cfg(not(boot_sim))]
     fn unpack_stage1() -> bool {
-        use crate::upkr::{HEADER, PROBS, stage1_unpack};
+        use crate::upkr::{HEADER, PROBS, unpack_stage1};
+        use core::slice::from_raw_parts;
         /// Free RAM above the bootloader's, until a staged updater is loaded there.
         const SCRATCH: *mut u8 = 0x01c0_a800 as *mut u8;
         const SCRATCH_PACK: usize = 0x3f2c;
@@ -82,7 +83,7 @@ mod own {
             }
             core::ptr::copy_nonoverlapping(to, SCRATCH, size);
             let room = (&raw const __stage0_limit).offset_from_unsigned(to);
-            stage1_unpack(to, room as u32, SCRATCH, size as u32, &mut *SCRATCH.add(SCRATCH_PACK).cast::<[u8; PROBS]>())
+            unpack_stage1(from_raw_parts(to.cast(), room), from_raw_parts(SCRATCH.cast(), size), &mut *SCRATCH.add(SCRATCH_PACK).cast::<[u8; PROBS]>())
         }
     }
 
