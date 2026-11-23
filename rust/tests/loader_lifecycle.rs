@@ -206,13 +206,13 @@ fn address(a: usize) -> u32 {
 }
 
 fn install(a: bool, set: u32, dirt: u8) {
-    let state = if a {
-        slot_a::loader_test_state_a()
+    let state: extern "C" fn() -> *mut State = if a {
+        slot_a::loader_test_state_a
     } else {
-        slot_b::loader_test_state_b()
+        slot_b::loader_test_state_b
     };
     // Safety: room for a State, whatever it holds: the entry makes one of it.
-    unsafe { state.cast::<u8>().write_bytes(dirt, size_of::<State>()) };
+    unsafe { state().cast::<u8>().write_bytes(dirt, size_of::<State>()) };
     let send: extern "C" fn(*const c_void, u32) -> i32 = if set == 1 { send_one } else { send_two };
     let receive: extern "C" fn(*mut c_void, u32) -> i32 =
         if set == 1 { receive_one } else { receive_two };
@@ -236,8 +236,8 @@ fn install(a: bool, set: u32, dirt: u8) {
     check!(REGISTRATION.read() != 0 && REGISTRATION.read() != 0xdead_beef);
     check!(sim().err == 0);
     let entry = if a { 0x01c2_0000 } else { 0x01c2_8000 };
-    // Safety: the entry has made it a State, and no command is running.
-    clean_state(unsafe { &*state }, entry, 96);
+    // Safety: take a fresh pointer after the entry has initialized the state through its own borrow.
+    clean_state(unsafe { &*state() }, entry, 96);
     identity(entry, set, 96);
     INSTALLS.set(INSTALLS.read() + 1);
 }
@@ -272,6 +272,15 @@ fn fresh_out_callback(set: u32) {
     dispatch();
     check!(OUTPUT_SIZE.read() == 0 && INPUT_POSITION.read() == 513 && CALLBACK_SET.read() == set);
     check!(sim_nor()[0x400d..][..513] == input()[..513]);
+}
+
+fn erase_block() {
+    sim_nor()[0xffff..=0x20000].fill(0x5a);
+    new_command(0xfb00, true, 16);
+    put_be32(command(), 17, 0x10000);
+    dispatch();
+    check!(sim_nor()[0x10000..0x20000].iter().all(|&b| b == 0xff));
+    check!(sim_nor()[0xffff] == 0x5a && sim_nor()[0x20000] == 0x5a);
 }
 
 /// Whether two states are the same in every field. (C compared their bytes. Here that would take in the bytes
@@ -343,6 +352,7 @@ fn loader_lifecycle() {
     check!(sim_reg_get(0x10008) & 0x30700 == 0x100);
     status_and_read(1);
     fresh_out_callback(1);
+    erase_block();
     let first_handler = REGISTRATION.read();
     // Seed live dirty state in A, and show that installing the other slot leaves it. (This shows that B's entry
     // and commands write B's state and not A's. On the chip an entry also clears its own image's BSS, which is not

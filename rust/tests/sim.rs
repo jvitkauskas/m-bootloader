@@ -367,6 +367,8 @@ pub fn platform_dma_address(p: *const c_void) -> u32 {
     let s = st();
     for i in 0..NDMA {
         if s.dma_tab[i] == p {
+            // The same address may now come from a new borrow or a reused stack slot.
+            s.dma_tab[i] = p;
             return 0x1000_0000 + i as u32 * 0x10000;
         }
     }
@@ -551,7 +553,7 @@ fn chip_select(sel: bool) {
                     if ch.pn > 256 {
                         sim_fail("page program with more than 256 bytes");
                     } else if (ch.addr & 255) + ch.pn > 256 {
-                        // §3.5: the driver splits a program at page boundaries. The chip wraps inside the page,
+                        // §3.4: the driver splits a program at page boundaries. The chip wraps inside the page,
                         // which is modelled below, so a test can also see the bytes it put in the wrong place.
                         sim_fail("page program across a page boundary");
                     }
@@ -569,6 +571,9 @@ fn chip_select(sel: bool) {
                 if ch.wel && !protected() && ch.n >= 4 {
                     let sz = if ch.cmd == 0x20 { 0x1000 } else { 0x10000 };
                     let a = ch.addr & !(sz - 1);
+                    if ch.cmd == 0xD8 && ch.addr != a {
+                        sim_fail("D8 erase address must be block-aligned");
+                    }
                     if a + sz <= *nor_size() {
                         nor_erase(a, sz);
                     }
@@ -657,7 +662,7 @@ fn chip_byte(tx: u8, rx: bool, w: u32) -> u8 {
                 if !rx {
                     sim_fail("read data phase driven by the host");
                 }
-                // §3.5: the dummy clocks and the data both, in the width of the read.
+                // §3.4: the dummy clocks and the data both, in the width of the read.
                 if ch.cmd == 0x6B && w != 2 {
                     sim_fail("6B dummy/data not in quad width");
                 }
