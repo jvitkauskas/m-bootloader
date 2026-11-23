@@ -384,6 +384,12 @@ is for the next release to decide.
   stage 2 image's CRC against one worked out outside the crate; the MIDI mode test refuses a flash dump longer
   than the flash, as the boots' does; and the simulated panel forgets half a pixel at a reset. So the boots count
   one scenario and five checks more than their C did (the FM-1's: 72 and 403, with the private images).
+- And from a second review (GPT-6.2 Sol's): the format tests mount one bank written out byte for byte, not by
+  the test's own encoder; the MIDI mode test checks the key's release at exactly 49 and 50 scans; `installer-host`
+  decodes a request and flash that the Python test stages with its own encoder (`decode IMAGE REQUEST END OUT`),
+  and refuses one whose CRC is off; `upkr-test` flips each bit of the pack's checksum; the loader's test on the
+  simulated chip erases a 64 KiB block, and the simulated flash refuses one at an address not on a block's
+  boundary.
 
 ## What is not known
 

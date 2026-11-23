@@ -807,7 +807,7 @@ impl Lcd {
 }
 
 static LCD: Global<Lcd> = Global::new(Lcd::new());
-/// The first byte of a pixel has come, and what it was. (`sim_reset` leaves these, as they were `lcd_byte`'s own.)
+/// The first byte of a pixel has come, and what it was. (`sim_reset` clears them with the panel's state.)
 static HALF: Global<bool> = Global::new(false);
 static HI: Global<u8> = Global::new(0);
 
