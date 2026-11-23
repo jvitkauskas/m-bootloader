@@ -321,7 +321,8 @@ only. One change after it does change them, and makes them smaller ("The C names
   run link the crate as a library (`--cfg tool`).
 - **Each is its C, line for line**: the same checks in the same order, and the same lines printed. With the private
   images in `testdata/` and without them, every program's output was compared with its C original's, counts
-  included (the FM-1's boots: 71 scenarios and 398 checks with them, 13 and 89 without).
+  included (the FM-1's boots: 71 scenarios and 398 checks with them, 13 and 89 without). The checks added since
+  are listed below.
 - **What stands in for hardware** is named by the crate as `crate::tests::...` and listed in one place, the end of
   `rust/tests/mod.rs`: the registers, the reset, the card, USB. They were names for the linker, which the compiler
   could not check against their uses. One kind still is: under `import_early` a test supplies stage 0's functions
@@ -377,6 +378,12 @@ is for the next release to decide.
   width (§3.5); `upkr-test` requires the pack to unpack to the whole reference file, and refuses one bigger than
   its room. Each was shown to fail a bug that passed before: a wide read's data in single-bit width, page splits
   taken out of the driver and the loader, and a reference file one byte short.
+- Five more, from the same review: the boots have a scenario in which stage 2 returns after an earlier start of it
+  failed, and the reason must go (it fails a menu that keeps the old one, which every earlier scenario passed);
+  the flash loader's test sends one FC44 written out byte for byte from §10.2's table; the card's test checks a
+  stage 2 image's CRC against one worked out outside the crate; the MIDI mode test refuses a flash dump longer
+  than the flash, as the boots' does; and the simulated panel forgets half a pixel at a reset. So the boots count
+  one scenario and five checks more than their C did (the FM-1's: 72 and 403, with the private images).
 
 ## What is not known
 

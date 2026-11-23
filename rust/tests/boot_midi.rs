@@ -562,6 +562,8 @@ fn boot_midi() {
     match File::open(path) {
         Ok(mut input) => {
             assert!(input.read_exact(&mut t_fixture_cache()[f]).is_ok());
+            // Exactly the flash, as boot.rs reads its dumps: a longer file is not one.
+            assert!(matches!(input.read(&mut [0]), Ok(0)));
             drop(input);
             t().fixture_present[f] = true;
             t_midi_by_default();

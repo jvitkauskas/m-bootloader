@@ -789,25 +789,43 @@ fn test_display() {
             && t().screen_bg == 0x07e0
     );
     assert!(t().screen_text_size == 20 && t().screen_text == receive_data()[..20]);
+    // One FC44 written out from docs/SPEC.md's table, not with the setters above: after the CBW's signature, tag,
+    // transfer length 5, an OUT flag and a 16-byte block, the opcode, row 3, FG 0x1234 and BG 0xABCD, a text of 5
+    // bytes, all big-endian, and the rest of the block unused.
+    reset_transfer();
+    *command() = [
+        0x55, 0x53, 0x42, 0x43, 0x78, 0x56, 0x34, 0x12, 5, 0, 0, 0, 0, 0, 16, 0xfc, 0x44, 3, 0x12,
+        0x34, 0xab, 0xcd, 0, 5, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    ];
+    t().receive_size = 5;
+    receive_data()[..5].copy_from_slice(b"HELLO");
+    dispatch();
+    assert!(
+        t().screen_row_count == 2
+            && t().screen_row == 3
+            && t().screen_fg == 0x1234
+            && t().screen_bg == 0xabcd
+    );
+    assert!(t().screen_text_size == 5 && t().screen_text[..5] == *b"HELLO");
     prepare_text(0, 0);
     dispatch();
-    assert!(t().screen_row_count == 2 && t().receive_calls == 0 && t().screen_text_size == 0);
+    assert!(t().screen_row_count == 3 && t().receive_calls == 0 && t().screen_text_size == 0);
     prepare_text(15, 20);
     dispatch();
-    assert!(t().screen_row_count == 2 && t().receive_pos == 20);
+    assert!(t().screen_row_count == 3 && t().receive_pos == 20);
     assert!(take_status() == 6);
     prepare_text(2, 65535);
     dispatch();
-    assert!(t().screen_row_count == 2 && t().receive_pos == 65535);
+    assert!(t().screen_row_count == 3 && t().receive_pos == 65535);
     assert!(take_status() == 6);
     prepare_text(2, 21);
     dispatch();
-    assert!(t().screen_row_count == 2 && t().receive_pos == 21);
+    assert!(t().screen_row_count == 3 && t().receive_pos == 21);
     assert!(take_status() == 6);
     prepare_text(2, 8);
     put_be16(command(), 22, 7);
     dispatch();
-    assert!(t().screen_row_count == 2 && t().receive_pos == 8);
+    assert!(t().screen_row_count == 3 && t().receive_pos == 8);
     assert!(take_status() == 7);
     init_screen(2);
     assert!(t().screen_init_count == 2 && t().screen_board == 2 && state().screen != 0);

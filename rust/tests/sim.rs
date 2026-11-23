@@ -1228,6 +1228,9 @@ pub fn sim_reset() {
     st.p33 = [0; 1024];
     *ch() = Chip::new();
     *unsafe { LCD.get() } = Lcd::new();
+    // (Nor does a pixel's first byte, sent before the reset.)
+    HALF.set(false);
+    HI.set(0);
     st.dma_tab = [core::ptr::null(); NDMA];
     st.dma_next = 0;
     st.p33_asserted = false;

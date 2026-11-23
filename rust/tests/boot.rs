@@ -97,6 +97,10 @@ pub(super) struct Test {
     sd_card: bool,
     sd_leaves_spi_off: bool,
     sd_result: Option<Text>,
+    /// Stage 2 returns from the second call on (`sd_result` is for the first), and whether the first call's
+    /// reason was on the screen when the second was made.
+    sd_returns_later: bool,
+    sd_reason_before: bool,
     pub(super) app_returns: bool,
     update_returns: bool,
     bad_quad_on_return: bool,
@@ -136,6 +140,8 @@ static T: Global<Test> = Global::new(Test {
     sd_card: false,
     sd_leaves_spi_off: false,
     sd_result: None,
+    sd_returns_later: false,
+    sd_reason_before: false,
     app_returns: false,
     update_returns: false,
     bad_quad_on_return: false,
@@ -212,6 +218,11 @@ pub fn sd_stage2(_lsb_mhz: u32) -> Option<Text> {
     if t().sd_leaves_spi_off {
         SPI1_CON.write(0);
         sim().panel_on = false;
+    }
+    if t().sd_returns_later && t().sd_calls == 2 {
+        sim_flush();
+        t().sd_reason_before = t_row_is(2, "NO /MBOOT/MENU.BIN");
+        return None;
     }
     t().sd_result
 }
@@ -336,6 +347,8 @@ fn t_reset_boot_state() {
     t().sd_calls = 0;
     t().sd_card = false;
     t().sd_result = None;
+    t().sd_returns_later = false;
+    t().sd_reason_before = false;
 }
 
 pub(super) fn t_prep(fixture: usize) {
@@ -1231,6 +1244,18 @@ fn t_sd_menu() {
     sim().limit = 3_000_000;
     check!(t_go() == END_TIMEOUT);
     check!(t().sd_calls == 1 && t().resets == 0);
+    check!(t_row_is(2, ""));
+    check!(t_row_is(8, "> SD CARD"));
+    // And clears a reason that an earlier start left, in the same boot.
+    t_prep(4);
+    t().sd_card = true;
+    t().sd_result = Some(text!("NO /MBOOT/MENU.BIN"));
+    t().sd_returns_later = true;
+    t_key(KEY_SELECT, 2000, 2100);
+    t_key(KEY_SELECT, 2600, 2700);
+    sim().limit = 3_500_000;
+    check!(t_go() == END_TIMEOUT);
+    check!(t().sd_calls == 2 && t().resets == 0 && t().sd_reason_before);
     check!(t_row_is(2, ""));
     check!(t_row_is(8, "> SD CARD"));
     // An image that leaves the panel off still gets the menu back.

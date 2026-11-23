@@ -385,6 +385,8 @@ fn sdboot() {
     // Safety: nothing reads it yet.
     image(unsafe { MENU.get() });
     let menu = menu();
+    // Its CRC16/XMODEM, from Python's binascii.crc_hqx(bytes, 0) and not from the crate, which `image` uses.
+    assert!(menu[9000 - 4..9000 - 2] == [0xaf, 0x35]);
 
     // No card: DO stays high, and nothing answers.
     bus().present = false;
