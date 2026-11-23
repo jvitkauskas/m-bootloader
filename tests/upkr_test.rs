@@ -55,6 +55,17 @@ fn main() {
         eprintln!("{name}: stage 1 did not come back identical");
         exit(1);
     }
+    // The checksum is all sixteen bits (§4.4). A bad checksum must fail even when the output is intact.
+    for at in [4, 5] {
+        for bit in 0..8 {
+            pack[at] ^= 1 << bit;
+            if unpack(&mut out, &pack) {
+                eprintln!("{name}: accepted a bad checksum");
+                exit(1);
+            }
+            pack[at] ^= 1 << bit;
+        }
+    }
     // Too little room, or a pack cut short.
     if unpack(&mut out[..want - 1], &pack)
         || unpack(&mut out, &pack[..HEADER - 1])
