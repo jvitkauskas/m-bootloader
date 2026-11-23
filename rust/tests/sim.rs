@@ -550,6 +550,10 @@ fn chip_select(sel: bool) {
                     let base = ch.addr & !255;
                     if ch.pn > 256 {
                         sim_fail("page program with more than 256 bytes");
+                    } else if (ch.addr & 255) + ch.pn > 256 {
+                        // §3.5: the driver splits a program at page boundaries. The chip wraps inside the page,
+                        // which is modelled below, so a test can also see the bytes it put in the wrong place.
+                        sim_fail("page program across a page boundary");
                     }
                     for i in 0..ch.pn {
                         let a = base + ((ch.addr + i) & 255);
@@ -653,10 +657,11 @@ fn chip_byte(tx: u8, rx: bool, w: u32) -> u8 {
                 if !rx {
                     sim_fail("read data phase driven by the host");
                 }
-                if ch.cmd == 0x6B && w != 2 && ch.dummy < need {
+                // §3.5: the dummy clocks and the data both, in the width of the read.
+                if ch.cmd == 0x6B && w != 2 {
                     sim_fail("6B dummy/data not in quad width");
                 }
-                if ch.cmd == 0x3B && w != 1 && ch.dummy < need {
+                if ch.cmd == 0x3B && w != 1 {
                     sim_fail("3B dummy/data not in dual width");
                 }
                 if ch.cmd == 0x03 && w != 0 {

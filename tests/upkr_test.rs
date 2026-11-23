@@ -12,12 +12,16 @@ const ROOM: usize = 0x8000;
 const HEADER: usize = 8;
 const PROBS: usize = 641;
 
-/// The file's first `ROOM` bytes: no more of it is read.
+/// The file, which may be `ROOM` bytes at most: no more of it is read than shows that it is too big.
 fn load(path: &str) -> Vec<u8> {
     let mut data = Vec::new();
-    let read = File::open(path).and_then(|f| f.take(ROOM as u64).read_to_end(&mut data));
+    let read = File::open(path).and_then(|f| f.take(ROOM as u64 + 1).read_to_end(&mut data));
     if let Err(e) = read {
         eprintln!("{path}: {e}");
+        exit(1)
+    }
+    if data.len() > ROOM {
+        eprintln!("{path}: too big");
         exit(1)
     }
     data
@@ -41,6 +45,12 @@ fn main() {
     let (name, mut pack, stage1) = (&args[1], load(&args[1]), load(&args[2]));
     let (size, want) = (pack.len(), stage1.len());
     let mut out = vec![0; ROOM];
+    // The size the header gives for what it unpacks to is the whole of stage 1, so that the bytes compared below
+    // are all of it: the stream's length, then that size, little-endian (tools/pack_stage1.py).
+    if size < HEADER || u16::from_le_bytes([pack[2], pack[3]]) as usize != want {
+        eprintln!("{name}: does not unpack to the {want} bytes of {}", args[2]);
+        exit(1);
+    }
     if !unpack(&mut out, &pack) || out[..want] != stage1[..] {
         eprintln!("{name}: stage 1 did not come back identical");
         exit(1);

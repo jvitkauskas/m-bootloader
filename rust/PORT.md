@@ -372,6 +372,11 @@ is for the next release to decide.
   checks it.
 - The loader's test on the simulated chip still does not run the entry's clearing of its own data, which is
   compiled for the chip only; its comment no longer says it does.
+- Three checks the C did not have, from the review of this port: the simulated flash reports a page program that
+  crosses a page boundary, and a wide read (`6B`, `3B`) whose data, not only its dummy clocks, is in the wrong
+  width (§3.5); `upkr-test` requires the pack to unpack to the whole reference file, and refuses one bigger than
+  its room. Each was shown to fail a bug that passed before: a wide read's data in single-bit width, page splits
+  taken out of the driver and the loader, and a reference file one byte short.
 
 ## What is not known
 
