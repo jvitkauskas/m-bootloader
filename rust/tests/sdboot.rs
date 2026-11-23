@@ -355,17 +355,10 @@ fn loaded(bytes: &[u8]) -> bool {
     ram()[..bytes.len()] == *bytes
 }
 
-static MENU: Global<[u8; 9000]> = Global::new([0; 9000]);
-
-fn menu() -> &'static [u8; 9000] {
-    // Safety: written once, before anything reads it.
-    unsafe { MENU.get() }
-}
-
-fn good_card(base: u32) {
+fn good_card(base: u32, menu: &[u8]) {
     format(base);
     let mboot = folder(2, 0, b"MBOOT      ");
-    file(mboot, 0, b"MENU    BIN", menu(), false);
+    file(mboot, 0, b"MENU    BIN", menu, false);
 }
 
 #[test]
@@ -382,9 +375,9 @@ fn sdboot() {
         )
     };
     assert!(ram == STAGE2_ADDRESS as *mut c_void);
-    // Safety: nothing reads it yet.
-    image(unsafe { MENU.get() });
-    let menu = menu();
+    let mut bytes = [0; 9000];
+    image(&mut bytes);
+    let menu = &bytes;
     // Its CRC16/XMODEM, from Python's binascii.crc_hqx(bytes, 0) and not from the crate, which `image` uses.
     assert!(menu[9000 - 4..9000 - 2] == [0xaf, 0x35]);
 
@@ -392,12 +385,12 @@ fn sdboot() {
     bus().present = false;
     assert!(!sd_probe(60));
     bus().present = true;
-    good_card(PARTITION);
+    good_card(PARTITION, menu);
     assert!(sd_probe(60));
 
     // In a partition and without a partition table.
     assert!(run().is_none() && loaded(menu));
-    good_card(0);
+    good_card(0, menu);
     assert!(run().is_none() && loaded(menu));
 
     // Scattered: a fragmented file, and the folder past the root directory's first cluster.
@@ -495,13 +488,13 @@ fn sdboot() {
     assert!(same(run(), "BAD MENU.BIN"));
 
     // Not a card this can read.
-    good_card(PARTITION);
+    good_card(PARTITION, menu);
     put16(&mut disk()[510..], 0);
     assert!(same(run(), "NO SD CARD"));
-    good_card(PARTITION);
+    good_card(PARTITION, menu);
     put16(&mut disk()[BOOT.read() + 17..], 512); // FAT12/16's root entry count
     assert!(same(run(), "SD NOT FAT32"));
-    good_card(PARTITION);
+    good_card(PARTITION, menu);
     assert!(init());
     bus().read_fails = true;
     assert!(same(load(), "NO SD CARD"));
