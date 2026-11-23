@@ -2,11 +2,11 @@
 //! What the installer does to the flash, built for this computer from the code the chip runs
 //! (rust/src/formats.rs), for tests/fwsc_test.py:
 //!   installer-host install IMAGE CONTAINER OUT   boot_install on IMAGE's boot area
-//!   installer-host decode STREAM OUT             updater_decode on STREAM staged in flash
+//!   installer-host decode IMAGE REQUEST END OUT  updater_decode on IMAGE with a raw 80-byte REQUEST
 //!   installer-host retire IMAGE END OUT          request_retire for the stream ending at END
 use mboot::formats::{
-    Flash, Header, Nor, Request, Updater, boot_install, crc16, header_read, put_le16, put_le32,
-    range, request_retire, updater_decode,
+    Flash, Header, Nor, Request, Updater, boot_install, header_read, range, request_retire,
+    updater_decode,
 };
 use std::cell::Cell;
 use std::ffi::{CStr, OsStr, OsString, c_char, c_int};
@@ -20,7 +20,6 @@ const CAPACITY: usize = 0x10_0000;
 const WORK_SIZE: usize = 4096;
 const UPDATE_LOAD: u32 = 0x01c0_a800;
 const UPDATE_MAX: u32 = 0x5b1c;
-const STAGED: usize = 0xb9000;
 /// The most of a container that is read.
 const CONTAINER: usize = 0x4000;
 
@@ -49,8 +48,9 @@ fn fail(path: &OsStr, e: Error) -> ! {
 fn load(path: &OsStr, limit: usize) -> Vec<u8> {
     let file = File::open(path).unwrap_or_else(|e| fail(path, e));
     let mut data = Vec::new();
-    // What could be read, whatever ended it.
-    let _ = file.take(limit as u64).read_to_end(&mut data);
+    file.take(limit as u64)
+        .read_to_end(&mut data)
+        .unwrap_or_else(|e| fail(path, e));
     data
 }
 
@@ -146,23 +146,14 @@ fn main() {
         save(&args[4], &flash);
         return;
     }
-    if args.len() == 4 && args[1] == "decode" {
-        // As the firmware stages it: the outer record over the stream's own, holding the absolute address and the
-        // whole length (§6.3).
-        let mut flash = vec![0xff; CAPACITY];
-        let stream = load(&args[2], CAPACITY - STAGED);
-        let size = stream.len();
-        flash[STAGED..STAGED + size].copy_from_slice(&stream);
-        let record: &mut [u8; 32] = flash[STAGED..].first_chunk_mut().unwrap();
-        put_le32(record, 4, STAGED as u32);
-        put_le32(record, 8, size as u32);
-        let crc = crc16(0, &record[2..]);
-        put_le16(record, 0, crc);
-        let mut request: Request = [0; 80];
-        put_le16(&mut request, 2, 0x5a0d);
-        put_le32(&mut request, 72, STAGED as u32);
-        let crc = crc16(0, &request[2..]);
-        put_le16(&mut request, 0, crc);
+    if args.len() == 6 && args[1] == "decode" {
+        let mut flash = load(&args[2], CAPACITY + 1);
+        let Ok(request) = Request::try_from(load(&args[3], 81)) else {
+            exit(2);
+        };
+        if flash.len() != CAPACITY {
+            exit(2);
+        }
         let f = Image::of(&mut flash);
         let (mut out, mut work) = (vec![0; UPDATE_MAX as usize], [0; WORK_SIZE]);
         let mut u = Updater {
@@ -173,11 +164,11 @@ fn main() {
         };
         if !updater_decode(&f, &request, &mut out, &mut work, &mut u)
             || u.load != UPDATE_LOAD
-            || u.stream_end as usize != STAGED + size
+            || u.stream_end != number(args[4].as_bytes())
         {
             exit(1);
         }
-        save(&args[3], &out[..u.size as usize]);
+        save(&args[5], &out[..u.size as usize]);
         return;
     }
     if args.len() == 5 && args[1] == "retire" {
@@ -196,7 +187,7 @@ fn main() {
         return;
     }
     eprintln!(
-        "usage: installer-host install IMAGE CONTAINER OUT | decode STREAM OUT | retire IMAGE END OUT"
+        "usage: installer-host install IMAGE CONTAINER OUT | decode IMAGE REQUEST END OUT | retire IMAGE END OUT"
     );
     exit(2);
 }
