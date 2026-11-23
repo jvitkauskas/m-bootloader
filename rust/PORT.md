@@ -375,7 +375,7 @@ is for the next release to decide.
   compiled for the chip only; its comment no longer says it does.
 - Three checks the C did not have, from the review of this port: the simulated flash reports a page program that
   crosses a page boundary, and a wide read (`6B`, `3B`) whose data, not only its dummy clocks, is in the wrong
-  width (§3.5); `upkr-test` requires the pack to unpack to the whole reference file, and refuses one bigger than
+  width (§3.4); `upkr-test` requires the pack to unpack to the whole reference file, and refuses one bigger than
   its room. Each was shown to fail a bug that passed before: a wide read's data in single-bit width, page splits
   taken out of the driver and the loader, and a reference file one byte short.
 - Five more, from the same review: the boots have a scenario in which stage 2 returns after an earlier start of it

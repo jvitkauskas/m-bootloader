@@ -275,7 +275,7 @@ The bootloader is two separately linked images, joined into one payload. **Stage
 |---|---:|---|
 | 0 | 2 | Bytes of Upkr stream, little endian |
 | 2 | 2 | Bytes of stage 1 |
-| 4 | 2 | `core_crc16` of stage 1 |
+| 4 | 2 | CRC16/XMODEM (§5.1) of stage 1 |
 | 6 | 2 | Zero |
 | 8 | | Upkr stream, with `-9 -p 2` |
 
@@ -364,7 +364,7 @@ The boot areas of the stock FM-1 and SMK-37 images and of the Snoop37 and Baud G
 
 ### 5.3 Configuration blob
 
-**m-bootloader does not read this blob.** Its values are built in (`core_config_defaults`), equal to what every known configuration gives: FM-1 015 and SMK-37, and FM-1 016 apart from its 320 MHz clock, which the bootloader never followed. The handling below describes the stock bootloader's format and what the built-in values correspond to. Installing the bootloader cuts the blob to 96 bytes at `0x3FA0`, the end of the boot area, updating the `isd_config.ini` record: the first 34 bytes, the chip-key record and its CRC, then five records the bootloader doesn't read but versions 1.3 and older require, or they stop with `BAD CONFIG`: `OSC` = `OSC0`, `OSC_FREQ` = 24,000,000, `SYS_CLK` = 360,000,000, `HSB_DIV` = 1 and `LSB_DIV` = 2. The bootloader may then take everything up to there. Version 2.0 kept only the 34 bytes, at `0x3FDC`, which installing this version replaces. Those 34 bytes MUST stay: firmware install loaders and tools (SLOOP, Felucca, felucca-bsp, ChoralRoot) find the chip key through that record, wherever it points, and refuse to install without it, so an install refuses a unit whose record is damaged. M-VAVE's updater looks the record up too, and checks only a length and a CRC; it parses no keys, and an official update writes its package's whole boot area back. The stock bootloader does read the keys, so it MUST NOT be installed over the short blob: put back the package's whole boot area, as an official update does. m-bootloader 1.3 and older reject the short blob with `BAD CONFIG`.
+**m-bootloader does not read this blob.** Its values are built in (`Config::DEFAULTS` in `rust/src/formats.rs`), equal to what every known configuration gives: FM-1 015 and SMK-37, and FM-1 016 apart from its 320 MHz clock, which the bootloader never followed. The handling below describes the stock bootloader's format and what the built-in values correspond to. Installing the bootloader cuts the blob to 96 bytes at `0x3FA0`, the end of the boot area, updating the `isd_config.ini` record: the first 34 bytes, the chip-key record and its CRC, then five records the bootloader doesn't read but versions 1.3 and older require, or they stop with `BAD CONFIG`: `OSC` = `OSC0`, `OSC_FREQ` = 24,000,000, `SYS_CLK` = 360,000,000, `HSB_DIV` = 1 and `LSB_DIV` = 2. The bootloader may then take everything up to there. Version 2.0 kept only the 34 bytes, at `0x3FDC`, which installing this version replaces. Those 34 bytes MUST stay: firmware install loaders and tools (SLOOP, Felucca, felucca-bsp, ChoralRoot) find the chip key through that record, wherever it points, and refuse to install without it, so an install refuses a unit whose record is damaged. M-VAVE's updater looks the record up too, and checks only a length and a CRC; it parses no keys, and an official update writes its package's whole boot area back. The stock bootloader does read the keys, so it MUST NOT be installed over the short blob: put back the package's whole boot area, as an official update does. m-bootloader 1.3 and older reject the short blob with `BAD CONFIG`.
 
 At blob offsets 0…31 is an encoded chip-key record; +32 is its little-endian CRC16. The bootloader ignores this prefix for runtime key selection. PC tools decode it as follows: sum the first sixteen bytes modulo 256; clamp sums ≥`0xE0` to `0xAA`, sums ≤`0x10` to `0x55`. For each bit i=0…15, set that key bit iff `(byte[16+i] XOR byte[15−i])` is less than the adjusted sum. The stock prefix decodes to `0x980F`, CRC `0x1C1D`. This is format documentation, not permission to use this record in place of physical efuse.
 
@@ -981,7 +981,7 @@ The image is a flat binary:
 
 * linked for `0x01C28000`, with its entry at its first byte;
 * at most `0x8000` bytes, and at least 16;
-* ending in an 8-byte trailer: `STG2`, the CRC16 of `core_crc16` over everything before the trailer (little endian), and two zero bytes.
+* ending in an 8-byte trailer: `STG2`, the CRC16/XMODEM (§5.1) over everything before the trailer (little endian), and two zero bytes.
 
 `tools/stage2.py` adds the trailer to a flat binary. The file is loaded in whole 512-byte sectors, so the trailer and whatever follows it in the last sector land on what's linked right after the image, normally `.bss`. Nothing clears `.bss` for the image.
 
@@ -1070,7 +1070,7 @@ A RAM app is a program that runs from RAM and leaves the firmware in flash as it
 | Offset | Size | Meaning |
 |---:|---:|---|
 | 0 | 4 | `APP1`. It isn't stage 2's `STG2`, so an app named `MENU.BIN` is refused rather than run at the wrong address. |
-| 4 | 2 | CRC16 of `core_crc16` over everything before the trailer, little endian. |
+| 4 | 2 | CRC16/XMODEM (§5.1) over everything before the trailer, little endian. |
 | 6 | 1 | Board: 0 any, 1 FM-1, 2 SMK-37. |
 | 7 | 1 | Format, 1. |
 
