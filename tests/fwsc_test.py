@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Check the M-UPGRADE packages and the installer's C against the Python tools,
+"""Check the M-UPGRADE packages and the installer's code against the Python tools,
 and (when present) our package conventions against M-VAVE's packages."""
 import os
 from pathlib import Path
@@ -52,12 +52,12 @@ def synthetic_flash():
 
 
 def host(op, *inputs):
-    """Run the chip's C on the host; None if it refuses."""
+    """Run the chip's code on this computer (tests/installer_host.rs); None if it refuses."""
     with tempfile.TemporaryDirectory() as temp:
         paths = []
         for i, data in enumerate(inputs):
-            if len(data) < 32:  # a number, not a file
-                paths.append(data.decode())
+            if isinstance(data, str):  # a number, not a file
+                paths.append(data)
                 continue
             paths.append(Path(temp, f'in{i}'))
             paths[-1].write_bytes(data)
@@ -114,6 +114,14 @@ def staged_request(image, record_at, stream_at, stream):
     return bytes(out)
 
 
+def stage_for_decode(stream):
+    """Supply the flash and retained-RAM request bytes independently of the Rust decoder (§6.2–6.3)."""
+    stream_at = 0xb9000
+    image = staged_request(b'\xff' * 0x100000, 0, stream_at, stream)
+    request = image[:80]
+    return image, request, str(stream_at + len(stream))
+
+
 def python_install(image, container):
     try:
         return install(image, container)
@@ -146,11 +154,14 @@ for board, container in containers.items():
     installer = installers[board]
     assert installer.count(container) == 1
     stream = updater_stream(installer)
-    assert updater_code(stream) == installer and host('decode', stream) == installer
+    staged, request, end = stage_for_decode(stream)
+    assert updater_code(stream) == installer and host('decode', staged, request, end) == installer
+    bad_request = bytes([request[0] ^ 1]) + request[1:]
+    assert host('decode', staged, bad_request, end) is None
     refuses(updater_stream, installer + bytes(0x5b1c))
     bad = bytearray(stream)
     bad[100] ^= 1
-    assert host('decode', bytes(bad)) is None
+    assert host('decode', *stage_for_decode(bad)) is None
     accepted = []
     for i, image in enumerate(boot_area_variants()):
         expected = python_install(image, container)
@@ -164,11 +175,11 @@ for board, container in containers.items():
     staged = staged_request(image, 0xe7f00, 0xe3000, stream)
     staged = staged_request(staged, 0xc7f00, 0xc0000, updater_stream(installer[:-4]))
     end = 0xe3000 + len(stream)
-    retired = host('retire', staged, str(end).encode())
+    retired = host('retire', staged, str(end))
     assert retired is not None and [i for i in range(len(staged)) if staged[i] != retired[i]] == [0xe7f00, 0xe7f01]
     assert retired[0xe7f00:0xe7f02] == b'\0\0'
-    assert host('retire', retired, str(end).encode()) is None
-    assert host('retire', staged, str(end + 1).encode()) is None
+    assert host('retire', retired, str(end)) is None
+    assert host('retire', staged, str(end + 1)) is None
     for at in (0, 2, 12, 14, 16, len(container) - 1):
         bad = bytearray(container)
         bad[at] ^= 1
@@ -208,7 +219,7 @@ for variant, (path, identity) in BUILT.items():
     assert prefix == VARIANTS[variant][2] and weave(found, prefix, image) == built
     listed = members(image)
     assert list(listed) == ['ota.bin'] and listed['ota.bin'][0] == OTA_TYPE
-    assert host('decode', listed['ota.bin'][1]) == self_extracting[board]
+    assert host('decode', *stage_for_decode(listed['ota.bin'][1])) == self_extracting[board]
     assert unweave(package(variant, containers[board], installers[board], '042'))[0] == identity[:-3] + '042'
     refuses(package, variant, containers[other], installers[board])
     refuses(package, variant, containers[board], installers[other])
@@ -241,7 +252,7 @@ for name, variant in (('fm1-015.fwsc', 'fm1'), ('smk37-016.fwsc', 'smk37-pro'),
     ota = [e for e in listed if e['type'] == OTA_TYPE]
     assert [e['name'] for e in ota] == ['ota.bin']
     stream = image[ota[0]['offset']:ota[0]['offset'] + ota[0]['size']]
-    assert host('decode', stream) == updater_code(stream)
+    assert host('decode', *stage_for_decode(stream)) == updater_code(stream)
     vendor += 1
-print('PASS: LZ4, installer stream through the C decoder, C boot-area rewrite equal to bankcb, '
+print('PASS: LZ4, installer stream through the decoder, boot-area rewrite equal to bankcb, '
       f'flash request retirement, {len(BUILT) if PACKAGES else 0} packages, {vendor} M-VAVE package convention checks')

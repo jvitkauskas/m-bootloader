@@ -203,7 +203,7 @@ fn release_select() {
 
 /// MIDI mode: the hooks of `midi_update`, and the menu's item.
 #[cfg(any(not(boot_sim), midi_mode))]
-mod midi {
+pub(crate) mod midi {
     use super::*;
     use crate::board::board_keys;
     use crate::midi_update::{self, Host, Outcome, Unit};
@@ -220,6 +220,8 @@ mod midi {
     } else {
         text!("OCT- OCT+ PLAY REC")
     };
+    // (Not used on the simulated chip, whose tests have a protocol of their own: `run`, below.)
+    #[cfg_attr(boot_sim, allow(dead_code))]
     const BOOTLOADER: u8 = 1;
     // The menu came up by itself (no PLAY held at power-on: the app did not boot): it opens in MIDI mode, so a computer
     // can install or restart the unit with nobody at it (ALONE, for as long as it lasts). Only a key leaves it, any of
@@ -230,6 +232,7 @@ mod midi {
     pub static STUCK: Global<u32> = Global::new(0);
 
     /// The hooks of `midi_update`: what it needs of the unit, from the menu.
+    #[cfg_attr(boot_sim, allow(dead_code))]
     pub struct Menu;
 
     impl Host for Menu {
@@ -284,11 +287,10 @@ mod midi {
         // Safety: no hook of `Menu` comes back here.
         return unsafe { midi_update::run::<Menu>(UNIT_KEY.read(), work, written) };
         #[cfg(boot_sim)]
-        return midi_update::mu_run(UNIT_KEY.read(), work, written);
+        return crate::tests::mu_run(UNIT_KEY.read(), work, written);
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_idle() {
+    pub fn mu_idle() {
         for _ in 0..2 {
             usb_midi_poll();
             hal_delay_us(500);
@@ -298,8 +300,7 @@ mod midi {
     /// Called about once a millisecond: one odd scan mustn't stop an install. A key that was down when MIDI mode opened
     /// by itself counts once it has read as up for 50 scans in a row: past a release's bounce, and more than twice the
     /// 20 that leave, so a stuck key that reads up now and then doesn't make MIDI mode leave by itself.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_cancel() -> bool {
+    pub fn mu_cancel() -> bool {
         static HELD: Global<u32> = Global::new(0);
         static UP: Global<[u8; 4]> = Global::new([0; 4]);
         let keys = board_keys();
@@ -329,13 +330,15 @@ mod midi {
         held >= 20
     }
 
+    // (These two are the protocol's, so not used on the simulated chip either.)
+    #[cfg_attr(boot_sim, allow(dead_code))]
     fn frame(y: u32) {
         display::rect(10, y, 220, 12, WHITE);
         display::rect(12, y + 2, 216, 8, 0);
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_progress(writing: bool, percent: u32) {
+    #[cfg_attr(boot_sim, allow(dead_code))]
+    pub fn mu_progress(writing: bool, percent: u32) {
         static SHOWN: Global<u32> = Global::new(0);
         // A pass's start draws the screen for it.
         if percent == 0 {
@@ -383,8 +386,7 @@ mod midi {
         }
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn mu_start_app() {
+    pub fn mu_start_app() {
         hal_delay_us(200_000);
         usb_midi_stop();
         sync_cpu();
@@ -772,12 +774,10 @@ fn update(work: &mut Work, retained: &mut Retained, ram: bool) {
     };
     if formats::updater_decode(&Chip, request(), load, work, &mut updater) {
         #[cfg(boot_sim)]
-        {
-            unsafe extern "C" {
-                fn boot_sim_call_updater(entry: u32, context: *mut u8, end: u32);
-            }
-            unsafe { boot_sim_call_updater(updater.load, meta.as_mut_ptr(), updater.stream_end) };
-        }
+        // Safety: the tests' own, which is given what the updater would be.
+        unsafe {
+            crate::tests::boot_sim_call_updater(updater.load, meta.as_mut_ptr(), updater.stream_end)
+        };
         // Safety: the updater that was just decoded and checked there.
         #[cfg(not(boot_sim))]
         unsafe {
@@ -929,12 +929,10 @@ pub unsafe extern "C" fn boot_main(_device: *const u32) {
             irq_off();
             sync_cpu();
             #[cfg(boot_sim)]
-            {
-                unsafe extern "C" {
-                    fn boot_sim_call_app(entry: u32, object: *mut u8);
-                }
-                unsafe { boot_sim_call_app(app().entry, APP_CONTEXT as *mut u8) };
-            }
+            // Safety: the tests' own, which is given what the app would be.
+            unsafe {
+                crate::tests::boot_sim_call_app(app().entry, APP_CONTEXT as *mut u8)
+            };
             // Safety: the app that was mounted and checked, at its entry.
             #[cfg(not(boot_sim))]
             unsafe {
@@ -965,8 +963,7 @@ pub mod test {
 
     /// # Safety
     /// No `boot_main` is running: the test has left it.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn boot_test_reset() {
+    pub unsafe fn boot_test_reset() {
         unsafe {
             WORK.get().0.fill(0);
             *REQUEST.get() = Aligned([0; 80]);
@@ -990,24 +987,20 @@ pub mod test {
     }
 
     #[cfg(midi_mode)]
-    #[unsafe(no_mangle)]
-    pub extern "C" fn boot_test_midi_reset() {
+    pub fn boot_test_midi_reset() {
         midi::ALONE.set(false);
         midi::STUCK.set(0);
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn boot_test_clock_meta() -> *const u8 {
+    pub fn boot_test_clock_meta() -> *const u8 {
         unsafe { CLOCK_META.get().0.as_ptr() }
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn boot_test_memory_meta() -> *const u8 {
+    pub fn boot_test_memory_meta() -> *const u8 {
         unsafe { MEMORY_META.get().0.as_ptr() }
     }
 
-    #[unsafe(no_mangle)]
-    pub extern "C" fn boot_test_effective_width() -> u32 {
+    pub fn boot_test_effective_width() -> u32 {
         EFFECTIVE_WIDTH.read()
     }
 }

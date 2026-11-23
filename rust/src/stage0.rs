@@ -69,8 +69,10 @@ mod own {
         use crate::upkr::{HEADER, PROBS, unpack_stage1};
         use core::slice::from_raw_parts;
         /// Free RAM above the bootloader's, until a staged updater is loaded there.
-        const SCRATCH: *mut u8 = 0x01c0_a800 as *mut u8;
+        const SCRATCH: usize = 0x01c0_a800;
         const SCRATCH_PACK: usize = 0x3f2c;
+        // (made here, not as a constant: a pointer to memory that Rust did not make has to be made when it runs)
+        let scratch: *mut u8 = core::ptr::with_exposed_provenance_mut(SCRATCH);
         let to = stage1_entry as *mut u8;
         // Safety: the pack is in the image the ROM loaded, the scratch RAM is free, and stage 1 has its room up to
         // stage 0's data.
@@ -79,12 +81,12 @@ mod own {
             if size > SCRATCH_PACK {
                 return false;
             }
-            core::ptr::copy_nonoverlapping(to, SCRATCH, size);
+            core::ptr::copy_nonoverlapping(to, scratch, size);
             let room = crate::hw::distance(to, &raw const __stage0_limit);
             unpack_stage1(
                 from_raw_parts(to.cast(), room),
-                from_raw_parts(SCRATCH.cast(), size),
-                &mut *SCRATCH.add(SCRATCH_PACK).cast::<[u8; PROBS]>(),
+                from_raw_parts(scratch.cast(), size),
+                &mut *scratch.add(SCRATCH_PACK).cast::<[u8; PROBS]>(),
             )
         }
     }

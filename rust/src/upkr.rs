@@ -157,26 +157,3 @@ pub fn unpack_stage1(out: &Bytes, pack: &Bytes, probs: &mut [u8; PROBS]) -> bool
     }
     crc == want
 }
-
-/// The C interface (include/upkr.h), for the tests and the build's tools.
-///
-/// # Safety
-/// `out` has room for `capacity` bytes and `pack` holds `pack_size`, and nothing else uses either meanwhile.
-#[cfg(not(target_arch = "pi32v2"))]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn stage1_unpack(
-    out: *mut u8,
-    capacity: u32,
-    pack: *const u8,
-    pack_size: u32,
-    probs: &mut [u8; PROBS],
-) -> bool {
-    use core::slice::from_raw_parts;
-    let (out, pack) = unsafe {
-        (
-            from_raw_parts(out.cast(), capacity as usize),
-            from_raw_parts(pack.cast(), pack_size as usize),
-        )
-    };
-    unpack_stage1(out, pack, probs)
-}

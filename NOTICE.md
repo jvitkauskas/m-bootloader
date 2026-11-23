@@ -3,8 +3,8 @@
 m-bootloader merges two independent implementations of the same
 specification, both MIT and Copyright (c) 2026 Julius Vitkauskas (see
 [docs/PROVENANCE.md](docs/PROVENANCE.md)). The
-simulated chip and flash in `tests/boot_sim.c`, `tests/boot_sim.h` and
-`tests/boot_nor.c`, many scenarios in `tests/boot_test.c`, and the approach of
+simulated chip and flash in `rust/tests/sim.rs` and `rust/tests/nor.rs`, many
+scenarios in `rust/tests/boot.rs` (all three C until 3.0), and the approach of
 the wide-read check and the clean-up after an updater returns come from the
 second implementation.
 

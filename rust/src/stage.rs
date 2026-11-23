@@ -82,16 +82,14 @@ impl Host for Stage {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_idle() {
+pub fn mu_idle() {
     for _ in 0..2 {
         usb_midi_poll();
         hal_delay_us(500);
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_cancel() -> bool {
+pub fn mu_cancel() -> bool {
     if mu_messages.read() != SEEN.read() {
         SEEN.set(mu_messages.read());
         WAITED.set(0);
@@ -118,8 +116,7 @@ fn show_way_out() {
     show(9, WHITE, text!("THE FIRMWARE"));
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_progress(writing: bool, percent: u32) {
+pub fn mu_progress(writing: bool, percent: u32) {
     static SHOWN: Global<u32> = Global::new(0);
     if !SCREEN.read() {
         return;
@@ -162,8 +159,7 @@ fn show_waiting() {
     show_way_out();
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mu_start_app() {
+pub fn mu_start_app() {
     hal_delay_us(200_000);
     usb_midi_stop();
     sync_cpu();

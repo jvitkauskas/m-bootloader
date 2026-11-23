@@ -178,7 +178,7 @@ skips the model and version checks.
 
 ## Build
 
-You need Python 3, GNU Make, a C compiler and Rust with cargo for the tests and tools, the
+You need Python 3, GNU Make, Rust with cargo for the tests and tools (and the C compiler that Rust links with), the
 [pi32v2 LLVM toolchain](https://github.com/jvitkauskas/pi32v2-llvm) release `pi32v2-23.1.6-2`, and the
 [pi32v2 Rust compiler](https://github.com/jvitkauskas/pi32v2-rust) release `pi32v2-1.100.0-1`, which is built on
 that LLVM. Nothing from JieLi is needed. On Linux x86-64:
@@ -215,8 +215,9 @@ shown by the menu and by M-Flasher is `VERSION` plus the git commit, for
 example `1.1-e9a25e1`. The build fails if an image outgrows its slot.
 
 `make test` runs the tests: the formats, the loader protocol, and the start-up
-and menu of both boards on a simulated chip and flash. `make sanitize` runs them
-with the tests' C under ASan and UBSan and the Rust's overflow checks on, and `make reproducible` checks that two builds match.
+and menu of both boards on a simulated chip and flash. They are Rust too (`rust/tests/`), built into the crate for
+this computer with overflow checks and debug assertions on, which also check what its `unsafe` code promises the
+standard library. `make reproducible` checks that two builds match.
 Some tests also use flash images of real units and M-VAVE's packages in
 `testdata/`. Those contain M-VAVE's firmware, so they are not in the
 repository, and the tests skip them when absent.
@@ -233,9 +234,10 @@ repository, and the tests skip them when absent.
 | `rust/src/platform.rs`, `board.rs`, `display.rs`, `hw.rs` | clock, SPI flash, keys, LEDs, screen, registers |
 | `rust/src/loader.rs` | the flash loader |
 | `rust/src/sdboot.rs` | finding a card, and loading and running `/MBOOT/MENU.BIN` from it |
-| `rust/src/installer.rs`, `sfx.rs`, `src/installer_start.S` | the installer in the `.fwsc` packages |
+| `rust/src/installer.rs`, `sfx.rs`, `src/installer_start.S`, `sfx_start.S` | the installer in the `.fwsc` packages, and what unpacks it |
 | `rust/src/stage.rs` | MIDI mode as a program in RAM |
-| `include/` | the C interface the Rust keeps, for the tests |
+| `rust/tests/` | the tests, and the simulated chip and flash they run the bootloader on (`sim.rs`, `nor.rs`) |
+| `tests/` | the tests of the packages and tools (Python), and two programs they and the build run |
 | `tools/` | container, M-UPGRADE package and SD card stage 2 packing, build checks |
 | `docs/SPEC.md` | the specification: hardware, formats and protocols |
 | `docs/PROVENANCE.md`, `docs/handover/` | how it was written, and the specification and instructions as handed over |
