@@ -29,9 +29,12 @@ use super::boot::{
 };
 use super::sim::*;
 use crate::Global;
-use crate::boot::midi::{mu_cancel, mu_idle, mu_start_app};
+use crate::board::{board_init, board_restore};
+use crate::boot::midi::{ALONE, STUCK, mu_cancel, mu_idle, mu_start_app};
 use crate::boot::test::boot_test_midi_reset;
 use crate::midi_update::{Outcome, SECTOR};
+use crate::platform::hal_early;
+use crate::stage0::apply_config;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 
@@ -287,6 +290,33 @@ fn t_midi_released() {
     sim().limit = 6_000_000;
     check!(t_go() == END_TIMEOUT);
     check!(m().midi_runs == 1 && t_midi_shown("APP NOT FOUND"));
+}
+
+/// Count scans directly, so the boundary does not depend on how long a scan takes on either board.
+fn t_midi_release_boundary() {
+    t_midi_prep(4);
+    hal_early();
+    check!(apply_config());
+    board_init(SMK);
+    ALONE.set(true);
+    for released_scans in [49, 50] {
+        STUCK.set(KEY_NEXT);
+        sim().keyfn = Some(|_| KEY_NEXT);
+        check!(!mu_cancel());
+        sim().keyfn = None;
+        for _ in 0..released_scans {
+            assert!(!mu_cancel());
+        }
+        sim().keyfn = Some(|_| KEY_NEXT);
+        for _ in 0..19 {
+            assert!(!mu_cancel());
+        }
+        check!(mu_cancel() == (released_scans == 50));
+    }
+    ALONE.set(false);
+    board_restore();
+    sim_flush();
+    check!(sim().err == 0);
 }
 
 /// An install that fails with nothing written: MIDI mode opened by itself stays, the failure in view; only a key
@@ -549,6 +579,7 @@ fn boot_midi() {
     t_midi_blank();
     t_midi_stuck();
     t_midi_released();
+    t_midi_release_boundary();
     t_midi_failures();
     t_midi_reasons();
     t_midi_app_exit();
